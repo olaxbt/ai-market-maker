@@ -14,7 +14,7 @@
 
 ### Prerequisites
 
-- Python 3.8+
+- Python 3.11+
 - [uv](https://github.com/astral-sh/uv) for dependency management
 - API keys for crypto exchanges (e.g., Binance)
 
