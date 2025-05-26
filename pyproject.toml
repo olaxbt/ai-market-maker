@@ -5,5 +5,9 @@ description = "Crypto Market-Making AI Agent"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "ccxt>=4.4.85",
+    "langgraph>=0.4.7",
+    "pandas>=2.2.3",
+    "langchain>=0.3.25",
     "python-dotenv>=1.1.0",
 ]
