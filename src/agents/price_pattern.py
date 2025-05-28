@@ -1,41 +1,107 @@
 from typing import Dict
-from tools.technical_indicators import calculate_rsi
+import numpy as np
+from tools.technical_indicators import calculate_technical_indicators
 from langchain.prompts import PromptTemplate
-from langchain_core.language_models.llms import BaseLLM  # Abstract LLM type
+import openai
+import os
+import logging
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+
+class OpenAIClient:
+    def __init__(self, api_key: str):
+        self.client = openai.OpenAI(api_key=api_key)
+
+    def generate(self, prompt: str) -> str:
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are a financial analyst providing trading insights."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=200
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            logger.error(f"OpenAI API error: {str(e)}")
+            return f"Error: {str(e)}"
 
 
 class PricePatternAgent:
-    def __init__(self, llm: BaseLLM = None):
-        self.llm = llm  # Placeholder; no LLM for Day 2
+    def __init__(self):
+        self.llm = OpenAIClient(api_key=os.getenv(
+            "OPENAI_API_KEY")) if os.getenv("OPENAI_API_KEY") else None
         self.prompt = PromptTemplate(
-            input_variables=["ticker", "rsi", "price_data"],
-            template="Analyze price patterns for {ticker}. RSI: {rsi}. Recent prices: {price_data}. Suggest trading implications."
+            input_variables=["ticker", "rsi", "sma",
+                             "bb_upper", "bb_lower", "bb_mid", "price_data"],
+            template="Analyze price patterns for {ticker}. RSI: {rsi}. SMA: {sma}. "
+                     "Bollinger Bands (Upper: {bb_upper}, Lower: {bb_lower}, Middle: {bb_mid}). "
+                     "Recent prices: {price_data}. Suggest trading implications."
         )
 
     def analyze(self, ticker: str, market_data: Dict) -> Dict:
         try:
-            # Extract OHLCV data
             ohlcv = market_data.get("ohlcv", [])
-            if not ohlcv:
-                return {"ticker": ticker, "status": "error", "error": "No OHLCV data"}
+            if not ohlcv or len(ohlcv) < 15:
+                logger.warning(
+                    f"Insufficient OHLCV data for {ticker}: {len(ohlcv)} candles")
+                return {
+                    "ticker": ticker,
+                    "indicators": {"rsi": "unavailable", "sma": "unavailable", "bb_upper": "unavailable",
+                                   "bb_lower": "unavailable", "bb_mid": "unavailable"},
+                    "analysis": "Insufficient data for technical analysis",
+                    "status": "error"
+                }
 
-            # Calculate RSI
-            closes = [candle[4] for candle in ohlcv]
-            rsi = calculate_rsi(closes)
+            closes = [candle[4]
+                      for candle in ohlcv if isinstance(candle[4], (int, float))]
+            logger.debug(f"Close prices for {ticker}: {closes[-5:]}")
 
-            # Simulate LLM analysis (replace with real LLM later)
-            analysis = f"RSI analysis for {ticker}: {rsi[-1]}" if not self.llm else self.llm(
-                self.prompt.format(ticker=ticker, rsi=rsi[-1], price_data=closes[-5:]))
+            indicators = calculate_technical_indicators(closes)
+
+            # Format indicator values
+            formatted_indicators = {
+                "rsi": f"{indicators['rsi']:.2f}" if not np.isnan(indicators['rsi']) else "unavailable",
+                "sma": f"{indicators['sma']:.2f}" if not np.isnan(indicators['sma']) else "unavailable",
+                "bb_upper": f"{indicators['bb_upper']:.2f}" if not np.isnan(indicators['bb_upper']) else "unavailable",
+                "bb_lower": f"{indicators['bb_lower']:.2f}" if not np.isnan(indicators['bb_lower']) else "unavailable",
+                "bb_mid": f"{indicators['bb_mid']:.2f}" if not np.isnan(indicators['bb_mid']) else "unavailable"
+            }
+
+            if self.llm:
+                analysis = self.llm.generate(
+                    self.prompt.format(
+                        ticker=ticker,
+                        rsi=formatted_indicators["rsi"],
+                        sma=formatted_indicators["sma"],
+                        bb_upper=formatted_indicators["bb_upper"],
+                        bb_lower=formatted_indicators["bb_lower"],
+                        bb_mid=formatted_indicators["bb_mid"],
+                        price_data=closes[-5:]
+                    )
+                )
+            else:
+                analysis = (f"Technical analysis for {ticker}: RSI={formatted_indicators['rsi']}, "
+                            f"SMA={formatted_indicators['sma']}, "
+                            f"Bollinger Bands (Upper={formatted_indicators['bb_upper']}, "
+                            f"Lower={formatted_indicators['bb_lower']}, Mid={formatted_indicators['bb_mid']})")
 
             return {
                 "ticker": ticker,
-                "rsi": rsi[-1],
+                "indicators": formatted_indicators,
                 "analysis": analysis,
                 "status": "success"
             }
         except Exception as e:
+            logger.error(
+                f"Price pattern analysis error for {ticker}: {str(e)}")
             return {
                 "ticker": ticker,
-                "status": "error",
-                "error": str(e)
+                "indicators": {"rsi": "unavailable", "sma": "unavailable", "bb_upper": "unavailable",
+                               "bb_lower": "unavailable", "bb_mid": "unavailable"},
+                "analysis": f"Error: {str(e)}",
+                "status": "error"
             }
