@@ -10,4 +10,7 @@ dependencies = [
     "pandas>=2.2.3",
     "langchain>=0.3.25",
     "python-dotenv>=1.1.0",
+    "tweepy>=4.15.0",
+    "openai>=1.82.0",
+    "ta-lib>=0.6.3",
 ]
