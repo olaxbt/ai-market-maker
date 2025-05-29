@@ -11,20 +11,19 @@
 
 ## Agents
 
-- **Market Scanning**: Fetches OHLCV and order book data for specified tickers and scans meme coins.
-- **Technical Analysis**: Uses **TA-Lib** to analyze price patterns.
-- **Sentiment Analysis**: Analyzes sentiment for tickers via Twitter.
-- **Statistical Arbitrage**: Identifies arbitrage opportunities.
-- **Quantitative Analysis**: Uses OpenAI `gpt-4o` for signal generation.
-- **Valuation and Liquidity**: Assesses asset valuation and liquidity.
-- **Risk Management**: Computes position sizes and stop-loss levels based on volatility and valuation.
-- **Portfolio Management**: Allocates budget across assets and places buy/sell orders
-- **Sequential Workflow**: Processes nodes sequentially to avoid state conflicts.
+- **Market Scanner Agent**: Scans for newly listed, to-be-delisted, and high-potential tokens with high-momentum price shifts.
+- **Technical Analysis Agent**: Analyzes price patterns and candlestick data for actionable trading insights.
+- **Sentiment Analysis Agent**: Processes KOL tweets and news to gauge market sentiment trends.
+- **Statistical Arbitrage Agent**: Calculates correlations and hedge ratios to identify token pairs for arbitrage and hedging.
+- **Quantitative Analysis Agent**: Generates trading signals by evaluating momentum and market trends.
+- **Valuation Agent**: Assesses token value by benchmarking against similar category assets.
+- **Liquidity Agent**: Evaluates circulating supply and on-chain liquidity for efficient trades.
+- **Risk Management Agent**: Optimizes TP/SL and position limits using reinforcement learning on volatility.
+- **Portfolio Management Agent**: Manages portfolio and balance for optimized order placement across DEX and CEX venues.
 
 ![flow_diagram](https://github.com/user-attachments/assets/b07dc7b2-e482-416a-b684-7bc40cced45c)
 
 ## Setup
-
 
 ### Prerequisites
 
