@@ -1,4 +1,4 @@
-# AI-Market-Maker
+# AI Crypto Market Maker
 
 **AI-Market-Maker** is an open-source project to simulate a cryptocurrency market-making system using AI agents. It aims to provide liquidity and optimize bid-ask spreads for crypto assets like Bitcoin (BTC) and Ethereum (ETH) on exchanges such as Binance and Coinbase. This is an early-stage project for educational purposes, built with a modular agent-based architecture.
 
@@ -11,14 +11,15 @@
 
 ## Agents
 
-- **MarketDataAgent**: Fetches real-time price, volume, and order book data via `ccxt`.
-- **OrderPlacementAgent**: Places paper trades on Binance Testnet or simulates trades.
-- **PricePatternAgent**: Analyzes RSI, SMA, and Bollinger Bands with OpenAI GPT-4o insights.
-- **SentimentAgent**: Uses Twitter data (`tweepy`) and OpenAI GPT-4o for sentiment scores.
-- **StatArbAgent**: Identifies arbitrage opportunities (e.g., BTC/USDT vs. ETH/USDT).
-- **LangGraph**: Orchestrates data, analysis, and trading workflows.
-- **Trade Simulation**: Logs trades to `trades.log` with position tracking.
-- **CLI Support**: Run with custom tickers (e.g., `--ticker ETH/USDT`).
+- **Market Scanning**: Fetches OHLCV and order book data for specified tickers and scans meme coins.
+- **Technical Analysis**: Uses **TA-Lib** to analyze price patterns.
+- **Sentiment Analysis**: Analyzes sentiment for tickers via Twitter.
+- **Statistical Arbitrage**: Identifies arbitrage opportunities.
+- **Quantitative Analysis**: Uses OpenAI `gpt-4o` for signal generation.
+- **Valuation and Liquidity**: Assesses asset valuation and liquidity.
+- **Risk Management**: Computes position sizes and stop-loss levels based on volatility and valuation.
+- **Portfolio Management**: Allocates budget across assets and places buy/sell orders
+- **Sequential Workflow**: Processes nodes sequentially to avoid state conflicts.
 
 ## Setup
 
@@ -91,21 +92,24 @@ uv run python src/main.py --ticker BTC/USDT
 ai-market-maker/
 ├── src/
 │   ├── agents/
-│   │   ├── market_data.py          # Fetches exchange data
-│   │   ├── order_placement.py      # Places buy/sell orders
+│   │   ├── market_scan.py          # Scans market and meme coins
 │   │   ├── price_pattern.py        # Analyzes price patterns
 │   │   ├── sentiment.py            # Analyzes sentiment
-│   │   ├── stat_arb.py             # Arbitrage
+│   │   ├── stat_arb.py             # Arbitrage with cointegration
+│   │   ├── quant.py                # MACD and volume signals
+│   │   ├── valuation.py            # Asset valuation
+│   │   ├── risk_management.py      # Position limits, stop-losses
+│   │   ├── portfolio_management.py # Allocates budget and places orders
+│   │   ├── liquidity_management.py # Bid-ask spread management
 │   ├── tools/
 │   │   ├── api.py                  # Exchange APIs
 │   │   ├── technical_indicators.py # Technical analysis
-│   │   ├── sentiment_tools.py      # Sentiment utils
+│   │   ├── sentiment_tools.py      # Sentiment utilities
 │   ├── main.py                     # Main entry point
 ├── uv.toml                         # uv configuration
 ├── .env.example                    # Environment variables
-├── LICENSE                         # LiCENSE
+├── LICENSE                         # License
 ├── README.md                       # Documentation
-
 ```
 
 ## License
