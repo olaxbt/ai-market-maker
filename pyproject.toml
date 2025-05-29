@@ -13,4 +13,6 @@ dependencies = [
     "tweepy>=4.15.0",
     "openai>=1.82.0",
     "ta-lib>=0.6.3",
+    "pycoingecko>=3.2.0",
+    "statsmodels>=0.14.4",
 ]
