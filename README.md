@@ -21,7 +21,10 @@
 - **Portfolio Management**: Allocates budget across assets and places buy/sell orders
 - **Sequential Workflow**: Processes nodes sequentially to avoid state conflicts.
 
+![flow_diagram](https://github.com/user-attachments/assets/b07dc7b2-e482-416a-b684-7bc40cced45c)
+
 ## Setup
+
 
 ### Prerequisites
 
