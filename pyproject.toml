@@ -16,3 +16,24 @@ dependencies = [
     "pycoingecko>=3.2.0",
     "statsmodels>=0.14.4",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "pre-commit>=4.0.0",
+    "pytest>=8.0.0",
+    "ruff>=0.6.0",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+exclude = [
+    ".venv"
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
