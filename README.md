@@ -1,11 +1,11 @@
 # AI Crypto Market Maker
 
-**AI-Market-Maker** is an open-source project to simulate a cryptocurrency market-making system using AI agents. It aims to provide liquidity and optimize bid-ask spreads for crypto assets like Bitcoin (BTC) and Ethereum (ETH) on exchanges such as Binance and Coinbase. This is an early-stage project for educational purposes, built with a modular agent-based architecture.
+**AI-Market-Maker** is an open-source, multi-agent trading stack for building fund-style workflows: research → signals → proposal → risk veto → execution. The edge is **separation of concerns** (specialist desks), **governance** (risk can halt execution), and **traceability** (personas + structured reasoning so decisions are explainable and auditable).
 
 ## Goals
 
-- Simulate crypto market making with AI agents.
-- Fetch real-time crypto market data and place simulated orders.
+- **Trading Mode (now)**: Fetch real-time market data, generate signals, and place testnet trades gated by Risk Guard.
+- **Platform direction**: Treat agents as desks with clear contracts, reasoning logs, and measurable KPIs.
 - Support future features like arbitrage, sentiment analysis, and risk management.
   Note: This project is an experimental simulation currently in development.
 
@@ -20,6 +20,23 @@
 - **Liquidity Agent**: Evaluates circulating supply and on-chain liquidity for efficient trades.
 - **Risk Management Agent**: Optimizes TP/SL and position limits using reinforcement learning on volatility.
 - **Portfolio Management Agent**: Manages portfolio and balance for optimized order placement across DEX and CEX venues.
+- **Risk Guard (Veto Layer)**: Final approval gate that can **VETO** execution proposals before any order placement.
+
+## Why this repo is different
+
+- **Standard interfaces**: Agents can follow a unified SOP contract (**Input → Process → Output → Feedback**) via `src/agents/base_agent.py`.
+- **Governance (Veto Power)**: `Risk Guard` is a governance layer with **final say** to stop unsafe execution.
+- **Personas included**: See `docs/personas/` for the 9 agent persona definitions.
+
+## Hedge-fund style workflow (current)
+
+The default pipeline is structured like a small fund:
+
+- **Research desks**: Market Scan / Technical / Sentiment / Valuation
+- **Alpha desks**: Quant / Stat-Arb
+- **Risk desks**: Risk Management + **Risk Guard (veto)**
+- **PM desk**: Portfolio proposal (capital allocation + actions)
+- **Execution**: Only runs when Risk Guard returns **APPROVED**
 
 ![flow_diagram](https://github.com/user-attachments/assets/b07dc7b2-e482-416a-b684-7bc40cced45c)
 
@@ -29,6 +46,7 @@
 
 - Python 3.11+
 - [uv](https://github.com/astral-sh/uv)
+- pre-commit (recommended for contributors)
 - Binance Testnet API keys (for paper trading, optional)
 - OpenAI API key (for GPT-4o, optional)
 - Twitter/X API bearer token (for sentiment, optional)
@@ -48,6 +66,13 @@ cd ai-market-maker
 ```
 pip install uv
 uv sync
+```
+
+- (Recommended) Install dev tools + git hooks:
+
+```bash
+uv sync --extra dev
+uv run pre-commit install
 ```
 
 - Install TA-Lib
@@ -82,7 +107,7 @@ TWITTER_BEARER_TOKEN=your_twitter_bearer_token
 
 ## Usage
 
-Run the main script (currently a placeholder):
+Run the main script (**Trading Mode**, Binance testnet). The workflow generates a **portfolio proposal**, runs it through **Risk Guard**, and executes only if **APPROVED**:
 
 ```
 uv run python src/main.py --ticker BTC/USDT
