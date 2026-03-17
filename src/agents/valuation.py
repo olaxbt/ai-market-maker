@@ -1,5 +1,5 @@
-from typing import Dict, List
 import logging
+from typing import Dict, List
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -16,12 +16,16 @@ class ValuationAgent:
 
                 # Volume-to-market-cap ratio
                 vol_mcap_ratio = volume / market_cap if market_cap > 0 else 0
-                valuation = "undervalued" if vol_mcap_ratio > 0.1 else "overvalued" if vol_mcap_ratio < 0.05 else "fair"
+                valuation = (
+                    "undervalued"
+                    if vol_mcap_ratio > 0.1
+                    else "overvalued"
+                    if vol_mcap_ratio < 0.05
+                    else "fair"
+                )
 
-                results[ticker] = {"valuation": valuation,
-                                   "vol_mcap_ratio": vol_mcap_ratio}
-                logger.info(
-                    f"Valuation {ticker}: {valuation}, Ratio={vol_mcap_ratio:.4f}")
+                results[ticker] = {"valuation": valuation, "vol_mcap_ratio": vol_mcap_ratio}
+                logger.info(f"Valuation {ticker}: {valuation}, Ratio={vol_mcap_ratio:.4f}")
 
             return {"status": "success", "analysis": results}
         except Exception as e:

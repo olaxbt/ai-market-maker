@@ -1,5 +1,6 @@
 import logging
 from typing import Dict
+
 import numpy as np
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
@@ -25,14 +26,13 @@ class RiskManagementAgent:
                 val = valuation.get(ticker, {}).get("value", current_price)
                 risk_multiplier = 1.0 if val >= current_price else 0.5
                 # Position size: Cap at $1000, adjust based on volatility and valuation
-                position_size = min(
-                    1000, 1000 / (1 + volatility)) * risk_multiplier
+                position_size = min(1000, 1000 / (1 + volatility)) * risk_multiplier
                 # Stop-loss: 5% below current price
                 stop_price = current_price * 0.95
                 results[ticker] = {
                     "position_size": position_size,
                     "stop_price": stop_price,
-                    "volatility": volatility
+                    "volatility": volatility,
                 }
             logger.info(f"Risk analysis: {results}")
             return {"status": "success", "analysis": results}

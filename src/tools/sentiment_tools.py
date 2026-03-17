@@ -1,7 +1,8 @@
-from typing import List
-import tweepy
-import os
 import logging
+import os
+from typing import List
+
+import tweepy
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -10,14 +11,12 @@ logger = logging.getLogger(__name__)
 def scrape_twitter(ticker: str, max_tweets: int = 10) -> List[str]:
     try:
         if not os.getenv("TWITTER_BEARER_TOKEN"):
-            logger.warning(
-                f"No Twitter API credentials for {ticker}, using placeholder")
+            logger.warning(f"No Twitter API credentials for {ticker}, using placeholder")
             return [f"Sample tweet about {ticker} #{ticker}" for _ in range(max_tweets)]
 
         client = tweepy.Client(bearer_token=os.getenv("TWITTER_BEARER_TOKEN"))
         query = f"#{ticker.replace('/', '')} -is:retweet lang:en"
-        tweets = client.search_recent_tweets(
-            query=query, max_results=max_tweets)
+        tweets = client.search_recent_tweets(query=query, max_results=max_tweets)
 
         if not tweets.data:
             logger.info(f"No tweets found for {ticker}")

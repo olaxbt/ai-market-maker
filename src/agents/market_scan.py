@@ -1,8 +1,9 @@
-from typing import Dict, List
-from pycoingecko import CoinGeckoAPI
-import ccxt
-import os
 import logging
+import os
+from typing import Dict, List
+
+import ccxt
+from pycoingecko import CoinGeckoAPI
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -10,11 +11,13 @@ logger = logging.getLogger(__name__)
 
 class MarketScanAgent:
     def __init__(self, exchange: str = "binance", testnet: bool = False):
-        self.exchange = getattr(ccxt, exchange)({
-            "apiKey": os.getenv("BINANCE_API_KEY"),
-            "secret": os.getenv("BINANCE_API_SECRET"),
-            "enableRateLimit": True
-        })
+        self.exchange = getattr(ccxt, exchange)(
+            {
+                "apiKey": os.getenv("BINANCE_API_KEY"),
+                "secret": os.getenv("BINANCE_API_SECRET"),
+                "enableRateLimit": True,
+            }
+        )
         if testnet:
             self.exchange.set_sandbox_mode(True)
         try:
@@ -43,7 +46,7 @@ class MarketScanAgent:
                 "ohlcv": ohlcv,
                 "bids": order_book["bids"],
                 "asks": order_book["asks"],
-                "status": "success"
+                "status": "success",
             }
         except Exception as e:
             logger.error(f"Error fetching data for {ticker}: {str(e)}")
@@ -51,25 +54,25 @@ class MarketScanAgent:
 
     def scan_meme_coins(self) -> List[Dict]:
         """
-            Scan for newly listed meme coins.
-            Using CoinGecko
+        Scan for newly listed meme coins.
+        Using CoinGecko
         """
         try:
-            coins = self.cg.get_coins_markets(
-                vs_currency="usd", category="meme-token", per_page=50)
+            coins = self.cg.get_coins_markets(vs_currency="usd", category="meme-token", per_page=50)
             new_coins = []
             for coin in coins:
-                categories = coin.get("categories", []) or []
                 # Relaxed filtering to include any coin in meme-token category
                 if coin.get("market_cap", 0) > 0:
-                    new_coins.append({
-                        "symbol": str(coin["symbol"]).upper() + "/USDT",
-                        "name": coin["name"],
-                        "price": coin["current_price"],
-                        "volume": coin["total_volume"],
-                        "market_cap": coin["market_cap"],
-                        "listed_date": coin.get("last_updated", "")
-                    })
+                    new_coins.append(
+                        {
+                            "symbol": str(coin["symbol"]).upper() + "/USDT",
+                            "name": coin["name"],
+                            "price": coin["current_price"],
+                            "volume": coin["total_volume"],
+                            "market_cap": coin["market_cap"],
+                            "listed_date": coin.get("last_updated", ""),
+                        }
+                    )
 
             logger.info(f"Found {len(new_coins)} meme coins")
             return sorted(new_coins, key=lambda x: x["market_cap"], reverse=True)[:5]
