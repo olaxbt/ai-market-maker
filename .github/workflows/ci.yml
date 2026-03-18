@@ -7,26 +7,35 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Setup Conda and Install TA-Lib
+        uses: conda-incubator/setup-miniconda@v3
         with:
           python-version: "3.11"
+          channels: conda-forge
+          auto-update-conda: true
+          activate-environment: test-env
+
+      - name: Install TA-Lib via Conda
+        run: conda install -y ta-lib
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
-      - name: Install dependencies (including dev)
-        run: uv sync --extra dev
+      - name: Install dependencies with uv
+        run: uv pip install --system .[dev] 
 
       - name: Ruff format check
-        run: uv run ruff format --check .
+        run: ruff format --check .
 
       - name: Ruff lint
-        run: uv run ruff check .
+        run: ruff check .
 
       - name: Pytest
-        run: uv run pytest -q
-
+        run: pytest -q
