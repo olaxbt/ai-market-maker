@@ -11,7 +11,7 @@ class RiskGuardAgent(BaseAgent):
     """
 
     def __init__(self):
-        super().__init__("Risk Guard", "風控官")
+        super().__init__("Risk Guard", "Risk Officer")
 
     async def process(self, proposal: Dict[str, Any]) -> Dict[str, Any]:
         """

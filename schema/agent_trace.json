@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AgentTrace",
+  "description": "Agent thought-chain record for UI / OpenClaw: transparency and real-time agent thinking.",
+  "type": "object",
+  "required": ["trace_id", "timestamp", "actor", "context", "thought_process"],
+  "properties": {
+    "trace_id": { "type": "string", "description": "Unique trace id, e.g. tx-99283-xbt" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "actor": {
+      "type": "object",
+      "required": ["id", "role"],
+      "properties": {
+        "id": { "type": "string" },
+        "role": { "type": "string" },
+        "persona_ref": { "type": "string", "description": "e.g. docs/personas/08_risk_guard.md" }
+      }
+    },
+    "context": {
+      "type": "object",
+      "properties": {
+        "pair": { "type": "string" },
+        "signal": { "type": "string" },
+        "confidence": { "type": "number" }
+      }
+    },
+    "thought_process": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["step", "label", "detail"],
+        "properties": {
+          "step": { "type": "integer" },
+          "label": { "type": "string" },
+          "detail": { "type": "string" }
+        }
+      }
+    },
+    "proposal": {
+      "type": "object",
+      "required": ["action", "params"],
+      "properties": {
+        "action": { "type": "string" },
+        "params": { "type": "object" }
+      }
+    },
+    "veto_status": {
+      "type": "object",
+      "required": ["checked_by", "status"],
+      "properties": {
+        "checked_by": { "type": "string" },
+        "status": { "type": "string", "enum": ["APPROVED", "REJECTED", "MODIFIED"] },
+        "reason": { "type": "string" }
+      }
+    }
+  }
+}

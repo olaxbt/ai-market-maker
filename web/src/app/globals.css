@@ -1,0 +1,231 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --nexus-bg: #06080b;
+  --nexus-surface: #0a0d12;
+  --nexus-panel: #0d0f14;
+  --nexus-border: #1a1f2e;
+  --nexus-glow: #00d4aa;
+  --nexus-glow-dim: rgba(0, 212, 170, 0.15);
+  --nexus-text: #e2e8f0;
+  --nexus-muted: #8a95a6;
+  --nexus-accent: #00d4aa;
+  --nexus-danger: #f25c54;
+  --nexus-success: #00d4aa;
+  --nexus-toggle-shell-bg: rgba(10, 13, 18, 0.7);
+  --nexus-toggle-shell-border: var(--nexus-border);
+  --nexus-toggle-active-bg: rgba(0, 212, 170, 0.15);
+  --nexus-toggle-active-fg: var(--nexus-glow);
+  --nexus-toggle-active-border: rgba(0, 212, 170, 0.35);
+  --nexus-toggle-active-shadow: 0 0 14px rgba(0, 212, 170, 0.14);
+  --nexus-toggle-idle-fg: #e2e8f0;
+  --nexus-toggle-idle-hover-fg: #ffffff;
+  --nexus-toggle-idle-hover-bg: rgba(10, 13, 18, 0.9);
+  /* Primary app chrome divider (header / major separation only) */
+  --nexus-rule-strong: rgba(226, 232, 240, 0.12);
+  /* Subtle interior rules (cards, panels) */
+  --nexus-rule-soft: rgba(226, 232, 240, 0.06);
+  /* Agent card: outer edge + title/content divider (same color) */
+  --nexus-card-stroke: rgba(138, 149, 166, 0.22);
+  /* Orbital hub (center column) outer frame — same family as cards; tweak here only */
+  --nexus-hub-frame: var(--nexus-card-stroke);
+  /* Topology list: STANDBY / idle row border (was --nexus-border, nearly invisible on panel) */
+  --nexus-topology-idle-border: var(--nexus-card-stroke);
+  /*
+   * Chain-of-thought rule under prompts.
+   * Defaults to card stroke; set e.g. rgba(0, 212, 170, 0.18) to give CoT a subtle teal read.
+   */
+  --nexus-cot-rule: var(--nexus-card-stroke);
+}
+
+body {
+  background: var(--nexus-bg);
+  color: var(--nexus-text);
+  font-family: var(--font-mono), ui-monospace, monospace;
+}
+
+/* Nexus space: subtle grid */
+.nexus-bg {
+  background-image:
+    linear-gradient(rgba(0, 212, 170, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 212, 170, 0.03) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Glow borders */
+.nexus-panel {
+  background: var(--nexus-panel);
+  border: 1px solid var(--nexus-border);
+  box-shadow: 0 0 20px var(--nexus-glow-dim);
+}
+
+/* Agent directory cards: visible frame, lighter than header rule */
+.nexus-agent-card {
+  background: var(--nexus-panel);
+  border: 1px solid var(--nexus-card-stroke);
+  box-shadow: 0 0 12px rgba(0, 212, 170, 0.035);
+}
+
+/* Title row → body: same stroke as card edge */
+.nexus-agent-card-inner-rule {
+  border-top: 1px solid var(--nexus-card-stroke);
+}
+
+/* Agent detail: CoT block top rule (separate token so you can diverge from cards in one place) */
+.nexus-cot-inner-rule {
+  border-top: 1px solid var(--nexus-cot-rule);
+}
+
+.nexus-glow-text {
+  text-shadow: 0 0 12px rgba(0, 212, 170, 0.5);
+}
+
+/* Tailwind line-clamp utilities are not enabled (tailwind.config.ts plugins: []).
+   These are reliable clamp helpers for responsive agent cards. */
+.nexus-line-clamp-1 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.nexus-line-clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+/* Terminal-style scroll */
+.thought-stream {
+  scroll-behavior: smooth;
+}
+.thought-stream::-webkit-scrollbar {
+  width: 6px;
+}
+.thought-stream::-webkit-scrollbar-track {
+  background: var(--nexus-surface);
+}
+.thought-stream::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 3px;
+}
+
+/* Flow node active pulse — visible but not a bright “halo” vs idle rows */
+.flow-node-active {
+  box-shadow: 0 0 12px rgba(0, 212, 170, 0.22);
+  border-color: var(--nexus-glow);
+}
+
+/* Nexus hub container glow — subtle pulse only (scale breathing is on the motion div) */
+.nexus-hub-wrap {
+  filter: drop-shadow(0 0 50px rgba(0, 212, 170, 0.28));
+  animation: nexus-hub-glow 5s ease-in-out infinite;
+}
+
+@keyframes nexus-hub-glow {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 40px rgba(0, 212, 170, 0.22));
+  }
+  50% {
+    filter: drop-shadow(0 0 65px rgba(0, 212, 170, 0.38));
+  }
+}
+
+/* Nexus central star — shine only (no scale / “breathing” size) */
+@keyframes nexus-core-shine {
+  0%,
+  100% {
+    opacity: 0.65;
+    filter: drop-shadow(0 0 14px rgba(180, 255, 240, 0.55))
+      drop-shadow(0 0 28px rgba(0, 212, 170, 0.45));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 22px rgba(255, 255, 255, 0.75))
+      drop-shadow(0 0 42px rgba(0, 212, 170, 0.65));
+  }
+}
+
+@keyframes nexus-ray-twinkle {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.95;
+  }
+}
+
+.nexus-core-star-nucleus {
+  animation: nexus-core-shine 3.2s ease-in-out infinite;
+}
+
+/* Ray timing is set per-spoke via inline animation-delay in NexusStarSystem */
+
+/* Soft label legibility without heavy “sticker” look */
+.nexus-agent-label {
+  text-shadow:
+    0 0 10px rgba(0, 0, 0, 0.95),
+    0 0 20px rgba(0, 0, 0, 0.8),
+    0 1px 2px rgba(0, 0, 0, 1);
+}
+
+/* Agent detail: prompt textareas — dark theme, theme focus (no default blue ring) */
+.nexus-prompt-input {
+  background-color: var(--nexus-surface) !important;
+  color: var(--nexus-text) !important;
+  border: 1px solid rgba(26, 31, 46, 0.85);
+  outline: none !important;
+}
+.nexus-prompt-input::placeholder {
+  color: var(--nexus-muted);
+  opacity: 0.9;
+}
+.nexus-prompt-input:-webkit-autofill,
+.nexus-prompt-input:-webkit-autofill:hover,
+.nexus-prompt-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--nexus-text);
+  -webkit-box-shadow: 0 0 0 1000px var(--nexus-surface) inset;
+  box-shadow: 0 0 0 1000px var(--nexus-surface) inset;
+}
+.nexus-prompt-input:focus {
+  border-color: rgba(0, 212, 170, 0.45) !important;
+  box-shadow: 0 0 0 1px rgba(0, 212, 170, 0.22) !important;
+}
+
+/* Shared segmented-toggle styles (Nexus / Agents and future variants) */
+.nexus-segmented-toggle {
+  border: 1px solid var(--nexus-toggle-shell-border);
+  background: var(--nexus-toggle-shell-bg);
+}
+
+.nexus-segment-btn {
+  color: var(--nexus-toggle-idle-fg);
+}
+
+.nexus-segment-btn:hover {
+  color: var(--nexus-toggle-idle-hover-fg);
+  background: var(--nexus-toggle-idle-hover-bg);
+}
+
+.nexus-segment-btn.is-active {
+  color: var(--nexus-toggle-active-fg);
+  background: var(--nexus-toggle-active-bg);
+  border: 1px solid var(--nexus-toggle-active-border);
+  box-shadow: var(--nexus-toggle-active-shadow);
+}
+
+/* Outer column behind the orbital hub */
+.nexus-star-field {
+  background:
+    radial-gradient(ellipse 100% 90% at 50% 115%, rgba(0, 55, 60, 0.45) 0%, transparent 58%),
+    radial-gradient(ellipse 70% 55% at 75% 25%, rgba(37, 99, 235, 0.07) 0%, transparent 50%),
+    radial-gradient(ellipse 50% 40% at 18% 35%, rgba(0, 212, 170, 0.06) 0%, transparent 45%),
+    var(--nexus-bg);
+}

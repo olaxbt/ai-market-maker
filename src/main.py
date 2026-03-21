@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import logging
 import os
+import time
 from typing import Any, Dict
 
 import ccxt
@@ -10,6 +11,7 @@ from langgraph.graph import END, StateGraph
 
 from agents.governance.risk_guard import RiskGuardAgent
 from agents.liquidity_management import LiquidityManagementAgent
+from telemetry.logger import LogPublisher, get_log_publisher, set_log_publisher
 from agents.market_scan import MarketScanAgent
 from agents.portfolio_management import PortfolioManagementAgent
 from agents.price_pattern import PricePatternAgent
@@ -171,6 +173,29 @@ def risk_guard(state: State) -> State:
     guard = RiskGuardAgent()
     decision = _run_async(guard.process(state.get("proposal", {})))
     result = {**state, "risk_guard": decision}
+    # Emit agent trace for UI / OpenClaw when LogPublisher is set
+    pub = get_log_publisher()
+    if pub:
+        reasoning = decision.get("reasoning") or {}
+        thought_process = [{"step": 1, "label": "Risk check", "detail": reasoning.get("thought", str(decision))}]
+        veto_status = {
+            "checked_by": "risk-guard",
+            "status": decision.get("status", "APPROVED"),
+            "reason": reasoning.get("thought"),
+        }
+        proposal = state.get("proposal", {})
+        prop = None
+        if isinstance(proposal, dict) and proposal.get("trades"):
+            prop = {"action": "PROPOSAL", "params": proposal}
+        pub.publish(
+            actor_id="risk-guard",
+            role=guard.role,
+            thought_process=thought_process,
+            context={"pair": state.get("ticker"), "signal": None, "confidence": None},
+            proposal=prop,
+            veto_status=veto_status,
+            persona_ref="docs/personas/08_risk_guard.md",
+        )
     logger.debug(f"risk_guard output: {result}")
     return result
 
@@ -282,6 +307,11 @@ def main():
     workflow.add_edge("portfolio_proposal", "risk_guard")
     workflow.add_edge("risk_guard", "portfolio_execute")
     workflow.add_edge("portfolio_execute", END)
+
+    # Telemetry: publish agent traces for UI / OpenClaw when available
+    run_id = f"run-{args.ticker.replace('/', '-')}-{int(time.time())}"
+    publisher = LogPublisher(run_id=run_id)
+    set_log_publisher(publisher)
 
     app = workflow.compile()
     try:

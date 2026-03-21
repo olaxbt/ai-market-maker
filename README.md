@@ -113,6 +113,16 @@ Run the main script (**Trading Mode**, Binance testnet). The workflow generates 
 uv run python src/main.py --ticker BTC/USDT
 ```
 
+## Web UI (Agentic Nexus)
+
+The **`web/`** app is the React (Next.js) UI for real-time **agent thought-chain** transparency (Agentic Nexus / OpenClaw). It shows an **agent thought stream**: each card displays actor, timestamp, thought steps, proposal, and veto status.
+
+```bash
+cd web && npm install && npm run dev
+```
+
+Open http://localhost:3000. Mock traces are served from `/api/traces`; wire to your backend’s telemetry (`LogPublisher`) for live data.
+
 ## Project Structure
 
 ```
@@ -133,6 +143,7 @@ ai-market-maker/
 │   │   ├── technical_indicators.py # Technical analysis
 │   │   ├── sentiment_tools.py      # Sentiment utilities
 │   ├── main.py                     # Main entry point
+├── web/                            # Next.js UI (agent thought stream, OpenClaw-ready)
 ├── uv.toml                         # uv configuration
 ├── .env.example                    # Environment variables
 ├── LICENSE                         # License

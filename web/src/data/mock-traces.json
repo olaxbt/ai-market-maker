@@ -1,0 +1,884 @@
+{
+  "metadata": {
+    "run_id": "run-BTC-USDT-1732000000",
+    "ticker": "BTC/USDT",
+    "status": "LIVE_TRADING",
+    "version": "0.2.0-nexus-nine",
+    "pid": 28491,
+    "kpis": {
+      "pnl_usd": 9951,
+      "win_rate_pct": 65.1,
+      "latency_ms": 3,
+      "kelly_pct": 12.4,
+      "opex_saved": 3900000
+    }
+  },
+  "topology": {
+    "nodes": [
+      {
+        "id": "n1",
+        "actor": "connectivity",
+        "label": "Data Connectivity",
+        "status": "COMPLETED",
+        "summary": "WS health, drift vs NTP, subscription manifest — no invented prices."
+      },
+      {
+        "id": "n2",
+        "actor": "market-scan",
+        "label": "Market Microstructure",
+        "status": "COMPLETED",
+        "summary": "Spread, depth, imbalance, toxicity — L2/L3 features for fusion."
+      },
+      {
+        "id": "n3",
+        "actor": "price-pattern",
+        "label": "Technical Analysis",
+        "status": "COMPLETED",
+        "summary": "Multi-TF regime, levels, pattern candidates; flags timeframe conflicts."
+      },
+      {
+        "id": "n4",
+        "actor": "sentiment",
+        "label": "Sentiment & News",
+        "status": "COMPLETED",
+        "summary": "Headlines + social velocity, event risk, scored with uncertainty."
+      },
+      {
+        "id": "n5",
+        "actor": "quant",
+        "label": "Quant Engine",
+        "status": "COMPLETED",
+        "summary": "Fuses n2–n4 → scorecard, p_hat, attribution, contradiction_index."
+      },
+      {
+        "id": "n6",
+        "actor": "strategy-planner",
+        "label": "Strategy Planner",
+        "status": "ACTIVE",
+        "summary": "Order intent: grid/ladder, POST_ONLY, size & slippage caps."
+      },
+      {
+        "id": "n7",
+        "actor": "risk-guard",
+        "label": "Risk Guard",
+        "status": "PENDING",
+        "summary": "Veto authority: exposure, Kelly, leverage — APPROVE | REJECT | MODIFY."
+      },
+      {
+        "id": "n8",
+        "actor": "compliance",
+        "label": "Compliance Gate",
+        "status": "PENDING",
+        "summary": "Policy pack, allowlist, lineage tags — audit-ready decisions."
+      },
+      {
+        "id": "n9",
+        "actor": "nexus-executor",
+        "label": "Execution Hub",
+        "status": "PENDING",
+        "summary": "Venue routing, fees/latency model, slices & post-trade state."
+      }
+    ],
+    "edges": [
+      {
+        "from": "n1",
+        "to": "n2"
+      },
+      {
+        "from": "n1",
+        "to": "n3"
+      },
+      {
+        "from": "n1",
+        "to": "n4"
+      },
+      {
+        "from": "n2",
+        "to": "n5"
+      },
+      {
+        "from": "n3",
+        "to": "n5"
+      },
+      {
+        "from": "n4",
+        "to": "n5"
+      },
+      {
+        "from": "n5",
+        "to": "n6"
+      },
+      {
+        "from": "n6",
+        "to": "n7"
+      },
+      {
+        "from": "n7",
+        "to": "n8"
+      },
+      {
+        "from": "n8",
+        "to": "n9"
+      }
+    ]
+  },
+  "traces": [
+    {
+      "trace_id": "tx-n1-001",
+      "node_id": "n1",
+      "actor": {
+        "id": "connectivity",
+        "role": "Data Connectivity",
+        "persona": "docs/personas/00_connectivity.md"
+      },
+      "timestamp": "2024-05-20T10:15:21.050Z",
+      "content": {
+        "thought_process": [
+          {
+            "step": 1,
+            "label": "Venue ping",
+            "detail": "Binance WS RTT p50=14ms p99=38ms; OKX REST 200."
+          },
+          {
+            "step": 2,
+            "label": "Clock skew",
+            "detail": "Drift vs NTP +2.1ms (within 10ms budget)."
+          },
+          {
+            "step": 3,
+            "label": "Subscriptions",
+            "detail": "BTCUSDT@depth20@100ms + trade streams armed; replay buffer 2s."
+          }
+        ],
+        "context": {
+          "pair": "BTC/USDT",
+          "signal": "FEEDS_OK",
+          "confidence": 0.99
+        }
+      }
+    },
+    {
+      "trace_id": "tx-n2-001",
+      "node_id": "n2",
+      "parent_id": "tx-n1-001",
+      "actor": {
+        "id": "market-scan",
+        "role": "Market Microstructure",
+        "persona": "docs/personas/01_market_scanner.md"
+      },
+      "timestamp": "2024-05-20T10:15:22.100Z",
+      "content": {
+        "thought_process": [
+          {
+            "step": 1,
+            "label": "Spread",
+            "detail": "spread_bps=1.2 vs 24h median 1.4 — slightly tight."
+          },
+          {
+            "step": 2,
+            "label": "Depth",
+            "detail": "depth_10bps_usd=$38.2M bid / $36.9M ask; imbalance +0.018."
+          },
+          {
+            "step": 3,
+            "label": "Toxicity",
+            "detail": "toxicity_score=0.22 (low); no sweep clusters in last 60s."
+          }
+        ],
+        "context": {
+          "pair": "BTC/USDT",
+          "signal": "LIQUIDITY_STRONG",
+          "confidence": 0.93
+        }
+      }
+    },
+    {
+      "trace_id": "tx-n3-001",
+      "node_id": "n3",
+      "parent_id": "tx-n1-001",
+      "actor": {
+        "id": "price-pattern",
+        "role": "Technical Analysis",
+        "persona": "docs/personas/02_technical.md"
+      },
+      "timestamp": "2024-05-20T10:15:22.800Z",
+      "content": {
+        "thought_process": [
+          {
+            "step": 1,
+            "label": "Regime",
+            "detail": "15m: range; 4h: mild uptrend; ADX 18 (weak trend)."
+          },
+          {
+            "step": 2,
+            "label": "Levels",
+            "detail": "Resistance 69200–69400; support 67800–68100 from VWAP bands."
+          },
+          {
+            "step": 3,
+            "label": "Conflict",
+            "detail": "1m momentum negative while 4h bias positive — contradiction note for Quant."
+          }
+        ],
+        "context": {
+          "pair": "BTC/USDT",
+          "signal": "REGIME_MIXED",
+          "confidence": 0.72
+        }
+      }
+    },
+    {
+      "trace_id": "tx-n4-001",
+      "node_id": "n4",
+      "parent_id": "tx-n1-001",
+      "actor": {
+        "id": "sentiment",
+        "role": "Sentiment & News",
+        "persona": "docs/personas/03_sentiment.md"
+      },
+      "timestamp": "2024-05-20T10:15:23.400Z",
+      "content": {
+        "thought_process": [
+          {
+            "step": 1,
+            "label": "Headlines",
+            "detail": "ETF flow chatter positive; no fresh exchange FUD in top bucket."
+          },
+          {
+            "step": 2,
+            "label": "Score",
+            "detail": "sentiment_score=+0.18 with wide CI (thin macro calendar)."
+          },
+          {
+            "step": 3,
+            "label": "Event risk",
+            "detail": "event_risk=LOW; CPI already digested in prior session."
+          }
+        ],
+        "context": {
+          "pair": "BTC/USDT",
+          "signal": "SENTIMENT_NEUTRAL_PLUS",
+          "confidence": 0.61
+        }
+      }
+    },
+    {
+      "trace_id": "tx-n5-001",
+      "node_id": "n5",
+      "parent_id": "tx-n2-001",
+      "actor": {
+        "id": "quant",
+        "role": "Quant Engine",
+        "persona": "docs/personas/04_quant.md"
+      },
+      "timestamp": "2024-05-20T10:15:24.500Z",
+      "content": {
+        "thought_process": [
+          {
+            "step": 1,
+            "label": "Fusion",
+            "detail": "Microstructure bullish-neutral; TA mixed; sentiment slight positive."
+          },
+          {
+            "step": 2,
+            "label": "Scorecard",
+            "detail": "p_hat=0.58 edge_bps_estimate=3.1 contradiction_index=0.31."
+          },
+          {
+            "step": 3,
+            "label": "Attribution",
+            "detail": "60% micro, 25% TA, 15% sentiment (by marginal Shapley stub)."
+          }
+        ],
+        "formula": {
+          "name": "Logit blend",
+          "latex": "p = \\sigma(w_m z_m + w_t z_t + w_s z_s + b)",
+          "computed": "p_hat = 0.58"
+        },
+        "context": {
+          "pair": "BTC/USDT",
+          "signal": "EDGE_MILD_LONG",
+          "confidence": 0.58
+        }
+      }
+    },
+    {
+      "trace_id": "tx-n6-001",
+      "node_id": "n6",
+      "parent_id": "tx-n5-001",
+      "actor": {
+        "id": "strategy-planner",
+        "role": "Strategy Planner",
+        "persona": "docs/personas/05_strategy.md"
+      },
+      "timestamp": "2024-05-20T10:15:25.600Z",
+      "content": {
+        "thought_process": [
+          {
+            "step": 1,
+            "label": "Inventory",
+            "detail": "Net flat +0.02 BTC equiv; no skew emergency."
+          },
+          {
+            "step": 2,
+            "label": "Grid",
+            "detail": "Widen inner quotes +2 bps on ask side only; keep POST_ONLY."
+          },
+          {
+            "step": 3,
+            "label": "Safety",
+            "detail": "max_slippage_bps=4; cancel stale quotes > 800ms."
+          }
+        ],
+        "proposal": {
+          "action": "ADJUST_GRID",
+          "params": {
+            "symbol": "BTC/USDT",
+            "bid_spacing_bps": 2,
+            "ask_spacing_bps": 4,
+            "size_clip_btc": 0.35,
+            "tif": "POST_ONLY"
+          }
+        },
+        "context": {
+          "pair": "BTC/USDT",
+          "signal": "PROPOSE_GRID_TUNE",
+          "confidence": 0.76
+        }
+      }
+    },
+    {
+      "trace_id": "tx-n7-001",
+      "node_id": "n7",
+      "parent_id": "tx-n6-001",
+      "actor": {
+        "id": "risk-guard",
+        "role": "Risk Guard",
+        "persona": "docs/personas/07_risk_guard.md"
+      },
+      "timestamp": "2024-05-20T10:15:26.200Z",
+      "content": {
+        "thought_process": [
+          {
+            "step": 1,
+            "label": "Gross",
+            "detail": "Gross notional 3.1% of cap; per-symbol 1.8% — OK."
+          },
+          {
+            "step": 2,
+            "label": "Kelly",
+            "detail": "f* suggest 11.2%; desk cap 12% — within band."
+          },
+          {
+            "step": 3,
+            "label": "Leverage",
+            "detail": "Effective lev 3.2x vs limit 5x."
+          }
+        ],
+        "veto_status": {
+          "checked_by": "risk-guard",
+          "status": "APPROVED",
+          "reason": "All gates pass; minor ask widening reduces adverse selection risk."
+        }
+      }
+    },
+    {
+      "trace_id": "tx-n8-001",
+      "node_id": "n8",
+      "parent_id": "tx-n7-001",
+      "actor": {
+        "id": "compliance",
+        "role": "Compliance Gate",
+        "persona": "docs/personas/08_compliance.md"
+      },
+      "timestamp": "2024-05-20T10:15:26.900Z",
+      "content": {
+        "thought_process": [
+          {
+            "step": 1,
+            "label": "Allowlist",
+            "detail": "BTC/USDT on approved symbol map v2024.05."
+          },
+          {
+            "step": 2,
+            "label": "Tags",
+            "detail": "strategy_id=GRID-MM-01; trace lineage tx-n6-001 → tx-n7-001 present."
+          },
+          {
+            "step": 3,
+            "label": "Retention",
+            "detail": "Log append COMPLIANCE_OK with hash chain slot 0x9f2a…c1."
+          }
+        ],
+        "context": {
+          "pair": "BTC/USDT",
+          "signal": "COMPLIANCE_OK",
+          "confidence": 0.97
+        }
+      }
+    },
+    {
+      "trace_id": "tx-n9-001",
+      "node_id": "n9",
+      "parent_id": "tx-n8-001",
+      "actor": {
+        "id": "nexus-executor",
+        "role": "Execution Hub",
+        "persona": "docs/personas/09_execution.md"
+      },
+      "timestamp": "2024-05-20T10:15:27.500Z",
+      "content": {
+        "thought_process": [
+          {
+            "step": 1,
+            "label": "Route",
+            "detail": "Primary Binance; backup OKX if spread > 2.5 bps for > 3s."
+          },
+          {
+            "step": 2,
+            "label": "Slicing",
+            "detail": "Child clips 0.05 BTC; passive first 70% then IOC remainder."
+          },
+          {
+            "step": 3,
+            "label": "Fees",
+            "detail": "Expected maker 2bps / taker 5bps blended ~2.6bps on plan."
+          }
+        ],
+        "context": {
+          "pair": "BTC/USDT",
+          "signal": "EXEC_PLAN_READY",
+          "confidence": 0.88
+        }
+      }
+    },
+    {
+      "trace_id": "tx-n5-002",
+      "node_id": "n5",
+      "parent_id": "tx-n4-001",
+      "actor": {
+        "id": "quant",
+        "role": "Quant Engine",
+        "persona": "docs/personas/04_quant.md"
+      },
+      "timestamp": "2024-05-20T10:15:28.000Z",
+      "content": {
+        "thought_process": [
+          {
+            "step": 1,
+            "label": "Stress",
+            "detail": "Replay 1% gap down: inventory skew hits soft limit in 7 min at current widen."
+          },
+          {
+            "step": 2,
+            "label": "Recommendation",
+            "detail": "Suggest reduce ask size_clip 0.35 → 0.28 if vol percentile > 80."
+          }
+        ],
+        "context": {
+          "pair": "BTC/USDT",
+          "signal": "STRESS_NOTE",
+          "confidence": 0.55
+        }
+      }
+    },
+    {
+      "trace_id": "tx-n6-002",
+      "node_id": "n6",
+      "parent_id": "tx-n5-002",
+      "actor": {
+        "id": "strategy-planner",
+        "role": "Strategy Planner",
+        "persona": "docs/personas/05_strategy.md"
+      },
+      "timestamp": "2024-05-20T10:15:28.600Z",
+      "content": {
+        "thought_process": [
+          {
+            "step": 1,
+            "label": "Throttle",
+            "detail": "If vol_pct > 80, halve new quote size for 5m window."
+          }
+        ],
+        "proposal": {
+          "action": "CONFIG_FLAG",
+          "params": {
+            "flag": "VOL_THROTTLE",
+            "enable": true,
+            "window_s": 300
+          }
+        },
+        "context": {
+          "pair": "BTC/USDT",
+          "signal": "DEFENSIVE_MODE",
+          "confidence": 0.7
+        }
+      }
+    }
+  ],
+  "agent_prompts": [
+    {
+      "node_id": "n1",
+      "actor_id": "connectivity",
+      "system_prompt": "You are Data Connectivity for an institutional crypto market-making stack. You own exchange sessions, symbol normalization, websocket subscriptions, and clock skew. Never invent prices; cite feed latency and staleness. Output structured health: venues_ok, drift_ms, subscriptions, last_tick_age_ms. If a venue is degraded, propose failover order. Refuse actions that would double-subscribe or cross-wire accounts.",
+      "task_prompt": "For ticker {{ticker}} and run {{run_id}}: verify all feeds, print subscription manifest, measure clock drift vs NTP, and emit CONNECTIVITY_REPORT v1.",
+      "cot_enabled": false,
+      "model": "gpt-4.1",
+      "temperature": 0.15,
+      "max_tokens": 4096,
+      "tools": [
+        "mcp.exchange.health",
+        "mcp.clock.ntp_delta",
+        "mcp.symbols.normalize"
+      ]
+    },
+    {
+      "node_id": "n2",
+      "actor_id": "market-scan",
+      "system_prompt": "You are Market Microstructure. Analyze L2/L3, spread dynamics, queue position estimates, and short-horizon impact. You produce machine-readable features: mid, spread_bps, depth_10bps_usd, imbalance, microprice_shift, toxicity_score. Flag wash-risk and iceberg suspicion. Do not assert directional alpha; describe microstructure state only.",
+      "task_prompt": "Using the latest orderbook snapshots for {{ticker}}, compute microstructure features for the last 5m window and highlight anomalies vs 24h baseline.",
+      "cot_enabled": false,
+      "model": "gpt-4.1",
+      "temperature": 0.15,
+      "max_tokens": 4096,
+      "tools": [
+        "mcp.orderbook.snapshot",
+        "mcp.depth.aggregate"
+      ]
+    },
+    {
+      "node_id": "n3",
+      "actor_id": "price-pattern",
+      "system_prompt": "You are Technical Analysis in a systematic desk context. Multi-timeframe regime labels, volatility buckets, and pattern hypotheses with confidence. Always separate signal from narrative. Emit: regime, key_levels, pattern_candidates[], conflict_notes if timeframes disagree. No trade instructions—hand off scores to Quant.",
+      "task_prompt": "Evaluate {{ticker}} across 1m/15m/4h: regime, volatility percentile, and pattern candidates. Note conflicts between short and medium horizon.",
+      "cot_enabled": false,
+      "model": "gpt-4.1",
+      "temperature": 0.15,
+      "max_tokens": 4096,
+      "tools": [
+        "mcp.ta.features",
+        "mcp.candles.ohlcv"
+      ]
+    },
+    {
+      "node_id": "n4",
+      "actor_id": "sentiment",
+      "system_prompt": "You are Sentiment & News. Ingest headlines, social velocity, and entity-linked events. Score sentiment with uncertainty; track event risk (ETF flows, macro prints, exchange incidents). Output: sentiment_score [-1,1], event_risk, source_mix, caveats. Penalize low-source diversity. Never fabricate citations.",
+      "task_prompt": "Scan last 2h of ranked news + social velocity for {{ticker}} and BTC beta. Return sentiment_score, event_risk, and top 3 drivers with uncertainty.",
+      "cot_enabled": false,
+      "model": "gpt-4.1",
+      "temperature": 0.35,
+      "max_tokens": 4096,
+      "tools": [
+        "mcp.news.stream",
+        "mcp.social.velocity"
+      ]
+    },
+    {
+      "node_id": "n5",
+      "actor_id": "quant",
+      "system_prompt": "You are the Quant fusion engine. Combine microstructure, TA, and sentiment into a single calibrated scorecard: p_hat, edge_bps_estimate, half_life_s_hint, feature_attribution. Use explicit assumptions and decay. Emit JSON-friendly blocks for Strategy Planner. If inputs conflict, surface contradiction_index and request human review thresholds.",
+      "task_prompt": "Fuse inputs from n2–n4 into scorecard v2: p_hat, edge_bps_estimate, attribution vector, contradiction_index. Flag if confidence < 0.55.",
+      "cot_enabled": false,
+      "model": "gpt-4.1",
+      "temperature": 0.15,
+      "max_tokens": 4096,
+      "tools": [
+        "mcp.quant.fuse",
+        "mcp.stats.calibrate"
+      ]
+    },
+    {
+      "node_id": "n6",
+      "actor_id": "strategy-planner",
+      "system_prompt": "You are Strategy Planner. Given scorecard and inventory, propose concrete order intent: side, price rules, size, time-in-force, venue preference. Respect min_notional and tick size. You must output an actionable proposal object and rationale chain. Never bypass Risk or Compliance—your output is input to governance agents.",
+      "task_prompt": "Given scorecard and current inventory, propose the next grid/ladder adjustment or flat decision. Include LIMIT/POST_ONLY params and max_slippage_bps.",
+      "cot_enabled": true,
+      "model": "gpt-4.1",
+      "temperature": 0.15,
+      "max_tokens": 4096,
+      "tools": [
+        "mcp.strategy.grid",
+        "mcp.inventory.read"
+      ]
+    },
+    {
+      "node_id": "n7",
+      "actor_id": "risk-guard",
+      "system_prompt": "You are Risk Guard with veto authority. Enforce exposure, leverage, concentration, drawdown gates, and Kelly-derived bounds. You may APPROVE, REJECT, or MODIFY proposals with explicit numeric reasons. Log pre-trade checks as thought steps. If data missing, default to conservative hold.",
+      "task_prompt": "Evaluate the Strategy proposal against limits: max_gross_usd, max_symbol_pct, max_leverage, Kelly cap. Return APPROVE | REJECT | MODIFY with numbers.",
+      "cot_enabled": true,
+      "model": "gpt-4.1",
+      "temperature": 0.15,
+      "max_tokens": 4096,
+      "tools": [
+        "mcp.risk.limits",
+        "mcp.portfolio.exposure"
+      ]
+    },
+    {
+      "node_id": "n8",
+      "actor_id": "compliance",
+      "system_prompt": "You are Compliance Gate. Enforce desk policy: allowed instruments, jurisdictions, reporting flags, and audit metadata. Check that proposal tags include strategy_id and trace lineage. You may block or require amendment. Output compliance_decision and retention hints. No legal advice—policy rules only.",
+      "task_prompt": "Validate proposal against policy pack v3: instrument allowlist, client_tag, and trace_id lineage. Append compliance_decision JSON.",
+      "cot_enabled": false,
+      "model": "gpt-4.1",
+      "temperature": 0.15,
+      "max_tokens": 4096,
+      "tools": [
+        "mcp.policy.pack",
+        "mcp.audit.append"
+      ]
+    },
+    {
+      "node_id": "n9",
+      "actor_id": "nexus-executor",
+      "system_prompt": "You are Execution Hub. Route to venues with cost model: fees, latency, fill probability. Produce child orders, cancel/replace logic, and post-trade summary. Minimize information leakage in logs. On partial fills, reconcile and emit execution_state. Never execute without prior APPROVED risk and compliance states in context.",
+      "task_prompt": "If upstream states are APPROVED, build venue routing plan and simulated slippage curve; else return NOOP with reason. Summarize expected fees.",
+      "cot_enabled": false,
+      "model": "gpt-4.1",
+      "temperature": 0.15,
+      "max_tokens": 4096,
+      "tools": [
+        "mcp.router.quote",
+        "mcp.execution.slice"
+      ]
+    }
+  ],
+  "message_log": [
+    {
+      "seq": 1,
+      "ts": "2024-05-20T10:15:20.100Z",
+      "node_id": "n1",
+      "actor_id": "connectivity",
+      "kind": "status",
+      "message": "RUN_START: binding feeds for BTC/USDT",
+      "trace_id": null
+    },
+    {
+      "seq": 2,
+      "ts": "2024-05-20T10:15:20.220Z",
+      "node_id": "n1",
+      "actor_id": "connectivity",
+      "kind": "tool",
+      "message": "mcp.exchange.health → OK binance,okx",
+      "trace_id": null
+    },
+    {
+      "seq": 3,
+      "ts": "2024-05-20T10:15:20.900Z",
+      "node_id": "n1",
+      "actor_id": "connectivity",
+      "kind": "thought",
+      "message": "Clock drift +2.1ms — within budget",
+      "trace_id": "tx-n1-001"
+    },
+    {
+      "seq": 4,
+      "ts": "2024-05-20T10:15:21.050Z",
+      "node_id": "n1",
+      "actor_id": "connectivity",
+      "kind": "handoff",
+      "message": "CONNECTIVITY_REPORT v1 emitted → market-scan",
+      "trace_id": "tx-n1-001"
+    },
+    {
+      "seq": 5,
+      "ts": "2024-05-20T10:15:21.200Z",
+      "node_id": "n2",
+      "actor_id": "market-scan",
+      "kind": "status",
+      "message": "Subscribed to depth20@100ms + trades",
+      "trace_id": null
+    },
+    {
+      "seq": 6,
+      "ts": "2024-05-20T10:15:21.950Z",
+      "node_id": "n2",
+      "actor_id": "market-scan",
+      "kind": "thought",
+      "message": "spread_bps=1.2 depth_10bps_usd bid-heavy +0.018",
+      "trace_id": "tx-n2-001"
+    },
+    {
+      "seq": 7,
+      "ts": "2024-05-20T10:15:22.100Z",
+      "node_id": "n2",
+      "actor_id": "market-scan",
+      "kind": "handoff",
+      "message": "Microstructure features → quant",
+      "trace_id": "tx-n2-001"
+    },
+    {
+      "seq": 8,
+      "ts": "2024-05-20T10:15:22.200Z",
+      "node_id": "n3",
+      "actor_id": "price-pattern",
+      "kind": "thought",
+      "message": "15m range vs 4h uptrend — flag contradiction",
+      "trace_id": "tx-n3-001"
+    },
+    {
+      "seq": 9,
+      "ts": "2024-05-20T10:15:22.800Z",
+      "node_id": "n3",
+      "actor_id": "price-pattern",
+      "kind": "handoff",
+      "message": "TA bundle → quant",
+      "trace_id": "tx-n3-001"
+    },
+    {
+      "seq": 10,
+      "ts": "2024-05-20T10:15:22.500Z",
+      "node_id": "n4",
+      "actor_id": "sentiment",
+      "kind": "tool",
+      "message": "mcp.news.stream batch 120 headlines scored",
+      "trace_id": null
+    },
+    {
+      "seq": 11,
+      "ts": "2024-05-20T10:15:23.400Z",
+      "node_id": "n4",
+      "actor_id": "sentiment",
+      "kind": "thought",
+      "message": "sentiment_score=+0.18 event_risk LOW",
+      "trace_id": "tx-n4-001"
+    },
+    {
+      "seq": 12,
+      "ts": "2024-05-20T10:15:23.500Z",
+      "node_id": "n4",
+      "actor_id": "sentiment",
+      "kind": "handoff",
+      "message": "Sentiment → quant",
+      "trace_id": "tx-n4-001"
+    },
+    {
+      "seq": 13,
+      "ts": "2024-05-20T10:15:24.200Z",
+      "node_id": "n5",
+      "actor_id": "quant",
+      "kind": "thought",
+      "message": "Fusing n2/n3/n4 — p_hat=0.58 contradiction_index=0.31",
+      "trace_id": "tx-n5-001"
+    },
+    {
+      "seq": 14,
+      "ts": "2024-05-20T10:15:24.500Z",
+      "node_id": "n5",
+      "actor_id": "quant",
+      "kind": "handoff",
+      "message": "Scorecard v2 → strategy-planner",
+      "trace_id": "tx-n5-001"
+    },
+    {
+      "seq": 15,
+      "ts": "2024-05-20T10:15:25.100Z",
+      "node_id": "n6",
+      "actor_id": "strategy-planner",
+      "kind": "thought",
+      "message": "Grid tune: widen ask +2bps POST_ONLY",
+      "trace_id": "tx-n6-001"
+    },
+    {
+      "seq": 16,
+      "ts": "2024-05-20T10:15:25.600Z",
+      "node_id": "n6",
+      "actor_id": "strategy-planner",
+      "kind": "handoff",
+      "message": "ADJUST_GRID proposal → risk-guard",
+      "trace_id": "tx-n6-001"
+    },
+    {
+      "seq": 17,
+      "ts": "2024-05-20T10:15:26.050Z",
+      "node_id": "n7",
+      "actor_id": "risk-guard",
+      "kind": "thought",
+      "message": "Gross 3.1% Kelly 11.2% — APPROVED",
+      "trace_id": "tx-n7-001"
+    },
+    {
+      "seq": 18,
+      "ts": "2024-05-20T10:15:26.200Z",
+      "node_id": "n7",
+      "actor_id": "risk-guard",
+      "kind": "handoff",
+      "message": "Risk OK → compliance",
+      "trace_id": "tx-n7-001"
+    },
+    {
+      "seq": 19,
+      "ts": "2024-05-20T10:15:26.500Z",
+      "node_id": "n8",
+      "actor_id": "compliance",
+      "kind": "thought",
+      "message": "Allowlist + lineage OK",
+      "trace_id": "tx-n8-001"
+    },
+    {
+      "seq": 20,
+      "ts": "2024-05-20T10:15:26.900Z",
+      "node_id": "n8",
+      "actor_id": "compliance",
+      "kind": "handoff",
+      "message": "COMPLIANCE_OK → execution",
+      "trace_id": "tx-n8-001"
+    },
+    {
+      "seq": 21,
+      "ts": "2024-05-20T10:15:27.200Z",
+      "node_id": "n9",
+      "actor_id": "nexus-executor",
+      "kind": "thought",
+      "message": "Route Binance primary; clip 0.05 BTC",
+      "trace_id": "tx-n9-001"
+    },
+    {
+      "seq": 22,
+      "ts": "2024-05-20T10:15:27.500Z",
+      "node_id": "n9",
+      "actor_id": "nexus-executor",
+      "kind": "status",
+      "message": "EXEC_PLAN_READY (simulation)",
+      "trace_id": "tx-n9-001"
+    },
+    {
+      "seq": 23,
+      "ts": "2024-05-20T10:15:27.800Z",
+      "node_id": "n5",
+      "actor_id": "quant",
+      "kind": "thought",
+      "message": "Stress replay note: reduce clip if vol>80pct",
+      "trace_id": "tx-n5-002"
+    },
+    {
+      "seq": 24,
+      "ts": "2024-05-20T10:15:28.600Z",
+      "node_id": "n6",
+      "actor_id": "strategy-planner",
+      "kind": "thought",
+      "message": "VOL_THROTTLE flag armed 300s",
+      "trace_id": "tx-n6-002"
+    },
+    {
+      "seq": 25,
+      "ts": "2024-05-20T10:15:29.000Z",
+      "node_id": "n1",
+      "actor_id": "connectivity",
+      "kind": "status",
+      "message": "HEARTBEAT tick_age=42ms",
+      "trace_id": null
+    },
+    {
+      "seq": 26,
+      "ts": "2024-05-20T10:15:29.200Z",
+      "node_id": "n2",
+      "actor_id": "market-scan",
+      "kind": "status",
+      "message": "BOOK_REFRESH 50ms",
+      "trace_id": null
+    }
+  ]
+}

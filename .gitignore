@@ -14,6 +14,10 @@ venv/
 .vscode/
 .idea/
 
+# Web (Next.js)
+web/.next/
+web/node_modules/
+
 # Misc
 *.log
 .DS_Store
