@@ -44,7 +44,7 @@ requires-dist = [
     { name = "pycoingecko", specifier = ">=3.2.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "python-dotenv", specifier = ">=1.1.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12.4" },
     { name = "statsmodels", specifier = ">=0.14.4" },
     { name = "ta-lib", specifier = ">=0.6.3" },
     { name = "tweepy", specifier = ">=4.15.0" },

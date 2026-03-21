@@ -2,6 +2,9 @@
 __pycache__/
 *.py[cod]
 *.pyc
+build/
+dist/
+*.egg-info/
 
 # Virtual environments
 .venv/

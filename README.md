@@ -1,10 +1,11 @@
 # AI Crypto Market Maker
 
-**AI-Market-Maker** is an open-source, multi-agent trading stack for building fund-style workflows: research → signals → proposal → risk veto → execution. The edge is **separation of concerns** (specialist desks), **governance** (risk can halt execution), and **traceability** (personas + structured reasoning so decisions are explainable and auditable).
+**AI-Market-Maker** is an open-source project to simulate a cryptocurrency market-making system using AI agents. It is built for **agentic trading** in a **hedge fund**-style setup: multiple specialist agents (desks) coordinating through a shared workflow with a hard risk gate before execution—patterned after **hedge funds** that separate research, alpha, risk, and execution behind formal controls. The repo is **OpenClaw**-oriented—skill and tool metadata live under `openclaw/` so OpenClaw-style hosts can discover entrypoints, contracts, and future Nexus tools. Beyond simulation, it is a multi-agent stack for fund-style workflows: research → signals → proposal → risk veto → execution. The edge is **separation of concerns** (specialist desks), **governance** (risk can halt execution), and **traceability** (personas + structured reasoning so decisions are explainable and auditable).
 
 ## Goals
 
 - **Trading Mode (now)**: Fetch real-time market data, generate signals, and place testnet trades gated by Risk Guard.
+- **Agentic trading & OpenClaw**: Package skills and planned tools under `openclaw/` (`SKILL.md`, `manifest.json`) so OpenClaw-compatible hosts can drive and audit **agentic trading** workflows.
 - **Platform direction**: Treat agents as desks with clear contracts, reasoning logs, and measurable KPIs.
 - Support future features like arbitrage, sentiment analysis, and risk management.
   Note: This project is an experimental simulation currently in development.
@@ -27,6 +28,8 @@
 - **Standard interfaces**: Agents can follow a unified SOP contract (**Input → Process → Output → Feedback**) via `src/agents/base_agent.py`.
 - **Governance (Veto Power)**: `Risk Guard` is a governance layer with **final say** to stop unsafe execution.
 - **Personas included**: See `docs/personas/` for the 9 agent persona definitions.
+- **Architecture map**: `docs/persona_architecture_map.md` (Python graph vs Nexus `n1`–`n9` UI).
+- **OpenClaw packaging (P1)**: `openclaw/SKILL.md` + `openclaw/manifest.json` (tool IDs and contracts for future adapters).
 
 ## Hedge-fund style workflow (current)
 
@@ -113,9 +116,9 @@ Run the main script (**Trading Mode**, Binance testnet). The workflow generates 
 uv run python src/main.py --ticker BTC/USDT
 ```
 
-## Web UI (Agentic Nexus)
+## Web UI (Agentic Nexus, OpenClaw-oriented)
 
-The **`web/`** app is the React (Next.js) UI for real-time **agent thought-chain** transparency (Agentic Nexus / OpenClaw). It shows an **agent thought stream**: each card displays actor, timestamp, thought steps, proposal, and veto status.
+The **`web/`** app is the React (Next.js) dashboard for **agentic trading** visibility: real-time **agent thought-chain** transparency (Agentic Nexus) and payloads shaped for **OpenClaw**-style live canvases. Each card shows actor, timestamp, thought steps, proposal, and veto status.
 
 ```bash
 cd web && npm install && npm run dev

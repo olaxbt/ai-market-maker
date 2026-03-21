@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "skill_id": "ai-market-maker",
+  "name": "AI Market Maker (Agentic Hedge Fund OS)",
+  "version": "0.1.0",
+  "summary": "Multi-agent LangGraph workflow: research desks → portfolio proposal → Risk Guard veto → execution. Emits structured traces for Nexus / OpenClaw UIs.",
+  "entrypoints": {
+    "workflow_cli": {
+      "command": "python -m src.main",
+      "cwd": "repository_root",
+      "env": ["BINANCE_API_KEY", "BINANCE_API_SECRET", "OPENAI_API_KEY"]
+    },
+    "personas": "docs/personas/",
+    "telemetry": "src/telemetry/logger.py"
+  },
+  "payload_contracts": {
+    "agent_trace": "schema/agent_trace.json",
+    "nexus_payload": "schema/nexus_payload.json"
+  },
+  "tools": [
+    {
+      "name": "nexus.get_portfolio_health",
+      "description": "Account exposure, balances, and risk caps (NexusAdapter / future).",
+      "status": "planned",
+      "phase": "P3"
+    },
+    {
+      "name": "nexus.place_smart_order",
+      "description": "TWAP/VWAP or guarded market order via Nexus bridge (future).",
+      "status": "planned",
+      "phase": "P3"
+    },
+    {
+      "name": "nexus.fetch_market_depth",
+      "description": "Order book depth for slippage estimates (future).",
+      "status": "planned",
+      "phase": "P3"
+    }
+  ],
+  "agents": {
+    "topology_node_prefix": "n",
+    "count": 9,
+    "persona_glob": "docs/personas/*.md"
+  },
+  "documentation": [
+    "docs/persona_architecture_map.md",
+    "docs/agent_trace_and_telemetry.md"
+  ]
+}
