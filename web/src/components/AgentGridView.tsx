@@ -71,22 +71,41 @@ export function AgentGridView({ nodes, edges = [], traces, agentPrompts, selecte
           const sink = isPipelineSink(n.id, edges);
           const avatarBorder = runtimeAvatarBorder[runtime] ?? runtimeAvatarBorder.STANDBY;
           const nowPill = runtimeNowPill[runtime] ?? runtimeNowPill.STANDBY;
+          const isRunning = runtime === "RUNNING";
+          const runningHighlight =
+            !selected &&
+            isRunning &&
+            "border-[var(--nexus-glow)]/28 bg-[var(--nexus-glow)]/[0.045] shadow-[inset_0_0_0_1px_rgba(0,212,170,0.1),0_0_22px_rgba(0,212,170,0.06)]";
           return (
             <button
               key={n.id}
               type="button"
               aria-pressed={selected}
-              aria-label={selected ? "Close agent detail" : `Open ${n.label} in side panel`}
+              data-active-runtime={isRunning ? "true" : undefined}
+              aria-label={
+                selected
+                  ? "Close agent detail"
+                  : isRunning
+                    ? `Open ${n.label} in side panel (running)`
+                    : `Open ${n.label} in side panel`
+              }
               onClick={() => onSelectAgent(selected ? null : n.id)}
               className={`group relative nexus-agent-card flex min-h-[165px] flex-col overflow-hidden rounded-xl p-2.5 text-left transition-[border-color,box-shadow,background-color] duration-200 sm:p-3 lg:p-4 ${
                 selected
                   ? "border-[var(--nexus-glow)]/40 bg-[var(--nexus-glow)]/[0.07] shadow-[inset_0_0_0_1px_rgba(0,212,170,0.12),0_0_18px_rgba(0,212,170,0.07)]"
-                  : "hover:border-[var(--nexus-glow)]/28 hover:shadow-[0_0_16px_rgba(0,212,170,0.06)]"
+                  : runningHighlight
+                    ? runningHighlight
+                    : "hover:border-[var(--nexus-glow)]/28 hover:shadow-[0_0_16px_rgba(0,212,170,0.06)]"
               }`}
             >
               {selected ? (
                 <span
                   className="absolute left-0 top-0 h-full w-1 bg-[var(--nexus-glow)] shadow-[0_0_12px_rgba(0,212,170,0.9)]"
+                  aria-hidden
+                />
+              ) : isRunning ? (
+                <span
+                  className="absolute left-0 top-0 h-full w-0.5 bg-emerald-400/70 shadow-[0_0_10px_rgba(52,211,153,0.65)]"
                   aria-hidden
                 />
               ) : null}
@@ -95,7 +114,13 @@ export function AgentGridView({ nodes, edges = [], traces, agentPrompts, selecte
                 <div className="flex min-w-0 items-center gap-2">
                   <div
                     className={`relative flex h-10 w-10 items-center justify-center rounded-full border ${avatarBorder} overflow-hidden`}
-                    style={selected ? { boxShadow: "0 0 0 1px rgba(0,212,170,0.35), 0 0 18px rgba(0,212,170,0.10)" } : undefined}
+                    style={
+                      selected
+                        ? { boxShadow: "0 0 0 1px rgba(0,212,170,0.35), 0 0 18px rgba(0,212,170,0.10)" }
+                        : isRunning
+                          ? { boxShadow: "0 0 0 1px rgba(52,211,153,0.28), 0 0 14px rgba(16,185,129,0.12)" }
+                          : undefined
+                    }
                     aria-hidden
                   >
                     <Image
@@ -109,7 +134,11 @@ export function AgentGridView({ nodes, edges = [], traces, agentPrompts, selecte
                   <div className="min-w-0">
                     <div
                       className={`truncate font-mono text-sm font-semibold leading-tight transition-colors ${
-                        selected ? "text-[var(--nexus-glow)] nexus-glow-text" : "text-[var(--nexus-text)]"
+                        selected
+                          ? "text-[var(--nexus-glow)] nexus-glow-text"
+                          : isRunning
+                            ? "text-emerald-200/95"
+                            : "text-[var(--nexus-text)]"
                       }`}
                     >
                       {n.label}
@@ -120,7 +149,7 @@ export function AgentGridView({ nodes, edges = [], traces, agentPrompts, selecte
                     <div className="mt-1 h-0.5 w-20 overflow-hidden rounded bg-transparent">
                       <div
                         className={`h-full origin-left rounded bg-gradient-to-r from-[var(--nexus-glow)]/70 to-transparent transition-transform duration-300 ${
-                          selected ? "scale-x-100 animate-pulse" : "scale-x-0"
+                          selected || isRunning ? "scale-x-100 animate-pulse" : "scale-x-0"
                         }`}
                       />
                     </div>

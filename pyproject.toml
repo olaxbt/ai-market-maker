@@ -9,6 +9,7 @@ dependencies = [
     "langgraph>=0.4.7",
     "pandas>=2.2.3",
     "langchain>=0.3.25",
+    "langchain-core>=0.3.81",
     "python-dotenv>=1.1.0",
     "tweepy>=4.15.0",
     "openai>=1.82.0",

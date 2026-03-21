@@ -18,6 +18,9 @@ export default function NexusPage() {
   const streamRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
+  const agentsAutoOpenedRef = useRef(false);
+  const prevViewModeRef = useRef<NexusViewMode>(viewMode);
+
   const metadata = payload?.metadata ?? null;
   const topology = useMemo(
     () => payload?.topology ?? EMPTY_TOPOLOGY,
@@ -49,8 +52,21 @@ export default function NexusPage() {
   }, [payload?.agent_prompts, selectedAgentId]);
 
   useEffect(() => {
-    if (viewMode !== "grid") setSelectedAgentId(null);
+    const leftGrid = prevViewModeRef.current === "grid" && viewMode !== "grid";
+    prevViewModeRef.current = viewMode;
+    if (leftGrid) {
+      setSelectedAgentId(null);
+      agentsAutoOpenedRef.current = false;
+    }
   }, [viewMode]);
+
+  useEffect(() => {
+    if (viewMode !== "grid" || streaming || topology.nodes.length === 0) return;
+    if (agentsAutoOpenedRef.current) return;
+    const activeId = topology.nodes.find((n) => n.status === "ACTIVE")?.id ?? null;
+    if (activeId) setSelectedAgentId(activeId);
+    agentsAutoOpenedRef.current = true;
+  }, [viewMode, streaming, topology.nodes]);
 
   const viewModeTitle =
     viewMode === "nexus"
