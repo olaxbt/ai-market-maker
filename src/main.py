@@ -11,7 +11,6 @@ from langgraph.graph import END, StateGraph
 
 from agents.governance.risk_guard import RiskGuardAgent
 from agents.liquidity_management import LiquidityManagementAgent
-from telemetry.logger import LogPublisher, get_log_publisher, set_log_publisher
 from agents.market_scan import MarketScanAgent
 from agents.portfolio_management import PortfolioManagementAgent
 from agents.price_pattern import PricePatternAgent
@@ -20,6 +19,7 @@ from agents.risk_management import RiskManagementAgent
 from agents.sentiment import SentimentAgent
 from agents.stat_arb import StatArbAgent
 from agents.valuation import ValuationAgent
+from telemetry.logger import LogPublisher, get_log_publisher, set_log_publisher
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -177,7 +177,9 @@ def risk_guard(state: State) -> State:
     pub = get_log_publisher()
     if pub:
         reasoning = decision.get("reasoning") or {}
-        thought_process = [{"step": 1, "label": "Risk check", "detail": reasoning.get("thought", str(decision))}]
+        thought_process = [
+            {"step": 1, "label": "Risk check", "detail": reasoning.get("thought", str(decision))}
+        ]
         veto_status = {
             "checked_by": "risk-guard",
             "status": decision.get("status", "APPROVED"),

@@ -137,7 +137,9 @@ class FlowEvent:
         **extra: Any,
     ) -> "FlowEvent":
         ts = datetime.now(timezone.utc).isoformat()
-        entry = ReasoningEntry(agent=agent, role=role, thought=thought, decision=decision, extra=dict(extra))
+        entry = ReasoningEntry(
+            agent=agent, role=role, thought=thought, decision=decision, extra=dict(extra)
+        )
         return cls(kind=FlowEventKind.REASONING, ts=ts, run_id=run_id, payload=entry.to_dict())
 
     @classmethod
@@ -150,7 +152,9 @@ class FlowEvent:
         **extra: Any,
     ) -> "FlowEvent":
         ts = datetime.now(timezone.utc).isoformat()
-        p = RiskGuardPayload(status=status, risk_score=risk_score, reasoning=reasoning, extra=dict(extra))
+        p = RiskGuardPayload(
+            status=status, risk_score=risk_score, reasoning=reasoning, extra=dict(extra)
+        )
         return cls(kind=FlowEventKind.RISK_GUARD, ts=ts, run_id=run_id, payload=p.to_dict())
 
     @classmethod

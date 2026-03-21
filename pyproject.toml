@@ -28,7 +28,9 @@ dev = [
 target-version = "py311"
 line-length = 100
 exclude = [
-    ".venv"
+    ".venv",
+    "build",
+    "dist",
 ]
 
 [tool.ruff.lint]

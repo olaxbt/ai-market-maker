@@ -76,7 +76,11 @@ class LogPublisher:
             pair=context.get("pair") if context else None,
             signal=context.get("signal") if context else None,
             confidence=context.get("confidence") if context else None,
-            extra={k: v for k, v in (context or {}).items() if k not in ("pair", "signal", "confidence")},
+            extra={
+                k: v
+                for k, v in (context or {}).items()
+                if k not in ("pair", "signal", "confidence")
+            },
         )
         steps = [
             ThoughtStep(
@@ -88,7 +92,9 @@ class LogPublisher:
         ]
         prop = None
         if proposal:
-            prop = TraceProposal(action=proposal.get("action", ""), params=proposal.get("params", {}))
+            prop = TraceProposal(
+                action=proposal.get("action", ""), params=proposal.get("params", {})
+            )
         veto = None
         if veto_status:
             veto = TraceVetoStatus(
@@ -137,7 +143,11 @@ class LogPublisher:
         Build thought_process from BaseAgent-style memory (agent, role, thought, decision).
         """
         thought_process = [
-            {"step": i + 1, "label": m.get("thought", "")[:50] or "Step", "detail": m.get("thought", "")}
+            {
+                "step": i + 1,
+                "label": m.get("thought", "")[:50] or "Step",
+                "detail": m.get("thought", ""),
+            }
             for i, m in enumerate(memory)
         ]
         if not thought_process:
