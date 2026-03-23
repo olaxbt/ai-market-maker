@@ -29,6 +29,7 @@
 - **Governance (Veto Power)**: `Risk Guard` is a governance layer with **final say** to stop unsafe execution.
 - **Personas included**: See `docs/personas/` for the 9 agent persona definitions.
 - **Architecture map**: `docs/persona_architecture_map.md` (Python graph vs Nexus `n1`–`n9` UI).
+- **LangGraph contract**: `docs/langgraph-workflow.md` (`HedgeFundState`, conditional risk edge, node naming).
 - **OpenClaw packaging (P1)**: `openclaw/SKILL.md` + `openclaw/manifest.json` (tool IDs and contracts for future adapters).
 
 ## Hedge-fund style workflow (current)
@@ -113,7 +114,7 @@ TWITTER_BEARER_TOKEN=your_twitter_bearer_token
 Run the main script (**Trading Mode**, Binance testnet). The workflow generates a **portfolio proposal**, runs it through **Risk Guard**, and executes only if **APPROVED**:
 
 ```
-uv run python src/main.py --ticker BTC/USDT
+uv run python src/main.py
 ```
 
 ## Web UI (Agentic Nexus, OpenClaw-oriented)
