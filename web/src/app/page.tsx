@@ -12,6 +12,7 @@ const EMPTY_TOPOLOGY: Topology = { nodes: [], edges: [] };
 
 export default function NexusPage() {
   const { payload, loading: streaming, error: loadError } = useNexusPayload();
+  const [hubRevealDone, setHubRevealDone] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<NexusViewMode>("nexus");
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -85,6 +86,15 @@ export default function NexusPage() {
     if (el) el.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [selectedNodeId, tracesToShow]);
 
+  const readyToReveal = Boolean(payload) || (!streaming && Boolean(loadError));
+  useEffect(() => {
+    // Never "un-reveal" once visible. If intro callback is missed for any reason,
+    // force reveal after a short watchdog timeout.
+    if (!readyToReveal || hubRevealDone) return;
+    const t = window.setTimeout(() => setHubRevealDone(true), 2800);
+    return () => clearTimeout(t);
+  }, [readyToReveal, hubRevealDone]);
+
   return (
     <div className="min-h-screen flex flex-col nexus-bg lg:h-screen lg:min-h-0 lg:overflow-hidden">
       <NexusConsoleHeader
@@ -127,6 +137,9 @@ export default function NexusPage() {
           tracesToShow={tracesToShow}
           streamRef={streamRef}
           setCardRef={setCardRef}
+          readyToReveal={readyToReveal}
+          revealDone={hubRevealDone}
+          onIntroDone={() => setHubRevealDone(true)}
         />
       )}
 

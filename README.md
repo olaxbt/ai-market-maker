@@ -117,6 +117,20 @@ Run the main script (**Trading Mode**, Binance testnet). The workflow generates 
 uv run python src/main.py
 ```
 
+### One-command local stack (recommended)
+
+Start API streaming + strategy loop + web in one terminal:
+
+```bash
+./start.sh
+```
+
+Optional env knobs:
+
+```bash
+MODE=paper TICKER=BTC/USDT FLOW_API_PORT=8001 WEB_PORT=3000 RUN_STRATEGY=1 STRATEGY_INTERVAL_SEC=20 ./start.sh
+```
+
 ## Web UI (Agentic Nexus, OpenClaw-oriented)
 
 The **`web/`** app is the React (Next.js) dashboard for **agentic trading** visibility: real-time **agent thought-chain** transparency (Agentic Nexus) and payloads shaped for **OpenClaw**-style live canvases. Each card shows actor, timestamp, thought steps, proposal, and veto status.
@@ -126,6 +140,18 @@ cd web && npm install && npm run dev
 ```
 
 Open http://localhost:3000. Mock traces are served from `/api/traces`; wire to your backend’s telemetry (`LogPublisher`) for live data.
+
+To consume live Python flow events manually, run the stream server:
+
+```bash
+uv run python -m uvicorn src.api.main:app --reload --port 8001
+```
+
+Then start the web app with:
+
+```bash
+FLOW_API_BASE_URL=http://localhost:8001 NEXT_PUBLIC_FLOW_WS_URL=ws://localhost:8001 npm run dev
+```
 
 ## Project Structure
 

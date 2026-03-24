@@ -3,6 +3,7 @@ import asyncio
 import logging
 import os
 import time
+from pathlib import Path
 from pprint import pformat
 from typing import Any, Callable
 
@@ -309,6 +310,127 @@ def risk(state: HedgeFundState) -> dict[str, Any]:
     }
 
 
+def bull_case(state: HedgeFundState) -> dict[str, Any]:
+    """Tier-2 debate node: optimistic argument from Tier-1 context."""
+    sentiment_score = ((state.get("sentiment_analysis") or {}).get("sentiment_score")) or 50.0
+    quant_data = ((state.get("quant_analysis") or {}).get("analysis")) or {}
+    bullish_signals = sum(
+        1
+        for item in quant_data.values()
+        if isinstance(item, dict) and item.get("macd_signal") == "buy"
+    )
+    argument = (
+        f"Bull case: sentiment={sentiment_score:.1f}, "
+        f"bullish_macd_signals={bullish_signals}. Momentum can continue if risk caps hold."
+    )
+    return {
+        "debate_transcript": [
+            {
+                "speaker": "bull",
+                "stance": "long-bias",
+                "argument": argument,
+            }
+        ],
+        "reasoning_logs": [
+            _reasoning_entry(
+                node="bull_case",
+                thought="Constructed bullish thesis from sentiment + quant context.",
+                decision={"sentiment_score": sentiment_score, "bullish_signals": bullish_signals},
+            )
+        ],
+    }
+
+
+def bear_case(state: HedgeFundState) -> dict[str, Any]:
+    """Tier-2 debate node: conservative argument from risk/volatility context."""
+    risk_analysis = ((state.get("risk") or {}).get("analysis")) or {}
+    high_vol_assets = sum(
+        1
+        for item in risk_analysis.values()
+        if isinstance(item, dict) and float(item.get("volatility", 0.0)) >= 0.01
+    )
+    spread_issues = 0
+    liquidity = ((state.get("liquidity") or {}).get("analysis")) or {}
+    for item in liquidity.values():
+        if isinstance(item, dict) and float(item.get("spread", 0.0)) >= 0.005:
+            spread_issues += 1
+    argument = (
+        f"Bear case: high_vol_assets={high_vol_assets}, "
+        f"wide_spread_assets={spread_issues}. Protect capital until signal quality improves."
+    )
+    return {
+        "debate_transcript": [
+            {
+                "speaker": "bear",
+                "stance": "risk-off",
+                "argument": argument,
+            }
+        ],
+        "reasoning_logs": [
+            _reasoning_entry(
+                node="bear_case",
+                thought="Constructed bearish thesis from risk + liquidity context.",
+                decision={"high_vol_assets": high_vol_assets, "spread_issues": spread_issues},
+            )
+        ],
+    }
+
+
+def signal_arbitrator(state: HedgeFundState) -> dict[str, Any]:
+    """Tier-2 synthesis node: pick strategy stance and emit structured proposed_signal."""
+    transcript = state.get("debate_transcript") or []
+    bull_votes = sum(1 for x in transcript if isinstance(x, dict) and x.get("speaker") == "bull")
+    bear_votes = sum(1 for x in transcript if isinstance(x, dict) and x.get("speaker") == "bear")
+    risk_analysis = ((state.get("risk") or {}).get("analysis")) or {}
+    high_vol_assets = sum(
+        1
+        for item in risk_analysis.values()
+        if isinstance(item, dict) and float(item.get("volatility", 0.0)) >= 0.01
+    )
+    sentiment_score = float(
+        ((state.get("sentiment_analysis") or {}).get("sentiment_score")) or 50.0
+    )
+
+    bull_score = bull_votes + (1 if sentiment_score >= 55 else 0)
+    bear_score = bear_votes + (1 if high_vol_assets >= 1 else 0)
+    stance = "neutral"
+    if bull_score > bear_score:
+        stance = "bullish"
+    elif bear_score > bull_score:
+        stance = "bearish"
+
+    confidence = round(min(0.95, 0.5 + (abs(bull_score - bear_score) * 0.15)), 2)
+    reasons = [
+        f"bull_score={bull_score}",
+        f"bear_score={bear_score}",
+        f"sentiment={sentiment_score:.1f}",
+        f"high_vol_assets={high_vol_assets}",
+    ]
+    proposed_signal = {
+        "action": "PROPOSAL",
+        "params": {
+            "stance": stance,
+            "confidence": confidence,
+            "reasons": reasons,
+            "debate_entries": len(transcript),
+        },
+        "meta": {
+            "source": "signal_arbitrator",
+            "version": "v1",
+        },
+    }
+    return {
+        "proposed_signal": proposed_signal,
+        "reasoning_logs": [
+            _reasoning_entry(
+                node="signal_arbitrator",
+                thought="Synthesized bull/bear debate into a structured proposed signal.",
+                decision=proposed_signal,
+            )
+        ],
+    }
+
+
 def _run_async(coro):
     """
     Run async code from a sync LangGraph node.
@@ -342,9 +464,19 @@ def portfolio_proposal(state: HedgeFundState) -> dict[str, Any]:
         execute=False,
     )
     prop = proposal if isinstance(proposal, dict) else {}
+    signal_context = state.get("proposed_signal") or {}
+    if isinstance(prop, dict):
+        prop["strategy_context"] = signal_context
     return {
         "proposal": proposal,
-        "proposed_signal": prop,
+        "proposed_signal": {
+            "action": "PROPOSAL",
+            "params": prop,
+            "meta": {
+                "source": "portfolio_proposal",
+                "upstream_signal": signal_context,
+            },
+        },
         "reasoning_logs": [
             _reasoning_entry(
                 node="portfolio_proposal",
@@ -373,14 +505,16 @@ def risk_guard(state: HedgeFundState) -> dict[str, Any]:
         "risk_report": decision,
         "is_vetoed": is_vetoed,
         "veto_reason": veto_reason,
-        "proposed_signal": state.get("proposal") or {},
+        "proposed_signal": state.get("proposed_signal") or {},
         "reasoning_logs": [
-            {
-                "node": "risk_guard",
-                "status": decision.get("status"),
-                "risk_score": decision.get("risk_score"),
-                "thought_process": reasoning.get("thought"),
-            }
+            _reasoning_entry(
+                node="risk_guard",
+                thought=str(reasoning.get("thought") or "Risk guard completed."),
+                decision={
+                    "status": decision.get("status"),
+                    "risk_score": decision.get("risk_score"),
+                },
+            )
         ],
     }
     if is_vetoed:
@@ -511,6 +645,12 @@ def build_workflow() -> StateGraph:
     workflow.add_node("desk_valuation", _instrument_node("valuation", valuation))
     workflow.add_node("desk_liquidity", _instrument_node("liquidity", liquidity))
     workflow.add_node("desk_risk", _instrument_node("risk", risk))
+    workflow.add_node("bull_case", _instrument_node("bull_case", bull_case))
+    workflow.add_node("bear_case", _instrument_node("bear_case", bear_case))
+    workflow.add_node(
+        "signal_arbitrator",
+        _instrument_node("signal_arbitrator", signal_arbitrator),
+    )
     workflow.add_node(
         "portfolio_proposal",
         _instrument_node("portfolio_proposal", portfolio_proposal),
@@ -533,7 +673,11 @@ def build_workflow() -> StateGraph:
     for node_id in tier1_nodes:
         workflow.add_edge("desk_market_scan", node_id)
         workflow.add_edge(node_id, "desk_risk")
-    workflow.add_edge("desk_risk", "portfolio_proposal")
+    workflow.add_edge("desk_risk", "bull_case")
+    workflow.add_edge("desk_risk", "bear_case")
+    workflow.add_edge("bull_case", "signal_arbitrator")
+    workflow.add_edge("bear_case", "signal_arbitrator")
+    workflow.add_edge("signal_arbitrator", "portfolio_proposal")
     workflow.add_edge("portfolio_proposal", "desk_risk_guard")
     path_map = route_after_risk_guard_mapping()
     workflow.add_conditional_edges("desk_risk_guard", route_after_risk_guard, path_map)
@@ -572,7 +716,14 @@ def main():
     run_id = f"run-{args.ticker.replace('/', '-')}-{int(time.time())}"
     publisher = LogPublisher(run_id=run_id)
     set_log_publisher(publisher)
-    flow_repo = FlowEventRepo(run_id=run_id)
+    runs_dir = Path(".runs")
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    latest_file = runs_dir / "latest_run.txt"
+    latest_file.write_text(run_id)
+    flow_log_path = runs_dir / f"{run_id}.events.jsonl"
+    if flow_log_path.exists():
+        flow_log_path.unlink()
+    flow_repo = FlowEventRepo(run_id=run_id, log_path=flow_log_path)
     set_flow_repo(flow_repo)
 
     app = build_workflow().compile()

@@ -28,14 +28,14 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
-      - name: Install dependencies with uv
-        run: uv pip install --system .[dev] 
+      - name: Sync dependencies from lockfile
+        run: uv sync --extra dev --frozen
 
       - name: Ruff format check
-        run: ruff format --check .
+        run: uv run ruff format --check .
 
       - name: Ruff lint
-        run: ruff check .
+        run: uv run ruff check .
 
       - name: Pytest
-        run: pytest -q
+        run: uv run pytest -q

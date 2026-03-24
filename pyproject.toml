@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "ccxt>=4.4.85",
+    "fastapi>=0.117.0",
+    "jsonschema>=4.25.1",
     "langgraph>=0.4.7",
     "pandas>=2.2.3",
     "langchain>=0.3.25",
@@ -16,6 +18,8 @@ dependencies = [
     "ta-lib>=0.6.3",
     "pycoingecko>=3.2.0",
     "statsmodels>=0.14.4",
+    "uvicorn>=0.36.0",
+    "websockets>=16.0",
 ]
 
 [project.optional-dependencies]

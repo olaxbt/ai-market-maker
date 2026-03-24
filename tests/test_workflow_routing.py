@@ -45,3 +45,13 @@ def test_tier1_parallel_fanout_and_fanin_edges_present():
     for node in tier1:
         assert ("desk_market_scan", node) in edges
         assert (node, "desk_risk") in edges
+
+
+def test_tier2_debate_and_arbitration_edges_present():
+    g = build_workflow()
+    edges = g.edges
+    assert ("desk_risk", "bull_case") in edges
+    assert ("desk_risk", "bear_case") in edges
+    assert ("bull_case", "signal_arbitrator") in edges
+    assert ("bear_case", "signal_arbitrator") in edges
+    assert ("signal_arbitrator", "portfolio_proposal") in edges

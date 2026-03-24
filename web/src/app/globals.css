@@ -229,3 +229,137 @@ body {
     radial-gradient(ellipse 50% 40% at 18% 35%, rgba(0, 212, 170, 0.06) 0%, transparent 45%),
     var(--nexus-bg);
 }
+
+/* Loader: 3D-like rotating nexus sphere */
+.nexus-loader-wrap {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background:
+    radial-gradient(ellipse 75% 50% at 50% 42%, rgba(0, 212, 170, 0.09), transparent 70%),
+    var(--nexus-bg);
+  transition: opacity 900ms ease, filter 900ms ease;
+}
+
+.nexus-loader-wrap.is-exploding {
+  opacity: 0;
+  filter: blur(1.5px);
+}
+
+.nexus-loader-scene {
+  width: 340px;
+  height: 340px;
+  perspective: 980px;
+}
+
+.nexus-loader-sphere {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  animation: nexus-loader-spin 34s linear infinite;
+}
+
+.nexus-loader-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--s);
+  height: var(--s);
+  border-radius: 9999px;
+  background: rgba(144, 255, 238, 0.85);
+  box-shadow:
+    0 0 8px rgba(0, 212, 170, 0.7),
+    0 0 18px rgba(0, 212, 170, 0.35);
+  transform: translate3d(var(--x), var(--y), var(--z));
+  transition:
+    transform 1150ms cubic-bezier(0.16, 0.82, 0.2, 1),
+    opacity 800ms ease;
+  animation: nexus-loader-twinkle var(--twinkle-dur, 2.8s) ease-in-out infinite;
+  animation-delay: var(--delay);
+}
+
+.nexus-loader-wrap.is-exploding .nexus-loader-dot {
+  transform: translate3d(var(--ex), var(--ey), var(--ez));
+  opacity: 0;
+}
+
+.nexus-loader-core {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 78px;
+  height: 78px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  border: 1px solid rgba(0, 212, 170, 0.72);
+  background:
+    linear-gradient(135deg, rgba(0, 212, 170, 0.35), rgba(59, 130, 246, 0.2)),
+    rgba(8, 18, 20, 0.92);
+  box-shadow:
+    inset 0 0 18px rgba(0, 212, 170, 0.24),
+    0 0 25px rgba(0, 212, 170, 0.45);
+  transition:
+    transform 950ms ease,
+    opacity 750ms ease;
+}
+
+.nexus-loader-wrap.is-exploding .nexus-loader-core {
+  transform: translate(-50%, -50%) rotate(45deg) scale(0.25);
+  opacity: 0;
+}
+
+.nexus-loader-core::before,
+.nexus-loader-core::after {
+  content: "";
+  position: absolute;
+  background: rgba(174, 255, 243, 0.72);
+}
+
+.nexus-loader-core::before {
+  top: 50%;
+  left: 14px;
+  right: 14px;
+  height: 1px;
+  transform: translateY(-50%);
+}
+
+.nexus-loader-core::after {
+  left: 50%;
+  top: 14px;
+  bottom: 14px;
+  width: 1px;
+  transform: translateX(-50%);
+}
+
+.nexus-loader-text {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: var(--nexus-muted);
+}
+
+@keyframes nexus-loader-spin {
+  0% {
+    transform: rotateX(15deg) rotateY(0deg);
+  }
+  50% {
+    transform: rotateX(25deg) rotateY(180deg);
+  }
+  100% {
+    transform: rotateX(15deg) rotateY(360deg);
+  }
+}
+
+@keyframes nexus-loader-twinkle {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}

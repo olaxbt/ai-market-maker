@@ -4,12 +4,13 @@
   "title": "NexusPayload",
   "description": "Dashboard bundle: metadata, topology, traces, optional agent_prompts and message_log.",
   "type": "object",
-  "required": ["metadata", "topology", "traces"],
-  "additionalProperties": true,
+  "required": ["metadata", "topology", "traces", "message_log"],
+  "additionalProperties": false,
   "properties": {
     "metadata": {
       "type": "object",
       "required": ["run_id", "ticker", "status", "kpis"],
+      "additionalProperties": true,
       "properties": {
         "run_id": { "type": "string" },
         "ticker": { "type": "string" },
@@ -28,6 +29,7 @@
           "items": {
             "type": "object",
             "required": ["id", "actor", "label", "status"],
+            "additionalProperties": true,
             "properties": {
               "id": { "type": "string" },
               "actor": { "type": "string" },
@@ -42,6 +44,7 @@
           "items": {
             "type": "object",
             "required": ["from", "to"],
+            "additionalProperties": false,
             "properties": {
               "from": { "type": "string" },
               "to": { "type": "string" }
@@ -50,12 +53,99 @@
         }
       }
     },
-    "traces": { "type": "array" },
+    "traces": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["trace_id", "node_id", "timestamp", "actor", "content"],
+        "additionalProperties": false,
+        "properties": {
+          "trace_id": { "type": "string" },
+          "node_id": { "type": "string" },
+          "parent_id": { "type": ["string", "null"] },
+          "timestamp": { "type": "string", "format": "date-time" },
+          "actor": {
+            "type": "object",
+            "required": ["id", "role"],
+            "additionalProperties": true,
+            "properties": {
+              "id": { "type": "string" },
+              "role": { "type": "string" },
+              "persona": { "type": "string" }
+            }
+          },
+          "content": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "thought_process": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["step", "label", "detail"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "step": { "type": "integer" },
+                    "label": { "type": "string" },
+                    "detail": { "type": "string" }
+                  }
+                }
+              },
+              "signal": { "type": "string" },
+              "confidence": { "type": "number" },
+              "formula": {
+                "oneOf": [
+                  { "type": "string" },
+                  {
+                    "type": "object",
+                    "additionalProperties": true,
+                    "properties": {
+                      "name": { "type": "string" },
+                      "latex": { "type": "string" },
+                      "computed": { "type": "string" }
+                    }
+                  }
+                ]
+              },
+              "proposal": {
+                "type": "object",
+                "required": ["action", "params"],
+                "additionalProperties": true,
+                "properties": {
+                  "action": { "type": "string" },
+                  "params": { "type": "object" }
+                }
+              },
+              "veto_status": {
+                "type": "object",
+                "required": ["status"],
+                "additionalProperties": true,
+                "properties": {
+                  "checked_by": { "type": "string" },
+                  "status": { "type": "string" },
+                  "reason": { "type": "string" }
+                }
+              },
+              "context": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+                  "pair": { "type": "string" },
+                  "signal": { "type": "string" },
+                  "confidence": { "type": "number" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "agent_prompts": {
       "type": "array",
       "items": {
         "type": "object",
         "required": ["node_id", "actor_id", "system_prompt", "task_prompt", "cot_enabled"],
+        "additionalProperties": true,
         "properties": {
           "node_id": { "type": "string" },
           "actor_id": { "type": "string" },
@@ -74,6 +164,7 @@
       "items": {
         "type": "object",
         "required": ["seq", "ts", "node_id", "actor_id", "kind", "message"],
+        "additionalProperties": false,
         "properties": {
           "seq": { "type": "integer" },
           "ts": { "type": "string", "format": "date-time" },
@@ -81,7 +172,7 @@
           "actor_id": { "type": "string" },
           "kind": { "type": "string", "enum": ["status", "thought", "tool", "handoff", "error"] },
           "message": { "type": "string" },
-          "trace_id": { "type": "string" }
+          "trace_id": { "type": ["string", "null"] }
         }
       }
     }

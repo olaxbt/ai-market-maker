@@ -4,12 +4,27 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { TopologyEdge, TopologyNode } from "@/types/nexus-payload";
 
-/** Canvas ring field + Framer orbital layout (legacy standalone hub removed; this is the canonical hub). */
+/** Rotating 3D-like sphere field + Framer orbital layout for the canonical hub. */
+
+type Pt = { x: number; y: number };
+type Dot3D = {
+  id: number;
+  x: number;
+  y: number;
+  z: number;
+  twinklePhase: number;
+  twinkleRate: number;
+  twinkleAmp: number;
+  baseSize: number;
+  spike: number;
+  bright: boolean;
+};
+
 const BASE_SIZE = 520;
 const BASE_RADIUS = [55, 120, 190, 265, 335] as const;
 const DOTS_PER_RING = [24, 36, 48, 60, 72] as const;
-
-type Pt = { x: number; y: number };
+const INTRO_MS = 2600;
+const BURST_MS = 1300;
 
 function parseNodeOrder(id: string): number {
   const m = id.match(/\d+/);
@@ -94,7 +109,6 @@ function AmbientRingsCanvas({ width, height }: { width: number; height: number }
 
     const cx = width / 2;
     const cy = height / 2;
-
     ctx.clearRect(0, 0, width, height);
 
     for (let ring = 0; ring < BASE_RADIUS.length; ring++) {
@@ -110,10 +124,6 @@ function AmbientRingsCanvas({ width, height }: { width: number; height: number }
         ctx.arc(x, y, dot, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(34, 211, 238, ${alpha})`;
         ctx.fill();
-        ctx.beginPath();
-        ctx.arc(x, y, dot * 0.45, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255, 255, 255, ${alpha * 0.55})`;
-        ctx.fill();
       }
     }
 
@@ -125,6 +135,214 @@ function AmbientRingsCanvas({ width, height }: { width: number; height: number }
       ctx.stroke();
     }
   }, [width, height, size, rs]);
+
+  return <canvas ref={ref} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden />;
+}
+
+function buildSphereDots(count: number): Dot3D[] {
+  // Fibonacci sphere gives an even "constellation" spread.
+  const phi = Math.PI * (3 - Math.sqrt(5));
+  const dots: Dot3D[] = [];
+  for (let i = 0; i < count; i++) {
+    const y = 1 - (i / Math.max(1, count - 1)) * 2;
+    const radius = Math.sqrt(1 - y * y);
+    const theta = phi * i;
+    dots.push({
+      id: i,
+      x: Math.cos(theta) * radius,
+      y,
+      z: Math.sin(theta) * radius,
+      twinklePhase: Math.random() * Math.PI * 2,
+      twinkleRate: 0.55 + Math.random() * 1.15,
+      twinkleAmp: 0.18 + Math.random() * 0.42,
+      baseSize: 0.45 + Math.random() * 1.9,
+      spike: 0.6 + Math.random() * 1.5,
+      bright: Math.random() < 0.08,
+    });
+  }
+  return dots;
+}
+
+function RotatingSphereCanvas({
+  width,
+  height,
+  mode,
+  burstStartedAt,
+}: {
+  width: number;
+  height: number;
+  mode: "intro" | "burst";
+  burstStartedAt: number | null;
+}) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const size = Math.max(0, Math.min(width, height));
+  const dots = useMemo(() => buildSphereDots(360), []);
+
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas || size <= 0) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = Math.min(2, typeof window !== "undefined" ? window.devicePixelRatio : 1);
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    ctx.scale(dpr, dpr);
+
+    const cx = width / 2;
+    const cy = height / 2;
+    // Denser and smaller sphere silhouette in center.
+    const radius = size * 0.31;
+    const perspective = size * 1.35;
+    let raf = 0;
+
+    const draw = (tMs: number) => {
+      const t = tMs * 0.001;
+      ctx.clearRect(0, 0, width, height);
+
+      const spinY = t * 0.18;
+      const spinX = Math.sin(t * 0.13) * 0.14;
+      const cosY = Math.cos(spinY);
+      const sinY = Math.sin(spinY);
+      const cosX = Math.cos(spinX);
+      const sinX = Math.sin(spinX);
+      const burstT =
+        mode === "burst" && burstStartedAt != null
+          ? Math.max(0, Math.min(1, (performance.now() - burstStartedAt) / BURST_MS))
+          : 0;
+      const burstSpread = 1 + burstT * 6.4;
+      const burstFade = 1 - burstT;
+
+      const projected = dots
+        .map((p) => {
+          // Rotate around Y then X.
+          const x1 = p.x * cosY + p.z * sinY;
+          const z1 = p.z * cosY - p.x * sinY;
+          const y2 = p.y * cosX - z1 * sinX;
+          const z2 = z1 * cosX + p.y * sinX;
+          const depth = (z2 + 1) * 0.5;
+          const scale = perspective / (perspective - z2 * radius);
+          const x = cx + x1 * radius * scale * burstSpread;
+          const y = cy + y2 * radius * scale * burstSpread;
+          return { x, y, depth, scale, dot: p };
+        })
+        .sort((a, b) => a.depth - b.depth);
+
+      // Option B: dynamic triangulation-style mesh (clean futuristic net).
+      const meshNodes = projected
+        .filter((p) => p.depth > 0.12)
+        .sort((a, b) => b.depth - a.depth)
+        .slice(0, 110);
+      const byId = new Map(meshNodes.map((n) => [n.dot.id, n]));
+      const edgeSet = new Set<string>();
+      const triSet = new Set<string>();
+      const edgeKey = (a: number, b: number) => (a < b ? `${a}-${b}` : `${b}-${a}`);
+      const triKey = (a: number, b: number, c: number) => [a, b, c].sort((x, y) => x - y).join("-");
+
+      for (const a of meshNodes) {
+        const neighbors = meshNodes
+          .filter((b) => b.dot.id !== a.dot.id)
+          .map((b) => {
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            return { b, d: Math.hypot(dx, dy) };
+          })
+          .filter((x) => x.d < size * 0.2)
+          .sort((x, y) => x.d - y.d)
+          .slice(0, 3)
+          .map((x) => x.b);
+
+        for (let i = 0; i < neighbors.length; i++) {
+          for (let j = i + 1; j < neighbors.length; j++) {
+            const b = neighbors[i];
+            const c = neighbors[j];
+            if (!b || !c) continue;
+            const bcDx = b.x - c.x;
+            const bcDy = b.y - c.y;
+            const bc = Math.hypot(bcDx, bcDy);
+            if (bc > size * 0.2) continue;
+            triSet.add(triKey(a.dot.id, b.dot.id, c.dot.id));
+            edgeSet.add(edgeKey(a.dot.id, b.dot.id));
+            edgeSet.add(edgeKey(a.dot.id, c.dot.id));
+            edgeSet.add(edgeKey(b.dot.id, c.dot.id));
+          }
+        }
+      }
+
+      // Triangle edges with subtle animated shimmer.
+      Array.from(edgeSet).forEach((key) => {
+        const [ia, ib] = key.split("-").map((x) => Number.parseInt(x, 10));
+        const a = byId.get(ia);
+        const b = byId.get(ib);
+        if (!a || !b) return;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dist = Math.hypot(dx, dy);
+        const depth = (a.depth + b.depth) * 0.5;
+        const shimmer = 0.5 + 0.5 * Math.sin(t * 1.4 + (ia + ib) * 0.013);
+        const alpha = Math.max(0.02, 0.16 - dist / (size * 2.7)) * (0.45 + depth * 0.55) * shimmer * burstFade;
+        ctx.strokeStyle = `rgba(96, 231, 255, ${alpha})`;
+        ctx.lineWidth = 0.48;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      });
+
+      for (const p of projected) {
+        const glow = 0.33 + p.depth * 0.63;
+        const pulse =
+          (1 - p.dot.twinkleAmp) + Math.sin(t * p.dot.twinkleRate + p.dot.twinklePhase) * p.dot.twinkleAmp;
+        const alpha = Math.max(0, glow * pulse * burstFade);
+        const r = Math.max(0.5, p.dot.baseSize * (0.65 + p.depth * 1.05));
+
+        const tint = p.dot.bright
+          ? "rgba(205, 225, 255,"
+          : p.depth > 0.66
+            ? "rgba(198, 255, 250,"
+            : "rgba(150, 238, 255,";
+
+        // 1) Soft atmospheric halo around the star.
+        const haloR = r * (p.dot.bright ? 5.4 : 3.1);
+        const halo = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, haloR);
+        halo.addColorStop(0, `${tint}${Math.min(0.45, alpha * 0.55)})`);
+        halo.addColorStop(0.55, `${tint}${Math.min(0.16, alpha * 0.2)})`);
+        halo.addColorStop(1, `${tint}0)`);
+        ctx.fillStyle = halo;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, haloR, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 2) Bright core.
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.fillStyle = `${tint}${Math.min(1, alpha)})`;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r * 0.45, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(0.92, alpha * 0.82)})`;
+        ctx.fill();
+
+        // 3) Strict 4-point cross flare (no diagonals).
+        const spike = p.dot.spike * (p.dot.bright ? 3.4 : 1.2) * (0.65 + p.depth * 1.05);
+        const spikeAlpha = alpha * (p.dot.bright ? 0.95 : 0.62);
+        ctx.strokeStyle = `rgba(220, 240, 255, ${spikeAlpha})`;
+        ctx.lineWidth = Math.max(0.25, r * (p.dot.bright ? 0.32 : 0.2));
+        ctx.beginPath();
+        ctx.moveTo(p.x - spike, p.y);
+        ctx.lineTo(p.x + spike, p.y);
+        ctx.moveTo(p.x, p.y - spike);
+        ctx.lineTo(p.x, p.y + spike);
+        ctx.stroke();
+      }
+      raf = requestAnimationFrame(draw);
+    };
+
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [width, height, size, dots, mode, burstStartedAt]);
 
   return <canvas ref={ref} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden />;
 }
@@ -200,6 +418,9 @@ interface NexusStarSystemProps {
   edges: TopologyEdge[];
   activeNodeId: string | null;
   signalCount?: number;
+  readyToReveal: boolean;
+  onIntroDone?: () => void;
+  playIntro?: boolean;
 }
 
 export function NexusStarSystem({
@@ -207,12 +428,19 @@ export function NexusStarSystem({
   edges,
   activeNodeId,
   signalCount = 0,
+  readyToReveal,
+  onIntroDone,
+  playIntro = true,
 }: NexusStarSystemProps) {
   const edgeGradId = useId().replace(/:/g, "");
   const containerRef = useRef<HTMLDivElement>(null);
   const prevSignalRef = useRef(0);
   const [box, setBox] = useState({ w: 0, h: 0 });
   const [particles, setParticles] = useState<Array<{ id: string; end: Pt }>>([]);
+  const [hubPhase, setHubPhase] = useState<"intro" | "burst" | "done">(
+    playIntro ? "intro" : "done",
+  );
+  const burstStartedAtRef = useRef<number | null>(null);
   /** Avoid hydration mismatch: server vs client time/locale differ for `toLocaleTimeString()`. */
   const [clock, setClock] = useState("--:--:--");
 
@@ -253,6 +481,32 @@ export function NexusStarSystem({
   }, []);
 
   useEffect(() => {
+    if (!playIntro && hubPhase !== "done") {
+      setHubPhase("done");
+    }
+  }, [playIntro, hubPhase]);
+
+  useEffect(() => {
+    if (!playIntro) return;
+    if (!readyToReveal || hubPhase !== "intro") return;
+    const wait = window.setTimeout(() => {
+      burstStartedAtRef.current = performance.now();
+      setHubPhase("burst");
+    }, Math.max(0, INTRO_MS - 400));
+    return () => clearTimeout(wait);
+  }, [readyToReveal, hubPhase, playIntro]);
+
+  useEffect(() => {
+    if (!playIntro) return;
+    if (hubPhase !== "burst") return;
+    const done = window.setTimeout(() => {
+      setHubPhase("done");
+      onIntroDone?.();
+    }, BURST_MS);
+    return () => clearTimeout(done);
+  }, [hubPhase, onIntroDone, playIntro]);
+
+  useEffect(() => {
     if (!activePos || signalCount <= prevSignalRef.current) return;
     prevSignalRef.current = signalCount;
     const burst = 4;
@@ -279,54 +533,69 @@ export function NexusStarSystem({
       className="relative h-full min-h-[min(480px,70vh)] w-full overflow-hidden rounded-3xl border border-[color:var(--nexus-hub-frame)] bg-[var(--nexus-bg)] shadow-inner"
     >
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_40%,rgba(34,211,238,0.08),transparent_55%)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(34,211,238,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(34,211,238,0.035)_1px,transparent_1px)] bg-[length:24px_24px]" />
+      {hubPhase === "done" && (
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(34,211,238,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(34,211,238,0.035)_1px,transparent_1px)] bg-[length:24px_24px]" />
+      )}
       <div className="absolute inset-0 opacity-[0.12] mix-blend-overlay bg-[radial-gradient(circle_at_20%_30%,rgba(255,255,255,0.15),transparent_50%)]" />
 
-      {box.w > 0 && box.h > 0 && <AmbientRingsCanvas width={box.w} height={box.h} />}
+      {box.w > 0 && box.h > 0 && hubPhase !== "done" && (
+        <RotatingSphereCanvas
+          width={box.w}
+          height={box.h}
+          mode={hubPhase}
+          burstStartedAt={burstStartedAtRef.current}
+        />
+      )}
+      {box.w > 0 && box.h > 0 && hubPhase === "done" && (
+        <AmbientRingsCanvas width={box.w} height={box.h} />
+      )}
 
-      <svg
-        className="pointer-events-none absolute inset-0 z-[5] h-full w-full"
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-      >
-        <defs>
-          <linearGradient id={edgeGradId} x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="rgba(34, 211, 238, 0.25)" />
-            <stop offset="100%" stopColor="rgba(34, 211, 238, 0.08)" />
-          </linearGradient>
-        </defs>
-        {edges.map((e, i) => {
-          const a = placed.find((p) => p.node.id === e.from)?.pos;
-          const b = placed.find((p) => p.node.id === e.to)?.pos;
-          if (!a || !b) return null;
-          return (
-            <line
-              key={`${e.from}-${e.to}-${i}`}
-              x1={a.x}
-              y1={a.y}
-              x2={b.x}
-              y2={b.y}
-              stroke={`url(#${edgeGradId})`}
-              strokeWidth={0.15}
-              vectorEffect="non-scaling-stroke"
-            />
-          );
-        })}
-      </svg>
+      {hubPhase === "done" && (
+        <svg
+          className="pointer-events-none absolute inset-0 z-[5] h-full w-full"
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+        >
+          <defs>
+            <linearGradient id={edgeGradId} x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="rgba(34, 211, 238, 0.25)" />
+              <stop offset="100%" stopColor="rgba(34, 211, 238, 0.08)" />
+            </linearGradient>
+          </defs>
+          {edges.map((e, i) => {
+            const a = placed.find((p) => p.node.id === e.from)?.pos;
+            const b = placed.find((p) => p.node.id === e.to)?.pos;
+            if (!a || !b) return null;
+            return (
+              <line
+                key={`${e.from}-${e.to}-${i}`}
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={b.y}
+                stroke={`url(#${edgeGradId})`}
+                strokeWidth={0.15}
+                vectorEffect="non-scaling-stroke"
+              />
+            );
+          })}
+        </svg>
+      )}
 
       <div className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
         <CentralStar />
       </div>
 
-      {placed.map(({ node, pos }) => (
-        <AgentStar
-          key={node.id}
-          label={node.label}
-          selected={activeNodeId != null && node.id === activeNodeId}
-          pipelineActive={node.status === "ACTIVE"}
-          position={pos}
-        />
-      ))}
+      {hubPhase === "done" &&
+        placed.map(({ node, pos }) => (
+          <AgentStar
+            key={node.id}
+            label={node.label}
+            selected={activeNodeId != null && node.id === activeNodeId}
+            pipelineActive={node.status === "ACTIVE"}
+            position={pos}
+          />
+        ))}
 
       <AnimatePresence>
         {particles.map((p) => (
@@ -334,11 +603,13 @@ export function NexusStarSystem({
         ))}
       </AnimatePresence>
 
-      <div className="absolute bottom-6 left-6 z-20 font-mono text-[10px] text-cyan-500/50">
-        SYSTEM_CLOCK: {clock}
-        <br />
-        MESH_SYNC: STABLE // ENTROPY: 0.031
-      </div>
+      {hubPhase === "done" && (
+        <div className="absolute bottom-6 left-6 z-20 font-mono text-[10px] text-cyan-500/50">
+          SYSTEM_CLOCK: {clock}
+          <br />
+          MESH_SYNC: STABLE // ENTROPY: 0.031
+        </div>
+      )}
     </div>
   );
 }
