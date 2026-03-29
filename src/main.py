@@ -11,6 +11,7 @@ import ccxt
 from dotenv import load_dotenv
 from langgraph.graph import END, StateGraph
 
+from adapters.nexus_adapter import get_nexus_adapter
 from agents.governance.risk_guard import RiskGuardAgent
 from agents.liquidity_management import LiquidityManagementAgent
 from agents.market_scan import MarketScanAgent
@@ -23,6 +24,7 @@ from agents.stat_arb import StatArbAgent
 from agents.valuation import ValuationAgent
 from config.run_mode import RunMode, load_run_mode
 from flow_log import FlowEventRepo, get_flow_repo, set_flow_repo
+from llm.arbitrator_llm import signal_arbitrator_llm
 from schemas.flow_events import FlowEvent
 from schemas.state import HedgeFundState, initial_hedge_fund_state
 from telemetry.logger import LogPublisher, get_log_publisher, set_log_publisher
@@ -60,15 +62,50 @@ def _reasoning_entry(
 NodeFn = Callable[[HedgeFundState], dict[str, Any]]
 
 
+def _flow_bt_extra(state: HedgeFundState) -> dict[str, Any]:
+    """Attach synthetic bar step/time to FlowEvents during backtest (for UI timelines)."""
+    sm = state.get("shared_memory")
+    if not isinstance(sm, dict):
+        return {}
+    bt = sm.get("backtest")
+    if not isinstance(bt, dict):
+        return {}
+    out: dict[str, Any] = {}
+    if "step" in bt:
+        out["bar_step"] = bt["step"]
+    if "run_id" in bt:
+        out["backtest_run_id"] = bt["run_id"]
+    ticker = state.get("ticker")
+    md = state.get("market_data") or {}
+    if isinstance(ticker, str) and isinstance(md, dict):
+        pair = md.get(ticker)
+        if isinstance(pair, dict):
+            ohlcv = pair.get("ohlcv")
+            if isinstance(ohlcv, list) and ohlcv:
+                last = ohlcv[-1]
+                if isinstance(last, (list, tuple)) and len(last) > 0:
+                    try:
+                        ts_ms = float(last[0])
+                        out["bar_ts_ms"] = ts_ms
+                        out["bar_time_utc"] = time.strftime(
+                            "%Y-%m-%d %H:%M UTC",
+                            time.gmtime(ts_ms / 1000.0),
+                        )
+                    except (TypeError, ValueError, OSError):
+                        pass
+    return out
+
+
 def _instrument_node(node_name: str, node_fn: NodeFn) -> NodeFn:
     """Wrap graph nodes with start/end + reasoning telemetry."""
 
     def wrapped(state: HedgeFundState) -> dict[str, Any]:
         repo = get_flow_repo()
         run_id = getattr(repo, "run_id", None) if repo else None
+        bt_x = _flow_bt_extra(state)
         _emit_flow(
             repo,
-            FlowEvent.node_start(node_name, run_id=run_id, ticker=state.get("ticker")),
+            FlowEvent.node_start(node_name, run_id=run_id, ticker=state.get("ticker"), **bt_x),
         )
         try:
             out = node_fn(state)
@@ -80,6 +117,7 @@ def _instrument_node(node_name: str, node_fn: NodeFn) -> NodeFn:
                     run_id=run_id,
                     summary="error",
                     error=str(e),
+                    **bt_x,
                 ),
             )
             raise
@@ -92,6 +130,7 @@ def _instrument_node(node_name: str, node_fn: NodeFn) -> NodeFn:
                 run_id=run_id,
                 summary="ok",
                 output_keys=output_keys,
+                **bt_x,
             ),
         )
         for entry in out.get("reasoning_logs") or []:
@@ -104,6 +143,7 @@ def _instrument_node(node_name: str, node_fn: NodeFn) -> NodeFn:
                     decision=entry.get("decision"),
                     run_id=run_id,
                     node=node_name,
+                    **bt_x,
                 ),
             )
         return out
@@ -140,23 +180,40 @@ def market_scan(state: HedgeFundState) -> dict[str, Any]:
         logger.error("Invalid or missing ticker, using default BTC/USDT")
         ticker = "BTC/USDT"
 
-    agent = MarketScanAgent(testnet=True)
     data = dict(state.get("market_data") or {})
-    try:
-        data[ticker] = agent.fetch_data(ticker)
-        logger.debug("Fetched data for %s: %s", ticker, data[ticker])
-    except Exception as e:
-        logger.error("Failed to fetch data for %s: %s", ticker, e)
-        data[ticker] = {"status": "error", "error": str(e)}
+    run_mode = str(state.get("run_mode") or "paper").lower()
 
-    meme_coins = agent.scan_meme_coins()
-    for coin in meme_coins[:2]:
-        if coin["symbol"] in agent.exchange.markets:
-            try:
-                data[coin["symbol"]] = agent.fetch_data(coin["symbol"])
-            except Exception as e:
-                logger.error("Failed to fetch data for %s: %s", coin["symbol"], e)
-                data[coin["symbol"]] = {"status": "error", "error": str(e)}
+    if run_mode == RunMode.BACKTEST.value:
+        # Backtest mode must be deterministic and offline-friendly.
+        meme_coins: list[dict[str, Any]] = []
+        if ticker not in data:
+            data[ticker] = {"status": "backtest", "note": "no market_data provided"}
+    else:
+        agent = MarketScanAgent(testnet=True)
+        try:
+            data[ticker] = agent.fetch_data(ticker)
+            logger.debug("Fetched data for %s: %s", ticker, data[ticker])
+        except Exception as e:
+            logger.error("Failed to fetch data for %s: %s", ticker, e)
+            data[ticker] = {"status": "error", "error": str(e)}
+
+        # P3 tool-calling parity: attach a depth snapshot via NexusAdapter.
+        try:
+            data[ticker]["nexus_depth"] = get_nexus_adapter().fetch_market_depth(
+                symbol=ticker,
+                limit=5,
+            )
+        except Exception as e:
+            data[ticker]["nexus_depth"] = {"status": "error", "error": str(e)}
+
+        meme_coins = agent.scan_meme_coins()
+        for coin in meme_coins[:2]:
+            if coin["symbol"] in agent.exchange.markets:
+                try:
+                    data[coin["symbol"]] = agent.fetch_data(coin["symbol"])
+                except Exception as e:
+                    logger.error("Failed to fetch data for %s: %s", coin["symbol"], e)
+                    data[coin["symbol"]] = {"status": "error", "error": str(e)}
 
     return {
         "ticker": ticker,
@@ -174,6 +231,8 @@ def market_scan(state: HedgeFundState) -> dict[str, Any]:
                 node="market_scan",
                 thought=(
                     f"Scanned {len(data)} symbols and identified {len(meme_coins)} meme candidates."
+                    if run_mode != RunMode.BACKTEST.value
+                    else f"Backtest mode: using provided market_data (symbols={len(data)})."
                 ),
                 decision={"symbols": len(data), "meme_candidates": len(meme_coins)},
             )
@@ -203,6 +262,25 @@ def price_pattern(state: HedgeFundState) -> dict[str, Any]:
 def sentiment(state: HedgeFundState) -> dict[str, Any]:
     logger.debug("Running sentiment node with state: %s", state)
     ticker = state.get("ticker", "BTC/USDT")
+    run_mode = str(state.get("run_mode") or "paper").lower()
+    if run_mode == RunMode.BACKTEST.value:
+        analysis = {
+            "ticker": ticker,
+            "sentiment_score": 50.0,
+            "analysis": "Sentiment skipped in backtest (deterministic offline run).",
+            "status": "skipped",
+        }
+        return {
+            "sentiment_analysis": analysis,
+            "market_context": [{"node": "sentiment", "analysis": analysis}],
+            "reasoning_logs": [
+                _reasoning_entry(
+                    node="sentiment",
+                    thought="Backtest mode: no live social/news fetch.",
+                    decision=analysis,
+                )
+            ],
+        }
     agent = SentimentAgent()
     analysis = agent.analyze(ticker)
     return {
@@ -448,6 +526,16 @@ def _run_async(coro):
     return asyncio.run(coro)
 
 
+def _portfolio_agent_kwargs(state: HedgeFundState) -> dict[str, Any]:
+    """Pass simulated position qty into portfolio math during multi-step backtests."""
+    sm = state.get("shared_memory")
+    bt = sm.get("backtest") if isinstance(sm, dict) and isinstance(sm.get("backtest"), dict) else {}
+    out: dict[str, Any] = {"run_mode": state.get("run_mode")}
+    if str(state.get("run_mode") or "").lower() == RunMode.BACKTEST.value:
+        out["external_position_qty"] = float(bt.get("qty", 0.0))
+    return out
+
+
 def portfolio_proposal(state: HedgeFundState) -> dict[str, Any]:
     logger.debug("Running portfolio_proposal node with state: %s", state)
     agent = PortfolioManagementAgent(testnet=True)
@@ -462,6 +550,7 @@ def portfolio_proposal(state: HedgeFundState) -> dict[str, Any]:
         state.get("risk") or {},
         state.get("liquidity") or {},
         execute=False,
+        **_portfolio_agent_kwargs(state),
     )
     prop = proposal if isinstance(proposal, dict) else {}
     signal_context = state.get("proposed_signal") or {}
@@ -531,6 +620,7 @@ def risk_guard(state: HedgeFundState) -> dict[str, Any]:
             risk_score=float(decision.get("risk_score", 0.0)),
             reasoning=reasoning if isinstance(reasoning, dict) else {"raw": reasoning},
             run_id=run_id,
+            **_flow_bt_extra(state),
         ),
     )
 
@@ -572,6 +662,7 @@ def portfolio_execute(state: HedgeFundState) -> dict[str, Any]:
         return {}
 
     agent = PortfolioManagementAgent(testnet=True)
+    # For safety + tool-calling parity, treat this node as "execution intent" and place via adapter.
     portfolio_result = agent.analyze(
         state.get("ticker", "BTC/USDT"),
         state.get("market_data") or {},
@@ -582,13 +673,34 @@ def portfolio_execute(state: HedgeFundState) -> dict[str, Any]:
         state.get("valuation") or {},
         state.get("risk") or {},
         state.get("liquidity") or {},
-        execute=True,
+        execute=False,
+        **_portfolio_agent_kwargs(state),
     )
+
+    # P3: emit a safe "smart order" record via NexusAdapter (mock by default).
+    # This does not place a real order yet; it provides tool-calling parity for the UI.
+    smart_order = None
+    if isinstance(portfolio_result, dict):
+        trades = portfolio_result.get("trades") or {}
+        trade = trades.get(state.get("ticker", "BTC/USDT"))
+        if isinstance(trade, dict) and trade.get("status") in ("proposed", "success"):
+            side = trade.get("action")
+            qty = float(trade.get("quantity") or 0.0)
+            if side in ("buy", "sell") and qty > 0:
+                smart_order = get_nexus_adapter().place_smart_order(
+                    symbol=state.get("ticker", "BTC/USDT"),
+                    side=side,
+                    qty=qty,
+                    order_type="market",
+                    post_only=True,
+                    max_slippage_bps=25.0,
+                )
     out = {
         "portfolio": portfolio_result,
         "execution_result": {
-            "status": "executed",
+            "status": "executed" if smart_order else "skipped",
             "portfolio": portfolio_result,
+            "smart_order": smart_order,
         },
         "reasoning_logs": [
             _reasoning_entry(
@@ -605,7 +717,7 @@ def portfolio_execute(state: HedgeFundState) -> dict[str, Any]:
             status="executed",
             run_id=run_id,
             message="Portfolio execution completed",
-            extra={"portfolio_keys": pk},
+            extra={**{"portfolio_keys": pk}, **_flow_bt_extra(state)},
         ),
     )
     logger.debug("portfolio_execute output: %s", out)
@@ -647,10 +759,9 @@ def build_workflow() -> StateGraph:
     workflow.add_node("desk_risk", _instrument_node("risk", risk))
     workflow.add_node("bull_case", _instrument_node("bull_case", bull_case))
     workflow.add_node("bear_case", _instrument_node("bear_case", bear_case))
-    workflow.add_node(
-        "signal_arbitrator",
-        _instrument_node("signal_arbitrator", signal_arbitrator),
-    )
+    use_llm = os.getenv("AI_MARKET_MAKER_USE_LLM") in ("1", "true", "yes")
+    arbitrator_fn = signal_arbitrator_llm if use_llm else signal_arbitrator
+    workflow.add_node("signal_arbitrator", _instrument_node("signal_arbitrator", arbitrator_fn))
     workflow.add_node(
         "portfolio_proposal",
         _instrument_node("portfolio_proposal", portfolio_proposal),
@@ -704,11 +815,12 @@ def main():
     run_mode = load_run_mode(override=args.mode)
     logger.info("Run mode: %s", run_mode.value)
 
-    if not args.ticker or not validate_ticker(args.ticker):
-        logger.error("Invalid ticker: %s", args.ticker)
-        raise ValueError(
-            f"Invalid ticker: {args.ticker}. Use a valid Binance Testnet pair (e.g., BTC/USDT)."
-        )
+    if run_mode is not RunMode.BACKTEST:
+        if not args.ticker or not validate_ticker(args.ticker):
+            logger.error("Invalid ticker: %s", args.ticker)
+            raise ValueError(
+                f"Invalid ticker: {args.ticker}. Use a valid Binance Testnet pair (e.g., BTC/USDT)."
+            )
 
     state = initial_hedge_fund_state(run_mode=run_mode.value, ticker=args.ticker)
     logger.debug("Initial state: %s", state)

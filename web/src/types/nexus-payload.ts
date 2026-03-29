@@ -43,6 +43,10 @@ export interface TraceContent {
   confidence?: number;
   formula?: string | { name?: string; latex?: string; computed?: string };
   proposal?: { action: string; params: Record<string, unknown> };
+  /** Optional non-proposal decision payload (e.g. tool result). */
+  decision?: unknown;
+  /** Optional extra metadata from reasoning events (e.g. tool args). */
+  extra?: Record<string, unknown>;
   veto_status?: { checked_by?: string; status: string; reason?: string };
   context?: { pair?: string; signal?: string; confidence?: number; [key: string]: unknown };
 }
@@ -54,6 +58,9 @@ export interface NexusTrace {
   timestamp: string;
   actor: { id: string; role: string; persona?: string };
   content: TraceContent;
+  /** 0-based bar index when emitted from backtest (aligns with `message_log`). */
+  bar_step?: number;
+  bar_time_utc?: string;
 }
 
 /** Per-agent prompt and model fields for the settings UI. */
@@ -80,6 +87,9 @@ export interface MessageLogEntry {
   kind: "status" | "thought" | "tool" | "handoff" | "error";
   message: string;
   trace_id?: string;
+  /** 0-based bar index when emitted from backtest (see `bar_time_utc`). */
+  bar_step?: number;
+  bar_time_utc?: string;
 }
 
 export interface NexusPayload {

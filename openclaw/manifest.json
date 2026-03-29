@@ -6,7 +6,7 @@
   "summary": "Multi-agent LangGraph workflow: research desks → portfolio proposal → Risk Guard veto → execution. Emits structured traces for Nexus / OpenClaw UIs.",
   "entrypoints": {
     "workflow_cli": {
-      "command": "python -m src.main",
+      "command": "python -m main",
       "cwd": "repository_root",
       "env": ["BINANCE_API_KEY", "BINANCE_API_SECRET", "OPENAI_API_KEY"]
     },

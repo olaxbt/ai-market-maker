@@ -5,13 +5,21 @@ import { Cpu, Activity, ShieldCheck } from "lucide-react";
 import { formatTraceTime } from "@/lib/formatTraceTime";
 import type { NexusTrace } from "@/types/nexus-payload";
 
-/** Renders one `NexusTrace`: thought steps, optional formula, proposal, and risk status. */
 interface AgentTraceCardProps {
   trace: NexusTrace;
   index?: number;
+  reduceMotion?: boolean;
+  className?: string;
+  surface?: "default" | "timeline";
 }
 
-export function AgentTraceCard({ trace, index = 0 }: AgentTraceCardProps) {
+export function AgentTraceCard({
+  trace,
+  index = 0,
+  reduceMotion = false,
+  className: shellExtra,
+  surface = "default",
+}: AgentTraceCardProps) {
   const { actor, timestamp, content, parent_id } = trace;
   const {
     thought_process = [],
@@ -19,6 +27,8 @@ export function AgentTraceCard({ trace, index = 0 }: AgentTraceCardProps) {
     confidence,
     formula,
     proposal,
+    decision,
+    extra,
     veto_status,
     context,
   } = content ?? {};
@@ -39,52 +49,71 @@ export function AgentTraceCard({ trace, index = 0 }: AgentTraceCardProps) {
       ? (formula as { name?: string; latex?: string; computed?: string })
       : null;
 
-  return (
-    <motion.div
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ duration: 0.35, delay: index * 0.06 }}
-      className="mb-4 w-full bg-[var(--nexus-surface)] border border-[var(--nexus-border)] rounded-lg overflow-hidden shadow-xl font-mono"
-    >
-      <div className="flex items-center justify-between px-4 py-2 bg-[var(--nexus-panel)] border-b border-[var(--nexus-border)]">
+  const extraObj =
+    extra && typeof extra === "object" ? (extra as Record<string, unknown>) : null;
+  const toolName =
+    (extraObj && "tool_name" in extraObj ? extraObj.tool_name : null) ?? null;
+  const toolArgs = extraObj && "tool_args" in extraObj ? extraObj.tool_args : null;
+  const wireName = extraObj && "wire_name" in extraObj ? extraObj.wire_name : null;
+
+  const shellClass =
+    `mb-4 w-full bg-[var(--nexus-surface)] border border-[color:var(--nexus-card-stroke)] rounded-lg overflow-hidden shadow-xl font-mono ${shellExtra ?? ""}`.trim();
+
+  const bodyPad = surface === "timeline" ? "p-3 space-y-3" : "p-4 space-y-4";
+  const thoughtChainClass =
+    surface === "timeline"
+      ? "space-y-3"
+      : "nexus-scroll max-h-[200px] min-h-0 overflow-y-auto overflow-x-hidden pr-1 sm:max-h-[240px]";
+
+  const body = (
+    <>
+      <div className="flex items-center justify-between px-4 py-2 bg-[var(--nexus-panel)] border-b border-[var(--nexus-rule-soft)]">
         <div className="flex items-center gap-2">
           <Cpu size={16} className="text-[var(--nexus-glow)]" />
           <span className="text-xs font-bold text-[var(--nexus-glow)] uppercase tracking-widest">
             {actor.role}
           </span>
         </div>
-        <span className="text-[10px] text-[var(--nexus-muted)]">
+        <span className="font-mono text-[11px] tabular-nums text-[var(--nexus-muted)]">
           {formatTraceTime(timestamp)}
         </span>
       </div>
 
-      <div className="p-4 space-y-4">
+      <div className={bodyPad}>
         {parent_id && (
           <div className="text-[10px] text-[var(--nexus-muted)]">
             ← parent: <code className="text-[var(--nexus-glow)]/80">{parent_id}</code>
           </div>
         )}
 
-        <div className="space-y-2.5 rounded-md bg-[var(--nexus-bg)]/30 px-3 py-2.5">
-          <div className="text-[9px] font-semibold uppercase tracking-widest text-[var(--nexus-muted)]">
+        <div className="flex min-h-0 flex-col gap-2 rounded-md border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)]/35 px-3 py-3 sm:px-4 sm:py-3.5">
+          <div className="shrink-0 text-[10px] font-semibold uppercase tracking-widest text-[var(--nexus-muted)]">
             Thought chain
           </div>
-          {Array.isArray(thought_process) &&
-            thought_process.map((step, idx) => (
-              <div key={idx} className="flex gap-2.5">
-                <span className="shrink-0 font-mono text-[10px] tabular-nums text-[var(--nexus-muted)]">
-                  [{step.step}]
-                </span>
-                <div className="min-w-0">
-                  <span className="font-mono text-[10px] font-semibold uppercase tracking-wide text-[var(--nexus-text)]">
-                    {step.label}
+          <div className={thoughtChainClass}>
+            {Array.isArray(thought_process) && thought_process.length > 0 ? (
+              thought_process.map((step, idx) => (
+                <div
+                  key={idx}
+                  className="flex gap-3 border-b border-[var(--nexus-rule-soft)] py-2.5 first:pt-0 last:border-0 last:pb-0"
+                >
+                  <span className="shrink-0 font-mono text-[11px] tabular-nums text-[var(--nexus-muted)]">
+                    [{step.step}]
                   </span>
-                  <p className="mt-0.5 font-mono text-[10px] leading-snug text-slate-300">
-                    {step.detail}
-                  </p>
+                  <div className="min-w-0">
+                    <span className="font-mono text-[11px] font-semibold uppercase tracking-wide text-[var(--nexus-text)]">
+                      {step.label}
+                    </span>
+                    <p className="mt-1 font-mono text-[12px] leading-relaxed text-[var(--nexus-text)]/95">
+                      {step.detail}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))
+            ) : (
+              <p className="font-mono text-[11px] text-[var(--nexus-muted)]">No steps.</p>
+            )}
+          </div>
         </div>
 
         {signalVal != null && (
@@ -123,7 +152,7 @@ export function AgentTraceCard({ trace, index = 0 }: AgentTraceCardProps) {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
           {proposal && (
-            <div className="bg-[var(--nexus-panel)] p-3 rounded border border-[var(--nexus-border)]">
+            <div className="bg-[var(--nexus-panel)] p-3 rounded border border-[color:var(--nexus-card-stroke)]">
               <div className="flex items-center gap-2 mb-1">
                 <Activity size={14} className="text-[var(--nexus-success)]" />
                 <span className="text-[10px] text-[var(--nexus-muted)] uppercase">Proposal</span>
@@ -144,6 +173,37 @@ export function AgentTraceCard({ trace, index = 0 }: AgentTraceCardProps) {
                     `${proposal.params?.price != null ? " | " : ""}Lev: ${String(proposal.params.leverage)}`}
                 </div>
               )}
+            </div>
+          )}
+
+          {(toolName || decision != null) && (
+            <div className="bg-[var(--nexus-panel)] p-3 rounded border border-[color:var(--nexus-card-stroke)] sm:col-span-2">
+              <div className="flex items-center gap-2 mb-1">
+                <Activity size={14} className="text-[var(--nexus-glow)]" />
+                <span className="text-[10px] text-[var(--nexus-muted)] uppercase">Tool</span>
+              </div>
+              {toolName ? (
+                <div className="text-xs font-bold text-[var(--nexus-glow)] break-all">
+                  {String(toolName)}
+                  {wireName ? (
+                    <span className="ml-2 text-[10px] font-normal text-[var(--nexus-muted)]">
+                      ({String(wireName)})
+                    </span>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="text-xs font-bold text-[var(--nexus-glow)]">Tool result</div>
+              )}
+              {toolArgs != null ? (
+                <pre className="mt-2 max-h-28 overflow-auto rounded bg-[var(--nexus-bg)]/30 p-2 text-[9px] text-slate-300">
+                  {JSON.stringify(toolArgs, null, 2)}
+                </pre>
+              ) : null}
+              {decision != null ? (
+                <pre className="mt-2 max-h-28 overflow-auto rounded bg-[var(--nexus-bg)]/30 p-2 text-[9px] text-slate-300">
+                  {JSON.stringify(decision, null, 2)}
+                </pre>
+              ) : null}
             </div>
           )}
 
@@ -186,6 +246,21 @@ export function AgentTraceCard({ trace, index = 0 }: AgentTraceCardProps) {
       </div>
 
       <div className="h-0.5 w-full bg-gradient-to-r from-transparent via-[var(--nexus-glow)]/20 to-transparent animate-pulse" />
+    </>
+  );
+
+  if (reduceMotion) {
+    return <div className={shellClass}>{body}</div>;
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: -20 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.35, delay: index * 0.06 }}
+      className={shellClass}
+    >
+      {body}
     </motion.div>
   );
 }

@@ -144,7 +144,7 @@ export function AgentDetailPanel({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="nexus-scroll min-h-0 flex-1 overflow-y-auto">
         <div className="space-y-6 p-4">
           {promptDefaults && (promptDefaults.model != null || (promptDefaults.tools?.length ?? 0) > 0) ? (
             <section className="rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)]/50 p-3">

@@ -101,18 +101,29 @@ body {
 }
 
 /* Terminal-style scroll */
+.nexus-scroll,
 .thought-stream {
   scroll-behavior: smooth;
 }
+.nexus-scroll::-webkit-scrollbar,
 .thought-stream::-webkit-scrollbar {
   width: 6px;
 }
+.nexus-scroll::-webkit-scrollbar-track,
 .thought-stream::-webkit-scrollbar-track {
   background: var(--nexus-surface);
 }
+.nexus-scroll::-webkit-scrollbar-thumb,
 .thought-stream::-webkit-scrollbar-thumb {
   background: #334155;
   border-radius: 3px;
+}
+
+/* Firefox scrollbar parity */
+.nexus-scroll,
+.thought-stream {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 var(--nexus-surface);
 }
 
 /* Flow node active pulse — visible but not a bright “halo” vs idle rows */

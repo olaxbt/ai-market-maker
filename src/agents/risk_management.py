@@ -12,14 +12,16 @@ class RiskManagementAgent:
         try:
             results = {}
             for ticker in market_data:
-                if market_data[ticker].get("status") != "success":
+                st = market_data[ticker].get("status")
+                if st not in ("success", "backtest"):
                     continue
                 ohlcv = market_data[ticker]["ohlcv"]
-                if len(ohlcv) < 20:
+                if len(ohlcv) < 2:
                     logger.warning(f"Insufficient OHLCV data for {ticker}")
                     continue
-                # Calculate volatility using recent 20 candles
-                closes = [candle[4] for candle in ohlcv[-20:]]
+                # Up to 20 candles so sizing works early in a backtest.
+                tail = min(20, len(ohlcv))
+                closes = [candle[4] for candle in ohlcv[-tail:]]
                 volatility = np.std(closes) / np.mean(closes)
                 current_price = closes[-1]
                 # Use valuation to adjust position size

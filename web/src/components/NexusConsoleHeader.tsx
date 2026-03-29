@@ -1,9 +1,9 @@
 "use client";
 
-import { Orbit, LayoutGrid } from "lucide-react";
+import { FlaskConical, LayoutGrid, Orbit } from "lucide-react";
 import type { Metadata } from "@/types/nexus-payload";
 
-export type NexusViewMode = "nexus" | "grid";
+export type NexusViewMode = "nexus" | "grid" | "backtest";
 
 interface NexusConsoleHeaderProps {
   metadata: Metadata | null | undefined;
@@ -82,8 +82,16 @@ export function NexusConsoleHeader({
         </div>
         <div className="flex items-center gap-4 font-mono text-xs">
           {metadata?.run_id && (
-            <span className="text-[var(--nexus-muted)]">
-              Run: <span className="text-[var(--nexus-text)]">{metadata.run_id}</span>
+            <span
+              className="text-[var(--nexus-muted)]"
+              title={
+                viewMode === "backtest"
+                  ? "Live Nexus / strategy stream id (not the saved backtest id in the panel below)"
+                  : undefined
+              }
+            >
+              {viewMode === "backtest" ? "Stream run:" : "Run:"}{" "}
+              <span className="text-[var(--nexus-text)]">{metadata.run_id}</span>
             </span>
           )}
           {metadata?.ticker && (
@@ -126,6 +134,16 @@ export function NexusConsoleHeader({
             >
               <LayoutGrid className="h-3.5 w-3.5 opacity-80 group-hover:opacity-100" />
               <span className="leading-none">Agents</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onViewModeChange("backtest")}
+              className={`nexus-segment-btn group flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] tracking-widest uppercase transition-all ${
+                viewMode === "backtest" ? "is-active" : ""
+              }`}
+            >
+              <FlaskConical className="h-3.5 w-3.5 opacity-80 group-hover:opacity-100" />
+              <span className="leading-none">Backtest</span>
             </button>
           </div>
         </div>

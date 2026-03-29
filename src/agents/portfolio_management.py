@@ -58,13 +58,17 @@ class PortfolioManagementAgent:
         liquidity: Dict,
         *,
         execute: bool = True,
+        run_mode: str | None = None,
+        external_position_qty: float | None = None,
     ) -> Dict[str, Any]:
         try:
             # Step 1: Compute portfolio allocations
             allocations = {}
             total_budget = 5000  # Total USD budget
             risk_analysis = risk.get("analysis", {})
-            tickers = [t for t in market_data if market_data[t].get("status") == "success"]
+            tickers = [
+                t for t in market_data if market_data[t].get("status") in ("success", "backtest")
+            ]
             if not tickers:
                 logger.warning("No valid market data for portfolio allocation")
                 return {"status": "error", "message": "No valid market data"}
@@ -94,30 +98,62 @@ class PortfolioManagementAgent:
                 trades[ticker] = {"status": "error", "message": f"Ticker {ticker} not available"}
             else:
                 # Extract signals and portfolio allocations
-                sentiment_score = sentiment_analysis.get("score", 50.0)
+                sentiment_score = float(
+                    sentiment_analysis.get("sentiment_score")
+                    or sentiment_analysis.get("score")
+                    or 50.0
+                )
                 arb_signal = (
                     arb_analysis.get("analysis", {}).get(f"{ticker}-*", {}).get("signal", "hold")
                 )
-                quant_signal = quant_analysis.get("signal", "hold")
+                qa = quant_analysis.get("analysis")
+                qtick = qa.get(ticker, {}) if isinstance(qa, dict) else {}
+                quant_signal = (
+                    qtick.get("macd_signal", "hold")
+                    if isinstance(qtick, dict)
+                    else quant_analysis.get("signal", "hold")
+                )
                 portfolio_alloc = allocations.get(ticker, {})
                 target_amount = portfolio_alloc.get("amount", 0)  # USD amount to allocate
                 stop_price = portfolio_alloc.get("stop_price", 0)
                 # Latest closing price
                 current_price = market_data[ticker]["ohlcv"][-1][4]
 
-                # Check current position
+                # Check current position (backtest uses engine-reported qty, not positions.json)
                 position = self.positions.get(ticker, None)
-                has_position = position is not None
+                run_m = (run_mode or "").strip().lower()
+                if run_m == "backtest":
+                    current_quantity = float(
+                        external_position_qty if external_position_qty is not None else 0.0
+                    )
+                    has_position = current_quantity > 0
+                else:
+                    has_position = position is not None
+                    current_quantity = position["quantity"] if has_position else 0
+
                 trade_result = {"status": "skipped", "message": "No trade signal"}
 
                 # Calculate target quantity based on portfolio allocation
                 target_quantity = target_amount / current_price if current_price > 0 else 0
-                current_quantity = position["quantity"] if has_position else 0
 
                 # Buy logic: Increase position to match target allocation
                 if target_quantity > current_quantity:
-                    if (sentiment_score > 75 and quant_signal == "buy") or arb_signal == "buy":
+                    if run_m == "backtest":
+                        # Simulation: follow risk target unless MACD says sell
+                        buy_signal = quant_signal != "sell" and (
+                            (quant_signal == "buy")
+                            or (arb_signal == "buy")
+                            or (sentiment_score >= 55 and quant_signal == "hold")
+                        )
+                    else:
+                        buy_signal = (sentiment_score > 75 and quant_signal == "buy") or (
+                            arb_signal == "buy"
+                        )
+
+                    if buy_signal:
                         quantity_to_buy = target_quantity - current_quantity
+                        if run_m == "backtest":
+                            quantity_to_buy = min(quantity_to_buy, 0.05)
                         trade_result = {
                             "status": "proposed",
                             "action": "buy",

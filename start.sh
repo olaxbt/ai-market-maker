@@ -9,12 +9,21 @@ WEB_PORT="${WEB_PORT:-3000}"
 TICKER="${TICKER:-BTC/USDT}"
 MODE="${MODE:-paper}"
 RUN_STRATEGY="${RUN_STRATEGY:-1}"
-STRATEGY_INTERVAL_SEC="${STRATEGY_INTERVAL_SEC:-20}"
+
+# Seconds between full graph runs (default 180 from config.cadence — reduce token burn).
+if [[ -z "${STRATEGY_INTERVAL_SEC:-}" ]]; then
+  STRATEGY_INTERVAL_SEC="$(
+    uv run python -c 'from config.cadence import load_strategy_interval_sec; print(load_strategy_interval_sec())'
+  )"
+fi
+export STRATEGY_INTERVAL_SEC
+uv run python -c \
+  "from config.cadence import warn_if_aggressive_cadence; warn_if_aggressive_cadence(${STRATEGY_INTERVAL_SEC})"
 
 echo "Starting AI Market Maker dev stack..."
 echo "  API: http://127.0.0.1:${FLOW_API_PORT}"
 echo "  Web: http://127.0.0.1:${WEB_PORT}"
-echo "  Strategy loop: ${RUN_STRATEGY} (mode=${MODE}, ticker=${TICKER})"
+echo "  Strategy loop: ${RUN_STRATEGY} (mode=${MODE}, ticker=${TICKER}, interval=${STRATEGY_INTERVAL_SEC}s)"
 
 cleanup() {
   echo ""
@@ -23,7 +32,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-uv run python -m uvicorn src.api.main:app --reload --port "${FLOW_API_PORT}" &
+uv run python -m uvicorn api.main:app --reload --port "${FLOW_API_PORT}" &
 API_PID=$!
 echo "API PID: ${API_PID}"
 
@@ -58,6 +67,7 @@ fi
 (
   cd web
   FLOW_API_BASE_URL="http://127.0.0.1:${FLOW_API_PORT}" \
+  NEXT_PUBLIC_FLOW_API_BASE_URL="http://127.0.0.1:${FLOW_API_PORT}" \
   NEXT_PUBLIC_FLOW_WS_URL="ws://127.0.0.1:${FLOW_API_PORT}" \
   NEXT_PUBLIC_USE_MOCK=0 \
   npm run dev -- --port "${WEB_PORT}"

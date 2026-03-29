@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 NODE_REGISTRY: List[Dict[str, str]] = [
     {"id": "n1", "actor": "market_scan", "label": "Market Scan", "role": "Market Scan"},
@@ -112,6 +112,26 @@ def _message_kind(kind: str) -> str:
     return "status"
 
 
+def _bar_meta_from_payload(p: Any) -> Tuple[Optional[int], str]:
+    """Synthetic bar index (0-based) and bar open time label from backtest FlowEvent payload."""
+    if not isinstance(p, dict):
+        return (None, "")
+    ex = p.get("extra")
+    for d in (p, ex if isinstance(ex, dict) else None):
+        if not isinstance(d, dict):
+            continue
+        raw = d.get("bar_step")
+        if raw is None:
+            continue
+        try:
+            step = int(raw)
+        except (TypeError, ValueError):
+            continue
+        bt = str(d.get("bar_time_utc") or "").strip()
+        return (step, bt)
+    return (None, "")
+
+
 def build_nexus_payload(log_path: Path) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """Return `(payload, events)` where payload matches `web/src/types/nexus-payload.ts`."""
     events = _read_events(log_path)
@@ -166,6 +186,12 @@ def build_nexus_payload(log_path: Path) -> Tuple[Dict[str, Any], List[Dict[str, 
                     "action": decision.get("action"),
                     "params": decision.get("params"),
                 }
+            else:
+                # Preserve non-proposal decisions (e.g. tool results) for UI rendering.
+                content["decision"] = decision
+            extra_obj = p.get("extra")
+            if isinstance(extra_obj, dict) and extra_obj:
+                content["extra"] = extra_obj
             signal = (p.get("extra") or {}).get("signal")
             confidence = (p.get("extra") or {}).get("confidence")
             if signal is not None:
@@ -199,41 +225,49 @@ def build_nexus_payload(log_path: Path) -> Tuple[Dict[str, Any], List[Dict[str, 
         elif kind == "node_end":
             thought_process.append({"step": 1, "label": "HANDOFF", "detail": log_message})
 
+        bar_step, bar_time_utc = _bar_meta_from_payload(p)
+
         trace_id = None
         if thought_process:
             trace_id = f"trace-{trace_seq:05d}"
             parent_id = latest_trace_for_actor.get(actor)
-            traces.append(
-                {
-                    "trace_id": trace_id,
-                    "node_id": node_id,
-                    "parent_id": parent_id,
-                    "timestamp": ts,
-                    "actor": {
-                        "id": actor,
-                        "role": node["role"],
-                    },
-                    "content": {
-                        "thought_process": thought_process,
-                        **content,
-                    },
-                }
-            )
+            td: Dict[str, Any] = {
+                "trace_id": trace_id,
+                "node_id": node_id,
+                "parent_id": parent_id,
+                "timestamp": ts,
+                "actor": {
+                    "id": actor,
+                    "role": node["role"],
+                },
+                "content": {
+                    "thought_process": thought_process,
+                    **content,
+                },
+            }
+            if bar_step is not None:
+                td["bar_step"] = bar_step
+            if bar_time_utc:
+                td["bar_time_utc"] = bar_time_utc
+            traces.append(td)
             latest_trace_for_actor[actor] = trace_id
             trace_seq += 1
 
         if log_message:
-            message_log.append(
-                {
-                    "seq": seq,
-                    "ts": ts,
-                    "node_id": node_id,
-                    "actor_id": actor,
-                    "kind": _message_kind(kind),
-                    "message": log_message,
-                    "trace_id": trace_id,
-                }
-            )
+            row: Dict[str, Any] = {
+                "seq": seq,
+                "ts": ts,
+                "node_id": node_id,
+                "actor_id": actor,
+                "kind": _message_kind(kind),
+                "message": log_message,
+                "trace_id": trace_id,
+            }
+            if bar_step is not None:
+                row["bar_step"] = bar_step
+            if bar_time_utc:
+                row["bar_time_utc"] = bar_time_utc
+            message_log.append(row)
             seq += 1
 
     for n in topology["nodes"]:

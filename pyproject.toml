@@ -1,3 +1,16 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+# Install with `uv sync` (editable by default). Top-level packages live under `src/`
+# (`api`, `backtest`, …) plus modules `main` and `flow_log` — no PYTHONPATH needed.
+[tool.setuptools]
+package-dir = { "" = "src" }
+py-modules = ["main", "flow_log"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [project]
 name = "ai-market-maker"
 version = "0.1.0"
@@ -44,3 +57,7 @@ select = ["E", "F", "I", "B"]
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.pytest.ini_options]
+addopts = ["-q"]
+testpaths = ["tests"]

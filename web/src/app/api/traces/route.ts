@@ -34,7 +34,10 @@ export async function GET() {
     }
     const json = await res.json();
     return NextResponse.json(json, {
-      headers: { "x-flow-data-source": "live" },
+      headers: {
+        "x-flow-data-source": "live",
+        "x-flow-api-base-url": flowApiBase,
+      },
     });
   } catch {
     if (allowMockFallback) {

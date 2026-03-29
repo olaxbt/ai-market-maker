@@ -1,0 +1,996 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { BacktestBarTimeline } from "@/components/backtest/BacktestBarTimeline";
+import {
+  EmbeddedBacktestChrome,
+  type EmbeddedWorkspaceTab,
+} from "@/components/backtest/EmbeddedBacktestChrome";
+import { BacktestEquityChart } from "@/components/backtest/BacktestEquityChart";
+import { BacktestTradesTable } from "@/components/backtest/BacktestTradesTable";
+import { copyText } from "@/components/backtest/embeddedBacktestUtils";
+import {
+  amountUnitToIntervalSec,
+  BAR_INTERVAL_UNIT_LABEL,
+  formatIntervalHuman,
+  intervalSecToAmountUnit,
+  type BarIntervalUnit,
+} from "@/lib/backtestInterval";
+import { getFlowApiOrigin } from "@/lib/flowApiOrigin";
+import type { NexusPayload } from "@/types/nexus-payload";
+import type {
+  BacktestRunResult,
+  EquitySeriesResponse,
+  SummaryPayload,
+  TradeRow,
+  TradesResponse,
+} from "@/types/backtest";
+
+type StrategyRow = {
+  id: string;
+  title: string;
+  description: string;
+  defaults: {
+    n_bars: number;
+    interval_sec: number;
+    max_steps: number;
+    seed: number;
+    fee_bps: number;
+    initial_cash: number;
+  };
+};
+
+type BacktestJob = {
+  status: "queued" | "running" | "completed" | "failed";
+  step?: number;
+  total_steps?: number;
+  trade_count?: number;
+  equity?: number;
+  vetoed?: boolean;
+  error?: string;
+  result?: BacktestRunResult;
+};
+
+function downloadJson(data: unknown, filename: string) {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+type BacktestKpiRow = {
+  totalReturnPct: number;
+  sharpe: number;
+  maxDrawdownPct: number;
+  winRatePct: number;
+  trades: number;
+  steps: number;
+};
+
+function shortBacktestRunLabel(id: string): string {
+  const t = id.trim();
+  if (t.length <= 20) return t;
+  return `${t.slice(0, 5)}…${t.slice(-10)}`;
+}
+
+function BacktestKpiGrid({ kpis, compact }: { kpis: BacktestKpiRow; compact?: boolean }) {
+  const items: { label: string; value: string; tone: string }[] = [
+    {
+      label: "Total return",
+      value: `${kpis.totalReturnPct >= 0 ? "+" : ""}${kpis.totalReturnPct.toFixed(2)}%`,
+      tone: kpis.totalReturnPct >= 0 ? "text-[var(--nexus-success)]" : "text-[var(--nexus-danger)]",
+    },
+    { label: "Sharpe (ann.)", value: kpis.sharpe.toFixed(3), tone: "text-[var(--nexus-text)]" },
+    { label: "Max drawdown", value: `${kpis.maxDrawdownPct.toFixed(2)}%`, tone: "text-[var(--nexus-danger)]/90" },
+    { label: "Win rate", value: `${kpis.winRatePct.toFixed(1)}%`, tone: "text-[var(--nexus-muted)]" },
+    { label: "Fills", value: String(kpis.trades), tone: "text-[var(--nexus-text)]" },
+    { label: "Steps", value: String(kpis.steps), tone: "text-[var(--nexus-muted)]" },
+  ];
+  if (compact) {
+    return (
+      <div className="grid grid-cols-3 gap-1 sm:grid-cols-6">
+        {items.map((k) => (
+          <div
+            key={k.label}
+            className="rounded border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)]/45 px-1.5 py-1"
+          >
+            <p className="font-mono text-[7px] uppercase leading-tight tracking-wider text-[var(--nexus-muted)]">{k.label}</p>
+            <p className={`mt-0.5 truncate font-mono text-xs tabular-nums leading-tight ${k.tone}`}>{k.value}</p>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      {items.map((k) => (
+        <div
+          key={k.label}
+          className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)]/60 px-4 py-3"
+        >
+          <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">{k.label}</p>
+          <p className={`mt-1 font-mono text-lg tabular-nums ${k.tone}`}>{k.value}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function BacktestLabPanel({
+  embedded = false,
+  initialRunId = null,
+}: {
+  embedded?: boolean;
+  initialRunId?: string | null;
+}) {
+  const router = useRouter();
+
+  const [embeddedTab, setEmbeddedTab] = useState<EmbeddedWorkspaceTab>("saved");
+
+  const [strategies, setStrategies] = useState<StrategyRow[]>([]);
+  const [presetId, setPresetId] = useState("macd_risk_v1");
+  const [ticker, setTicker] = useState("BTC/USDT");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [runPayload, setRunPayload] = useState<BacktestRunResult | null>(null);
+  const [summaryPayload, setSummaryPayload] = useState<SummaryPayload | null>(null);
+  const [equitySeries, setEquitySeries] = useState<EquitySeriesResponse | null>(null);
+  const [tradesData, setTradesData] = useState<TradesResponse | null>(null);
+  const [tracePayload, setTracePayload] = useState<NexusPayload | null>(null);
+
+  const [runList, setRunList] = useState<string[]>([]);
+  const [selectedHistoryId, setSelectedHistoryId] = useState("");
+  const [jobState, setJobState] = useState<BacktestJob | null>(null);
+  const [pollingJobId, setPollingJobId] = useState<string | null>(null);
+  const [liveRunId, setLiveRunId] = useState<string | null>(null);
+
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [nBars, setNBars] = useState("");
+  const [intervalAmount, setIntervalAmount] = useState("");
+  const [intervalUnit, setIntervalUnit] = useState<BarIntervalUnit>("min");
+  const [maxSteps, setMaxSteps] = useState("");
+  const [seed, setSeed] = useState("");
+  const [feeBps, setFeeBps] = useState("");
+  const [initialCash, setInitialCash] = useState("");
+
+  const [showRaw, setShowRaw] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const lastUrlRunRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/strategies")
+      .then((r) => r.json())
+      .then((d: { strategies?: StrategyRow[] }) => {
+        if (Array.isArray(d.strategies) && d.strategies.length) {
+          setStrategies(d.strategies);
+          setPresetId(d.strategies[0].id);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    const base = getFlowApiOrigin();
+    fetch(`${base}/backtests`)
+      .then((r) => r.json())
+      .then((d: { runs?: string[] }) => {
+        if (Array.isArray(d.runs)) setRunList(d.runs);
+      })
+      .catch(() => {});
+  }, []);
+
+  const selected = strategies.find((s) => s.id === presetId);
+
+  useEffect(() => {
+    if (!selected) return;
+    setNBars(String(selected.defaults.n_bars));
+    const iu = intervalSecToAmountUnit(selected.defaults.interval_sec);
+    setIntervalAmount(iu.amount);
+    setIntervalUnit(iu.unit);
+    setMaxSteps(String(selected.defaults.max_steps));
+    setSeed(String(selected.defaults.seed));
+    setFeeBps(String(selected.defaults.fee_bps));
+    setInitialCash(String(selected.defaults.initial_cash));
+  }, [presetId, selected]);
+
+  const buildBody = useCallback(() => {
+    const body: Record<string, unknown> = { preset_id: presetId, ticker };
+    if (!selected) return body;
+    const nb = parseInt(nBars, 10);
+    const amt = parseFloat(intervalAmount);
+    const ms = parseInt(maxSteps, 10);
+    if (!Number.isNaN(nb)) body.n_bars = nb;
+    if (!Number.isNaN(amt) && amt > 0) body.interval_sec = amountUnitToIntervalSec(amt, intervalUnit);
+    if (!Number.isNaN(ms)) body.max_steps = ms;
+    if (advancedOpen) {
+      const sd = parseInt(seed, 10);
+      const fee = parseFloat(feeBps);
+      const cash = parseFloat(initialCash);
+      if (!Number.isNaN(sd)) body.seed = sd;
+      if (!Number.isNaN(fee)) body.fee_bps = fee;
+      if (!Number.isNaN(cash)) body.initial_cash = cash;
+    }
+    return body;
+  }, [
+    advancedOpen,
+    presetId,
+    ticker,
+    nBars,
+    intervalAmount,
+    intervalUnit,
+    maxSteps,
+    seed,
+    feeBps,
+    initialCash,
+    selected,
+  ]);
+
+  const fetchSeries = useCallback(async (runId: string) => {
+    const base = getFlowApiOrigin();
+    const [eqRes, trRes] = await Promise.all([
+      fetch(`${base}/backtests/${encodeURIComponent(runId)}/equity?max_points=2500`),
+      fetch(`${base}/backtests/${encodeURIComponent(runId)}/trades?limit=2000`),
+    ]);
+    if (eqRes.ok) setEquitySeries((await eqRes.json()) as EquitySeriesResponse);
+    else setEquitySeries(null);
+    if (trRes.ok) setTradesData((await trRes.json()) as TradesResponse);
+    else setTradesData(null);
+  }, []);
+
+  const fetchTracePayload = useCallback(async (runId: string, soft: boolean) => {
+    const base = getFlowApiOrigin();
+    const url = `${base}/runs/${encodeURIComponent(runId)}/payload${soft ? "?soft=true" : ""}`;
+    try {
+      const r = await fetch(url);
+      if (r.ok) setTracePayload((await r.json()) as NexusPayload);
+    } catch {
+      // fetch failed (offline / CORS)
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!pollingJobId) return;
+    const base = getFlowApiOrigin();
+    let cancelled = false;
+
+    const tick = async () => {
+      try {
+        const res = await fetch(`${base}/backtests/jobs/${encodeURIComponent(pollingJobId)}`);
+        const j = (await res.json()) as BacktestJob;
+        if (cancelled) return;
+        setJobState(j);
+        if (j.status === "completed" && j.result) {
+          setPollingJobId(null);
+          setLiveRunId(null);
+          setLoading(false);
+          setRunPayload(j.result);
+          if (j.result.run_id) {
+            lastUrlRunRef.current = j.result.run_id;
+            router.replace(`/?view=backtest&run=${encodeURIComponent(j.result.run_id)}`, { scroll: false });
+            setSelectedHistoryId(j.result.run_id);
+            await fetchSeries(j.result.run_id);
+            await fetchTracePayload(j.result.run_id, false);
+            fetch(`${base}/backtests`)
+              .then((r) => r.json())
+              .then((d: { runs?: string[] }) => {
+                if (Array.isArray(d.runs)) setRunList(d.runs);
+              })
+              .catch(() => {});
+          }
+        }
+        if (j.status === "failed") {
+          setPollingJobId(null);
+          setLiveRunId(null);
+          setLoading(false);
+          setError(typeof j.error === "string" ? j.error : "Backtest failed");
+        }
+      } catch {
+        if (!cancelled) setError("Job poll failed");
+      }
+    };
+
+    void tick();
+    const id = window.setInterval(() => void tick(), 450);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [pollingJobId, fetchSeries, fetchTracePayload, router]);
+
+  useEffect(() => {
+    if (!liveRunId || !loading) return;
+    const id = window.setInterval(() => {
+      void fetchTracePayload(liveRunId, true);
+    }, 850);
+    return () => window.clearInterval(id);
+  }, [liveRunId, loading, fetchTracePayload]);
+
+  const runPreset = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setRunPayload(null);
+    setSummaryPayload(null);
+    setEquitySeries(null);
+    setTradesData(null);
+    setTracePayload(null);
+    setJobState(null);
+    setSelectedHistoryId("");
+    setPollingJobId(null);
+    setLiveRunId(null);
+
+    const body = buildBody();
+    const base = getFlowApiOrigin();
+
+    try {
+      const res = await fetch(`${base}/backtests/preset/async`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = (await res.json().catch(() => ({}))) as { run_id?: string; detail?: string };
+      if (!res.ok) {
+        setLoading(false);
+        setError(typeof data.detail === "string" ? data.detail : `HTTP ${res.status}`);
+        return;
+      }
+      if (!data.run_id) {
+        setLoading(false);
+        setError("No run_id from async endpoint");
+        return;
+      }
+      setLiveRunId(data.run_id);
+      setPollingJobId(data.run_id);
+      setJobState({ status: "queued", step: 0, total_steps: 0 });
+    } catch (e) {
+      setLoading(false);
+      setError(e instanceof Error ? e.message : "Request failed");
+    }
+  }, [buildBody]);
+
+  const loadHistoricalRun = useCallback(
+    async (runId: string): Promise<boolean> => {
+      if (!runId) return false;
+      lastUrlRunRef.current = runId;
+      router.replace(`/?view=backtest&run=${encodeURIComponent(runId)}`, { scroll: false });
+      setHistoryLoading(true);
+      setError(null);
+      setRunPayload(null);
+      setSummaryPayload(null);
+      setEquitySeries(null);
+      setTradesData(null);
+      setTracePayload(null);
+      setJobState(null);
+      setPollingJobId(null);
+      setLiveRunId(null);
+      try {
+        const base = getFlowApiOrigin();
+        const sRes = await fetch(`${base}/backtests/${encodeURIComponent(runId)}/summary`);
+        const raw = await sRes.json().catch(() => ({}));
+        if (!sRes.ok) {
+          setError(typeof raw.detail === "string" ? raw.detail : `HTTP ${sRes.status}`);
+          return false;
+        }
+        setSummaryPayload(raw as SummaryPayload);
+        setSelectedHistoryId(runId);
+        await fetchSeries(runId);
+        await fetchTracePayload(runId, false);
+        return true;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Request failed");
+        return false;
+      } finally {
+        setHistoryLoading(false);
+      }
+    },
+    [fetchSeries, fetchTracePayload, router],
+  );
+
+  const clearToNewRun = useCallback(() => {
+    setRunPayload(null);
+    setSummaryPayload(null);
+    setEquitySeries(null);
+    setTradesData(null);
+    setTracePayload(null);
+    setJobState(null);
+    setPollingJobId(null);
+    setLiveRunId(null);
+    setSelectedHistoryId("");
+    setError(null);
+    lastUrlRunRef.current = null;
+    router.replace("/?view=backtest", { scroll: false });
+  }, [router]);
+
+  useEffect(() => {
+    const id = initialRunId?.trim() || null;
+    if (!id) {
+      lastUrlRunRef.current = null;
+      return;
+    }
+    if (id === lastUrlRunRef.current) return;
+    void loadHistoricalRun(id);
+  }, [initialRunId, loadHistoricalRun]);
+
+  const metrics = runPayload?.metrics ?? summaryPayload?.metrics;
+  const evaluation = runPayload?.evaluation;
+  const activeRunId = runPayload?.run_id ?? summaryPayload?.run_id ?? "";
+
+  const kpis = useMemo(() => {
+    if (!metrics) return null;
+    const initial = evaluation?.initial_cash ?? metrics.initial_cash;
+    const final = evaluation?.final_equity ?? metrics.final_equity;
+    const retPct =
+      evaluation?.total_return_pct ??
+      (initial > 0 ? ((final - initial) / initial) * 100 : 0);
+    const trades = evaluation?.trade_count ?? runPayload?.trade_count ?? summaryPayload?.trade_count ?? 0;
+    const steps = metrics.steps;
+    return {
+      totalReturnPct: retPct,
+      sharpe: metrics.sharpe,
+      maxDrawdownPct: metrics.max_drawdown * 100,
+      winRatePct: metrics.win_rate * 100,
+      trades,
+      steps,
+      finalEquity: final,
+      initialCash: initial,
+      intervalSec: metrics.interval_sec,
+    };
+  }, [metrics, evaluation, runPayload, summaryPayload]);
+
+  useEffect(() => {
+    if (!embedded) return;
+    if (activeRunId) setEmbeddedTab("saved");
+  }, [embedded, activeRunId]);
+
+  const displayPayload = runPayload ?? (summaryPayload as unknown as BacktestRunResult | null);
+
+  const tracesToShow = tracePayload?.traces ?? [];
+  const messageLog = tracePayload?.message_log ?? [];
+  const streamingThoughts = loading && (jobState?.status === "running" || jobState?.status === "queued");
+  const timelineEmptyHint =
+    embedded &&
+    kpis &&
+    !streamingThoughts &&
+    messageLog.length === 0 &&
+    tracesToShow.length === 0
+      ? "This run loaded, but the saved trace has no bar events yet. Re-run the backtest or check GET /runs/<id>/payload (message_log)."
+      : null;
+  const formBusy = loading || historyLoading;
+
+  const progressPct =
+    jobState?.total_steps && jobState.total_steps > 0 && jobState.step != null
+      ? Math.min(100, Math.round((jobState.step / jobState.total_steps) * 100))
+      : 0;
+
+  function renderSetupForm(compactForm = false) {
+    const lb = compactForm ? "block font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-muted)]" : "block font-mono text-[10px] uppercase tracking-widest text-[var(--nexus-muted)]";
+    const inp = compactForm
+      ? "mt-1 w-full rounded border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)] px-2 py-1.5 font-mono text-[11px]"
+      : "mt-2 w-full rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)] px-3 py-2.5 font-mono text-xs";
+    const sel = compactForm
+      ? "mt-1 w-full rounded border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)] px-2 py-1.5 font-mono text-[11px] text-[var(--nexus-text)]"
+      : "mt-2 w-full rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)] px-3 py-2.5 font-mono text-xs text-[var(--nexus-text)]";
+    return (
+      <>
+        <div className={`flex flex-wrap items-end ${compactForm ? "gap-3" : "gap-6"}`}>
+          <div className={`min-w-0 flex-1 ${compactForm ? "min-w-[140px]" : "min-w-[200px]"}`}>
+            <label className={lb}>Strategy preset</label>
+            <select
+              className={sel}
+              value={presetId}
+              onChange={(e) => setPresetId(e.target.value)}
+              disabled={formBusy}
+            >
+              {strategies.length === 0 ? (
+                <option value="macd_risk_v1">macd_risk_v1</option>
+              ) : (
+                strategies.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.title}
+                  </option>
+                ))
+              )}
+            </select>
+            {selected ? (
+              <p
+                className={`mt-1.5 text-[var(--nexus-muted)] ${compactForm ? "line-clamp-2 text-[10px] leading-snug" : "mt-2 text-[11px] leading-relaxed"}`}
+              >
+                {selected.description}
+              </p>
+            ) : null}
+          </div>
+          <div className={`w-full min-w-[120px] ${compactForm ? "max-w-[11rem]" : "max-w-xs min-w-[160px]"}`}>
+            <label className={lb}>Ticker</label>
+            <input
+              className={inp}
+              value={ticker}
+              onChange={(e) => setTicker(e.target.value)}
+              placeholder="BTC/USDT"
+              disabled={formBusy}
+            />
+          </div>
+        </div>
+
+        <div className={compactForm ? "mt-3" : "mt-5"}>
+          <p className={`font-mono uppercase tracking-[0.2em] text-[var(--nexus-muted)] ${compactForm ? "text-[9px]" : "text-[10px]"}`}>
+            Simulation
+          </p>
+          <div className={`mt-2 grid sm:grid-cols-2 lg:grid-cols-3 ${compactForm ? "gap-2" : "mt-3 gap-4"}`}>
+            <div>
+              <label className={lb}>Number of bars</label>
+              <input
+                className={inp}
+                value={nBars}
+                onChange={(e) => setNBars(e.target.value)}
+                disabled={formBusy}
+              />
+              {!compactForm ? (
+                <p className="mt-0.5 text-[10px] text-[var(--nexus-muted)]">How many synthetic candles to generate</p>
+              ) : null}
+            </div>
+            <div className="sm:col-span-2 lg:col-span-1">
+              <label className={lb}>Time between bars</label>
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  className={
+                    compactForm
+                      ? "min-w-[3rem] flex-1 rounded border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)] px-2 py-1.5 font-mono text-[11px]"
+                      : "min-w-[4rem] flex-1 rounded border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)] px-2 py-2 font-mono text-xs"
+                  }
+                  value={intervalAmount}
+                  onChange={(e) => setIntervalAmount(e.target.value)}
+                  disabled={formBusy}
+                  aria-label="Bar interval amount"
+                />
+                <select
+                  className={
+                    compactForm
+                      ? "min-w-[6rem] flex-1 rounded border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)] px-2 py-1.5 font-mono text-[11px] text-[var(--nexus-text)]"
+                      : "min-w-[8rem] flex-1 rounded border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)] px-2 py-2 font-mono text-xs text-[var(--nexus-text)]"
+                  }
+                  value={intervalUnit}
+                  onChange={(e) => setIntervalUnit(e.target.value as BarIntervalUnit)}
+                  disabled={formBusy}
+                  aria-label="Bar interval unit"
+                >
+                  {(Object.keys(BAR_INTERVAL_UNIT_LABEL) as BarIntervalUnit[]).map((u) => (
+                    <option key={u} value={u}>
+                      {BAR_INTERVAL_UNIT_LABEL[u]}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {!compactForm ? (
+                <p className="mt-0.5 text-[10px] text-[var(--nexus-muted)]">Bar spacing (sent to the API as seconds).</p>
+              ) : null}
+            </div>
+            <div>
+              <label className={lb}>Max graph steps</label>
+              <input className={inp} value={maxSteps} onChange={(e) => setMaxSteps(e.target.value)} disabled={formBusy} />
+              {!compactForm ? (
+                <p className="mt-0.5 text-[10px] text-[var(--nexus-muted)]">Safety cap on LangGraph steps per bar</p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen((o) => !o)}
+          className={`font-mono uppercase tracking-widest text-[var(--nexus-glow)] hover:underline ${compactForm ? "mt-2 text-[9px]" : "mt-4 text-[10px]"}`}
+        >
+          {advancedOpen ? "Hide advanced (seed, fees, capital)" : "Advanced: seed, fees, initial capital"}
+        </button>
+
+        {advancedOpen ? (
+          <div className={`grid sm:grid-cols-2 lg:grid-cols-3 ${compactForm ? "mt-2 gap-2" : "mt-4 gap-4"}`}>
+            {(
+              [
+                ["seed", seed, setSeed, "RNG seed (reproducible paths)"],
+                ["fee_bps", feeBps, setFeeBps, "Trading fee in basis points"],
+                ["initial_cash", initialCash, setInitialCash, "Starting quote balance"],
+              ] as const
+            ).map(([key, val, setVal, hint]) => (
+              <div key={key}>
+                <label className={lb}>{key === "seed" ? "Seed" : key === "fee_bps" ? "Fee (bps)" : "Initial cash"}</label>
+                <input
+                  className={inp}
+                  value={val}
+                  onChange={(e) => setVal(e.target.value)}
+                  disabled={formBusy}
+                />
+                {!compactForm ? <p className="mt-0.5 text-[10px] text-[var(--nexus-muted)]">{hint}</p> : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        <div className={`flex flex-col ${compactForm ? "mt-3 gap-2" : "mt-6 gap-4"}`}>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={formBusy}
+              onClick={() => void runPreset()}
+              className={
+                compactForm
+                  ? "rounded-md border border-[var(--nexus-glow)]/50 bg-[var(--nexus-glow)]/15 px-4 py-2 font-mono text-[10px] font-medium uppercase tracking-wider text-[var(--nexus-glow)] transition hover:bg-[var(--nexus-glow)]/25 disabled:opacity-50"
+                  : "rounded-lg border border-[var(--nexus-glow)]/50 bg-[var(--nexus-glow)]/15 px-5 py-2.5 font-mono text-[11px] font-medium uppercase tracking-widest text-[var(--nexus-glow)] shadow-[0_0_20px_rgba(0,212,170,0.12)] transition hover:bg-[var(--nexus-glow)]/25 disabled:opacity-50"
+              }
+            >
+              {loading ? "Running replay…" : "Run backtest"}
+            </button>
+            {(summaryPayload || runPayload) && !loading ? (
+              <button
+                type="button"
+                onClick={() => {
+                  clearToNewRun();
+                  if (embedded) setEmbeddedTab("new");
+                }}
+                className={
+                  compactForm
+                    ? "rounded-md border border-[color:var(--nexus-card-stroke)] px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[var(--nexus-muted)] transition hover:border-[var(--nexus-glow)]/35 hover:text-[var(--nexus-text)]"
+                    : "rounded-lg border border-[color:var(--nexus-card-stroke)] px-4 py-2.5 font-mono text-[11px] uppercase tracking-widest text-[var(--nexus-muted)] transition hover:border-[var(--nexus-glow)]/35 hover:text-[var(--nexus-text)]"
+                }
+              >
+                Configure new run
+              </button>
+            ) : null}
+          </div>
+          {!embedded && runList.length > 0 ? (
+            <div className="w-full min-w-0 space-y-1.5">
+              <label className="block font-mono text-[10px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                Open a previous run
+              </label>
+              <select
+                className="w-full min-h-[2.75rem] rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)] px-3 py-2.5 font-mono text-xs text-[var(--nexus-text)]"
+                value={selectedHistoryId}
+                disabled={historyLoading}
+                title={selectedHistoryId || "Choose a completed run"}
+                onChange={(e) => {
+                  const id = e.target.value.trim();
+                  if (id) void loadHistoricalRun(id);
+                  else clearToNewRun();
+                }}
+              >
+                <option value="">— Select a run —</option>
+                {[...runList].reverse().map((id) => (
+                  <option key={id} value={id} title={id}>
+                    {id}
+                  </option>
+                ))}
+              </select>
+              <p className="text-[10px] text-[var(--nexus-muted)]">Full run id on each row (hover for tooltip).</p>
+            </div>
+          ) : null}
+        </div>
+
+        {loading && jobState ? (
+          <div
+            className={`space-y-1.5 rounded-lg border border-[var(--nexus-glow)]/25 bg-[var(--nexus-glow)]/5 ${compactForm ? "mt-2 p-2" : "mt-4 space-y-2 p-3"}`}
+          >
+            <div className="flex justify-between font-mono text-[10px] text-[var(--nexus-muted)]">
+              <span>Bar replay progress</span>
+              <span>
+                {jobState.step ?? 0} / {jobState.total_steps || "…"} bars ({progressPct}%)
+              </span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-[var(--nexus-surface)]">
+              <div
+                className="h-full bg-[var(--nexus-glow)] transition-[width] duration-300"
+                style={{ width: `${progressPct}%` }}
+              />
+            </div>
+            <p className="font-mono text-[10px] text-[var(--nexus-muted)]">
+              Equity{" "}
+              {jobState.equity != null ? jobState.equity.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "…"}{" "}
+              · fills {jobState.trade_count ?? 0}
+              {jobState.vetoed != null ? ` · last bar veto: ${jobState.vetoed ? "yes" : "no"}` : ""}
+            </p>
+          </div>
+        ) : null}
+
+        {!embedded ? (
+          <p className="mt-4 text-[10px] leading-relaxed text-[var(--nexus-muted)]">
+            Async job + browser polling. Set <code className="text-[var(--nexus-text)]">NEXT_PUBLIC_FLOW_API_BASE_URL</code>{" "}
+            if the API is not on <code className="text-[var(--nexus-text)]">127.0.0.1:8001</code>.
+          </p>
+        ) : null}
+      </>
+    );
+  }
+
+  function renderResultsDetail(variant: "embedded" | "standalone") {
+    if (!kpis) return null;
+    const compact = variant === "embedded";
+    const card = compact
+      ? "rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 p-2.5"
+      : "rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 p-4";
+    const h3 = compact
+      ? "font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-muted)]"
+      : "font-mono text-[11px] uppercase tracking-widest text-[var(--nexus-muted)]";
+    return (
+      <section
+        id="backtest-results-detail"
+        className={compact ? "scroll-mt-2 space-y-2 pb-1" : "scroll-mt-3 space-y-4 pb-2"}
+      >
+        {variant === "standalone" ? (
+          <>
+            <h2 className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">Results</h2>
+            <BacktestKpiGrid kpis={kpis} />
+          </>
+        ) : (
+          <>
+            <h2 className="font-mono text-[9px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">Performance</h2>
+            <BacktestKpiGrid kpis={kpis} compact />
+          </>
+        )}
+
+        <div className={card}>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className={h3}>Equity curve</h3>
+            {equitySeries?.downsampled ? (
+              <span className="font-mono text-[9px] text-[var(--nexus-muted)]">
+                Chart: {equitySeries.points.length} pts (of {equitySeries.count})
+              </span>
+            ) : equitySeries ? (
+              <span className="font-mono text-[9px] text-[var(--nexus-muted)]">{equitySeries.count} bars</span>
+            ) : null}
+          </div>
+          {!compact ? (
+            <p className="mb-3 text-[10px] text-[var(--nexus-muted)]">
+              Teal: marked equity; dashed: initial cash. Brush to zoom the window.
+            </p>
+          ) : (
+            <p className="mb-1.5 text-[9px] text-[var(--nexus-muted)]">Teal = equity · dashed = initial cash</p>
+          )}
+          <BacktestEquityChart points={equitySeries?.points ?? []} initialCash={kpis.initialCash} />
+        </div>
+
+        <div className={compact ? "grid gap-2 lg:grid-cols-2" : "grid gap-4 lg:grid-cols-2"}>
+          <div className={card}>
+            <h3 className={h3}>Simulated fills</h3>
+            <div className={compact ? "mt-1.5" : "mt-3"}>
+              <BacktestTradesTable
+                trades={(tradesData?.trades ?? (evaluation?.trades_preview as TradeRow[] | undefined) ?? [])}
+                truncated={tradesData?.truncated}
+              />
+            </div>
+            {kpis.trades === 0 ? (
+              <p className={`text-[var(--nexus-muted)] ${compact ? "mt-2 text-[9px] leading-snug" : "mt-3 text-[10px] leading-relaxed"}`}>
+                {compact
+                  ? "No fills — see timeline for desk / risk detail."
+                  : "No simulated fills: the combined desk signals and synthesis path likely did not yield a buy that cleared portfolio and risk rules, or position sizing was zero. Use the bar timeline to inspect each desk, debate, arbitrator output, and risk guard per step."}
+              </p>
+            ) : null}
+          </div>
+          <div className={card}>
+            <h3 className={h3}>Run details</h3>
+            <dl className={`space-y-1.5 font-mono ${compact ? "mt-1.5 text-[10px]" : "mt-3 space-y-2 text-[11px]"}`}>
+              <div className="flex justify-between gap-4 border-b border-[var(--nexus-rule-soft)] pb-2">
+                <dt className="text-[var(--nexus-muted)]">Run ID</dt>
+                <dd className="max-w-[60%] break-all text-right text-[var(--nexus-glow)]">{activeRunId || "—"}</dd>
+              </div>
+              <div className="flex justify-between gap-4 border-b border-[var(--nexus-rule-soft)] pb-2">
+                <dt className="text-[var(--nexus-muted)]">Final equity</dt>
+                <dd className="tabular-nums">{kpis.finalEquity.toLocaleString(undefined, { maximumFractionDigits: 2 })}</dd>
+              </div>
+              <div className="flex justify-between gap-4 border-b border-[var(--nexus-rule-soft)] pb-2">
+                <dt className="text-[var(--nexus-muted)]">Bar interval</dt>
+                <dd className="text-right">
+                  {formatIntervalHuman(kpis.intervalSec)}{" "}
+                  <span className="text-[var(--nexus-muted)]">({kpis.intervalSec}s)</span>
+                </dd>
+              </div>
+              {runPayload?.strategy?.title ? (
+                <div className="flex justify-between gap-4 border-b border-[var(--nexus-rule-soft)] pb-2">
+                  <dt className="text-[var(--nexus-muted)]">Strategy</dt>
+                  <dd className="text-right">{runPayload.strategy.title}</dd>
+                </div>
+              ) : null}
+              {runPayload?.capped ? (
+                <div className="rounded border border-amber-900/40 bg-amber-950/25 px-2 py-2 text-[10px] text-amber-100">
+                  Run capped by server max steps ({runPayload.server_max_steps ?? "—"}).
+                </div>
+              ) : null}
+              {evaluation?.note ? (
+                <div className="text-[10px] leading-relaxed text-[var(--nexus-muted)]">{evaluation.note}</div>
+              ) : null}
+            </dl>
+            <div className={`flex flex-wrap items-center justify-end gap-1.5 ${compact ? "mt-2" : "mt-4 gap-2"}`}>
+              <button
+                type="button"
+                disabled={!activeRunId}
+                onClick={() => activeRunId && void copyText(activeRunId)}
+                className={`rounded border border-[color:var(--nexus-card-stroke)] font-mono uppercase tracking-wider text-[var(--nexus-muted)] hover:border-[var(--nexus-glow)]/40 disabled:opacity-40 ${compact ? "px-2 py-1 text-[9px]" : "px-3 py-1.5 text-[10px]"}`}
+              >
+                Copy run id
+              </button>
+              {displayPayload ? (
+                <button
+                  type="button"
+                  onClick={() => downloadJson(displayPayload, `${activeRunId || "backtest"}-result.json`)}
+                  className={`rounded border border-[color:var(--nexus-card-stroke)] font-mono uppercase tracking-wider text-[var(--nexus-muted)] hover:border-[var(--nexus-glow)]/40 ${compact ? "px-2 py-1 text-[9px]" : "px-3 py-1.5 text-[10px]"}`}
+                >
+                  Download JSON
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className={compact ? "rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)]/40" : "rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)]/40"}>
+          <button
+            type="button"
+            onClick={() => setShowRaw((s) => !s)}
+            className={`flex w-full items-center justify-between font-mono uppercase tracking-widest text-[var(--nexus-muted)] ${compact ? "px-2.5 py-2 text-[9px]" : "px-4 py-3 text-[10px]"}`}
+          >
+            Raw API payload
+            <span>{showRaw ? "−" : "+"}</span>
+          </button>
+          {showRaw && displayPayload ? (
+            <pre
+              className={`nexus-scroll overflow-auto border-t border-[var(--nexus-rule-soft)] font-mono leading-relaxed text-[var(--nexus-text)] ${compact ? "max-h-[240px] p-2 text-[9px]" : "max-h-[360px] p-4 text-[10px]"}`}
+            >
+              {JSON.stringify(displayPayload, null, 2)}
+            </pre>
+          ) : null}
+        </div>
+      </section>
+    );
+  }
+
+  const rootClass = embedded
+    ? "flex min-h-0 flex-1 flex-col overflow-hidden bg-[var(--nexus-bg)] text-[var(--nexus-text)]"
+    : "nexus-bg min-h-screen bg-[var(--nexus-bg)] text-[var(--nexus-text)]";
+
+  return (
+    <div className={rootClass}>
+      {!embedded ? (
+        <header className="border-b border-[var(--nexus-rule-strong)] bg-[var(--nexus-panel)]/95 px-4 py-4">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--nexus-glow)]">
+                Multi-agent workflow
+              </p>
+              <h1 className="text-lg font-semibold tracking-tight">Backtest lab</h1>
+              <p className="mt-2 max-w-2xl text-[12px] leading-relaxed text-[var(--nexus-muted)]">
+                Replays the full LangGraph once per synthetic bar. Traces use the same FlowEvent contract
+                as live runs: perception desks, debate and arbitration, risk guard, and execution — with
+                structured reasoning visible in the timeline.
+              </p>
+            </div>
+          </div>
+        </header>
+      ) : (
+        <EmbeddedBacktestChrome
+          tab={embeddedTab}
+          onTabChange={setEmbeddedTab}
+          runList={runList}
+          selectedHistoryId={selectedHistoryId}
+          historyLoading={historyLoading}
+          activeRunId={activeRunId}
+          shortRunLabel={shortBacktestRunLabel}
+          onSelectRun={(id) => void loadHistoricalRun(id)}
+          onClearRun={clearToNewRun}
+        />
+      )}
+
+      <div
+        className={
+          embedded
+            ? "flex min-h-0 flex-1 flex-col overflow-hidden"
+            : "mx-auto max-w-6xl space-y-6 px-4 py-8"
+        }
+      >
+        {embedded ? (
+          <>
+            {error ? (
+              <div className="shrink-0 border-b border-red-900/45 bg-red-950/35 px-2 py-1.5 font-mono text-[10px] text-red-100" role="alert">
+                {error}
+              </div>
+            ) : null}
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+              <div className="nexus-scroll flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto px-2 pb-3 pt-2">
+                {embeddedTab === "saved" ? (
+                  <div className="flex w-full max-w-none min-h-0 flex-1 flex-col gap-3">
+                    {historyLoading ? (
+                      <div className="shrink-0 space-y-1.5 rounded border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/40 p-2">
+                        <p className="font-mono text-[10px] text-[var(--nexus-text)]">Loading…</p>
+                        <div className="h-1 w-full max-w-xs rounded-full bg-[var(--nexus-surface)]" role="progressbar" aria-label="Loading">
+                          <div className="h-full w-1/3 animate-pulse rounded-full bg-[var(--nexus-glow)]/50" />
+                        </div>
+                      </div>
+                    ) : null}
+                    {!historyLoading && kpis ? (
+                      <>
+                        <div className="shrink-0">{renderResultsDetail("embedded")}</div>
+                        <section
+                          id="backtest-timeline"
+                          className="flex min-h-0 flex-1 flex-col border-t border-[var(--nexus-rule-soft)] pt-3 scroll-mt-2"
+                        >
+                          <h2 className="shrink-0 font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-muted)]">
+                            Timeline
+                          </h2>
+                          <p className="mt-0.5 font-mono text-[8px] text-[var(--nexus-muted)]">
+                            Expand a bar: chain-of-thought and event log sit in two columns when the panel is wide enough.
+                          </p>
+                          <div className="mt-1.5 flex min-h-[min(50vh,520px)] flex-1 flex-col overflow-hidden rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)]/30">
+                            <div className="min-h-0 flex-1 overflow-hidden p-1">
+                              <BacktestBarTimeline
+                                entries={messageLog}
+                                traces={tracesToShow}
+                                streaming={streamingThoughts}
+                                emptyHint={timelineEmptyHint}
+                                compact
+                                className="h-full min-h-0 w-full text-[10px]"
+                              />
+                            </div>
+                          </div>
+                        </section>
+                      </>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {embeddedTab === "new" ? (
+                  <section
+                    id="backtest-setup"
+                    className="scroll-mt-1 rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/75 p-3"
+                  >
+                    {renderSetupForm(true)}
+                  </section>
+                ) : null}
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <section
+              id="backtest-setup"
+              className="scroll-mt-4 rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/80 p-5 shadow-[0_0_24px_rgba(0,212,170,0.06)]"
+            >
+              {renderSetupForm()}
+            </section>
+
+            {error ? (
+              <div className="rounded-lg border border-red-900/50 bg-red-950/35 px-4 py-3 font-mono text-xs text-red-100">
+                {error}
+              </div>
+            ) : null}
+
+            {(streamingThoughts || tracesToShow.length > 0 || messageLog.length > 0) ? (
+              <section className="flex min-h-[280px] w-full flex-col rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 shadow-[0_0_24px_rgba(0,212,170,0.04)]">
+                <div className="shrink-0 space-y-2 border-b border-[var(--nexus-rule-soft)] px-3 py-2">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
+                      Bar timeline
+                    </h3>
+                    <p className="mt-0.5 text-[10px] leading-relaxed text-[var(--nexus-muted)]">
+                      Vertical list of bars. When expanded, chain-of-thought and event log use two columns on wide screens.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex min-h-[220px] flex-1 flex-col gap-2 p-2">
+                  <BacktestBarTimeline
+                    entries={messageLog}
+                    traces={tracesToShow}
+                    streaming={streamingThoughts}
+                    className="min-h-[200px] flex-1 p-0.5"
+                  />
+                </div>
+              </section>
+            ) : null}
+
+            {kpis ? renderResultsDetail("standalone") : null}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}

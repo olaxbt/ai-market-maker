@@ -64,6 +64,8 @@
           "node_id": { "type": "string" },
           "parent_id": { "type": ["string", "null"] },
           "timestamp": { "type": "string", "format": "date-time" },
+          "bar_step": { "type": "integer" },
+          "bar_time_utc": { "type": "string" },
           "actor": {
             "type": "object",
             "required": ["id", "role"],
@@ -172,7 +174,9 @@
           "actor_id": { "type": "string" },
           "kind": { "type": "string", "enum": ["status", "thought", "tool", "handoff", "error"] },
           "message": { "type": "string" },
-          "trace_id": { "type": ["string", "null"] }
+          "trace_id": { "type": ["string", "null"] },
+          "bar_step": { "type": "integer" },
+          "bar_time_utc": { "type": "string" }
         }
       }
     }

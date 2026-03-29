@@ -13,12 +13,13 @@ logger = logging.getLogger(__name__)
 
 class OpenAIClient:
     def __init__(self, api_key: str):
-        self.client = openai.OpenAI(api_key=api_key)
+        base_url = (os.getenv("OPENAI_BASE_URL") or "").strip() or None
+        self.client = openai.OpenAI(api_key=api_key, base_url=base_url)
 
     def generate(self, prompt: str) -> str:
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4o",
+                model=os.getenv("OPENAI_MODEL") or "gpt-4o-mini",
                 messages=[
                     {
                         "role": "system",

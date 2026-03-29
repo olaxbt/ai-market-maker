@@ -14,12 +14,13 @@ logger = logging.getLogger(__name__)
 
 class OpenAIClient:
     def __init__(self, api_key: str):
-        self.client = openai.OpenAI(api_key=api_key)
+        base_url = (os.getenv("OPENAI_BASE_URL") or "").strip() or None
+        self.client = openai.OpenAI(api_key=api_key, base_url=base_url)
 
     def generate(self, prompt: str) -> str:
         try:
             response = self.client.chat.completions.create(
-                model="gpt-4o",
+                model=os.getenv("OPENAI_MODEL") or "gpt-4o-mini",
                 messages=[
                     {
                         "role": "system",
@@ -59,7 +60,15 @@ class PricePatternAgent:
 
     def analyze(self, ticker: str, market_data: Dict) -> Dict:
         try:
-            ohlcv = market_data.get("ohlcv", [])
+            # `main.py` passes the full `state["market_data"]` dict here, keyed by symbol.
+            # Accept both shapes:
+            # - { "<symbol>": { ohlcv: [...] } }  (current pipeline)
+            # - { ohlcv: [...] }                  (legacy/direct calls)
+            symbol_blob = market_data.get(ticker, {}) if isinstance(market_data, dict) else {}
+            if isinstance(symbol_blob, dict) and "ohlcv" in symbol_blob:
+                ohlcv = symbol_blob.get("ohlcv", [])
+            else:
+                ohlcv = market_data.get("ohlcv", []) if isinstance(market_data, dict) else []
             if not ohlcv or len(ohlcv) < 15:
                 logger.warning(f"Insufficient OHLCV data for {ticker}: {len(ohlcv)} candles")
                 return {

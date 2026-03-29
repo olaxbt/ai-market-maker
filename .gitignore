@@ -20,6 +20,7 @@ venv/
 # Web (Next.js)
 web/.next/
 web/node_modules/
+web/out/
 
 # Misc
 *.log

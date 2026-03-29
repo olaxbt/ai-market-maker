@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AgentsConsoleView } from "@/components/AgentsConsoleView";
+import { BacktestLabPanel } from "@/components/BacktestLabPanel";
 import { NexusConsoleHeader, type NexusViewMode } from "@/components/NexusConsoleHeader";
 import { NexusDeskView } from "@/components/NexusDeskView";
 import { useNexusPayload } from "@/hooks/useNexusPayload";
@@ -10,11 +12,30 @@ import type { Topology } from "@/types/nexus-payload";
 
 const EMPTY_TOPOLOGY: Topology = { nodes: [], edges: [] };
 
-export default function NexusPage() {
+function NexusPageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const backtestRunParam = searchParams.get("run");
   const { payload, loading: streaming, error: loadError } = useNexusPayload();
   const [hubRevealDone, setHubRevealDone] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<NexusViewMode>("nexus");
+
+  useEffect(() => {
+    if (searchParams.get("view") === "backtest") setViewMode("backtest");
+  }, [searchParams]);
+
+  const handleViewModeChange = useCallback(
+    (mode: NexusViewMode) => {
+      setViewMode(mode);
+      if (mode === "backtest") {
+        router.replace("/?view=backtest", { scroll: false });
+      } else {
+        router.replace("/", { scroll: false });
+      }
+    },
+    [router],
+  );
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const streamRef = useRef<HTMLDivElement>(null);
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -72,7 +93,9 @@ export default function NexusPage() {
   const viewModeTitle =
     viewMode === "nexus"
       ? "Nexus: live topology, event stream, and mesh."
-      : "Agents: pick a card; detail, traces, and prompts open in the side panel (same page).";
+      : viewMode === "grid"
+        ? "Agents: pick a card; detail, traces, and prompts open in the side panel (same page)."
+        : "Backtest: async bar replay, per-step progress, and the same FlowEvent agent traces as live runs.";
 
   const setCardRef = useCallback((traceId: string, el: HTMLDivElement | null) => {
     if (el) cardRefs.current.set(traceId, el);
@@ -100,7 +123,7 @@ export default function NexusPage() {
       <NexusConsoleHeader
         metadata={metadata}
         viewMode={viewMode}
-        onViewModeChange={setViewMode}
+        onViewModeChange={handleViewModeChange}
         viewModeTitle={viewModeTitle}
       />
 
@@ -113,7 +136,11 @@ export default function NexusPage() {
         </div>
       ) : null}
 
-      {viewMode === "grid" ? (
+      {viewMode === "backtest" ? (
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <BacktestLabPanel embedded initialRunId={backtestRunParam} />
+        </div>
+      ) : viewMode === "grid" ? (
         <AgentsConsoleView
           nodes={topology.nodes}
           edges={topology.edges}
@@ -144,8 +171,26 @@ export default function NexusPage() {
       )}
 
       <footer className="border-t border-[var(--nexus-rule-soft)] bg-[var(--nexus-panel)]/80 px-4 py-2 text-[10px] text-[var(--nexus-muted)] font-mono">
-        metadata + topology + traces (node_id, parent_id) · streaming chain-of-thought and decision provenance
+        {viewMode === "backtest" ? (
+          "Backtest · preset async job · expand bars for CoT + log · equity / fills / KPIs"
+        ) : (
+          "metadata + topology + traces (node_id, parent_id) · streaming chain-of-thought and decision provenance"
+        )}
       </footer>
     </div>
+  );
+}
+
+export default function NexusPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-[var(--nexus-bg)] font-mono text-xs text-[var(--nexus-muted)]">
+          Loading console…
+        </div>
+      }
+    >
+      <NexusPageInner />
+    </Suspense>
   );
 }
