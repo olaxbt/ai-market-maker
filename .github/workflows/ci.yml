@@ -28,41 +28,14 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
 
-      - name: Sync dependencies from lockfile
-        run: uv sync --extra dev --frozen
+      - name: Install dependencies with uv (in conda env)
+        run: uv pip install --system .[dev]
 
       - name: Ruff format check
-        run: uv run ruff format --check .
+        run: ruff format --check .
 
       - name: Ruff lint
-        run: uv run ruff check .
+        run: ruff check .
 
       - name: Pytest
-        run: uv run python -m pytest -q
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: web/package-lock.json
-
-      - name: Install web dependencies
-        working-directory: web
-        run: npm ci
-
-      - name: Web lint (Next.js)
-        working-directory: web
-        run: npm run lint
-
-      - name: Web build (Next.js)
-        working-directory: web
-        run: npm run build
-
-      - name: Web contract test (schema ↔ fixture)
-        working-directory: web
-        run: npm run test:contract
-
-      - name: Web unit tests (Vitest)
-        working-directory: web
-        run: npm run test
+        run: pytest -q

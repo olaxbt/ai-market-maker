@@ -392,6 +392,8 @@ def bull_case(state: HedgeFundState) -> dict[str, Any]:
     """Tier-2 debate node: optimistic argument from Tier-1 context."""
     sentiment_score = ((state.get("sentiment_analysis") or {}).get("sentiment_score")) or 50.0
     quant_data = ((state.get("quant_analysis") or {}).get("analysis")) or {}
+    if not isinstance(quant_data, dict):
+        quant_data = {}
     bullish_signals = sum(
         1
         for item in quant_data.values()

@@ -4,7 +4,7 @@ from typing import Dict
 
 import numpy as np
 import openai
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
 from tools.technical_indicators import calculate_technical_indicators
 

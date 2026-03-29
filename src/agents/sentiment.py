@@ -3,7 +3,7 @@ import os
 from typing import Dict
 
 import openai
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
 from tools.sentiment_tools import scrape_twitter
 
