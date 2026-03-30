@@ -23,7 +23,7 @@ Operate and explain a **multi-agent trading workflow** with a **hard Risk Guard 
 | Workflow | `src/main.py` |
 | State (target contract) | `src/schemas/state.py` |
 | Flow events | `src/schemas/flow_events.py`, `src/flow_log.py` |
-| Traces / UI contract | `schema/agent_trace.json`, `schema/nexus_payload.json` |
+| Traces / UI contract | `schema/agent_trace.json`, `src/api/schema/nexus_payload.json` |
 | Web dashboard | `web/` (Next.js) |
 
 ## Tool naming (future)

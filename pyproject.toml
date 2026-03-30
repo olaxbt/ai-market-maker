@@ -11,6 +11,9 @@ py-modules = ["main", "flow_log"]
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+api = ["schema/*.json"]
+
 [project]
 name = "ai-market-maker"
 version = "0.1.0"
@@ -59,5 +62,8 @@ quote-style = "double"
 indent-style = "space"
 
 [tool.pytest.ini_options]
-addopts = ["-q"]
+addopts = ["-q", "-m", "not slow"]
 testpaths = ["tests"]
+markers = [
+    "slow: full LangGraph invoke, HTTP TestClient, or heavy multi-step backtest (opt-in)",
+]

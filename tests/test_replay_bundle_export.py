@@ -1,8 +1,12 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from api.schema_validation import validate_nexus_payload
 from backtest.export_run import export_run_bundle
+
+pytestmark = pytest.mark.slow
 
 
 def test_export_run_bundle_writes_payload_and_manifest(tmp_path: Path, monkeypatch):

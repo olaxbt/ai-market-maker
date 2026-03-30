@@ -1,0 +1,1 @@
+"""Nexus JSON schema assets."""

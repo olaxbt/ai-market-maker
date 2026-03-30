@@ -1,9 +1,12 @@
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from api.flow_stream_server import app
+
+pytestmark = pytest.mark.slow
 
 
 def _write_minimal_run(tmp_path: Path, run_id: str = "run-it-1") -> None:

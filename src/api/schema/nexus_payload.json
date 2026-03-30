@@ -171,8 +171,11 @@
           "seq": { "type": "integer" },
           "ts": { "type": "string", "format": "date-time" },
           "node_id": { "type": "string" },
+          "kind": {
+            "type": "string",
+            "enum": ["status", "thought", "tool", "handoff", "error"]
+          },
           "actor_id": { "type": "string" },
-          "kind": { "type": "string", "enum": ["status", "thought", "tool", "handoff", "error"] },
           "message": { "type": "string" },
           "trace_id": { "type": ["string", "null"] },
           "bar_step": { "type": "integer" },

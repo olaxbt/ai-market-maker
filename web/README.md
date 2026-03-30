@@ -36,7 +36,7 @@ Open [http://localhost:3000](http://localhost:3000).
 ## Data
 
 - **Mock**: `src/data/mock-traces.json` — **9-agent** topology, `traces[]`, full **`agent_prompts[]`** (system/task/COT + model/tools), and flat **`message_log[]`** for stream-style replay / Nexus demo bumps. Regenerate with `npm run generate:mock`.
-- **Schema**: `../schema/nexus_payload.json` (payload envelope); trace rows still align with `../schema/agent_trace.json` where applicable.
+- **Schema**: `../src/api/schema/nexus_payload.json` (payload envelope); trace rows still align with `../schema/agent_trace.json` where applicable.
 - **Rollout plan**: `../docs/nexus-nine-agents-rollout.md`.
 - **Live**: Point the app at an API that returns the same `NexusPayload` shape (or stream `message_log` lines + traces).
 

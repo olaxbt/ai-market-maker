@@ -3,8 +3,12 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from api.payload_adapter import build_nexus_payload
 from api.schema_validation import validate_nexus_payload
+
+pytestmark = pytest.mark.slow
 
 
 def test_build_nexus_payload_from_minimal_events_jsonl(tmp_path: Path):

@@ -15,7 +15,7 @@
   },
   "payload_contracts": {
     "agent_trace": "schema/agent_trace.json",
-    "nexus_payload": "schema/nexus_payload.json"
+    "nexus_payload": "src/api/schema/nexus_payload.json"
   },
   "tools": [
     {

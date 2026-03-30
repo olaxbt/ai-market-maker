@@ -28,6 +28,7 @@ def client():
     return TestClient(app)
 
 
+@pytest.mark.slow
 def test_get_equity_and_trades(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, client: TestClient):
     monkeypatch.setattr("api.backtest_routes.BACKTESTS_DIR", tmp_path)
     rid = "bt-fixture-1"
@@ -63,6 +64,7 @@ def test_get_equity_and_trades(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, 
     assert t["trades"][0]["side"] == "buy"
 
 
+@pytest.mark.slow
 def test_get_equity_404(client: TestClient):
     r = client.get("/backtests/does-not-exist-zzz/equity")
     assert r.status_code == 404

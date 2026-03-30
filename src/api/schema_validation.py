@@ -4,21 +4,28 @@ from __future__ import annotations
 
 import json
 from functools import lru_cache
-from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from jsonschema import Draft7Validator
 
-SCHEMA_PATH = Path(__file__).resolve().parents[2] / "schema" / "nexus_payload.json"
+
+def _load_schema_text() -> str:
+    """Load the checked-in Nexus payload schema.
+
+    Works both from a source checkout and from an installed wheel/sdist.
+    """
+    from importlib.resources import files
+
+    return (files("api.schema") / "nexus_payload.json").read_text(encoding="utf-8")
 
 
 @lru_cache(maxsize=1)
 def _validator() -> Draft7Validator:
-    schema = json.loads(SCHEMA_PATH.read_text())
+    schema = json.loads(_load_schema_text())
     return Draft7Validator(schema)
 
 
-def validate_nexus_payload(payload: Dict[str, Any]) -> None:
+def validate_nexus_payload(payload: dict[str, Any]) -> None:
     """Raise ValueError with a compact message if payload violates schema."""
     validator = _validator()
     errors = sorted(validator.iter_errors(payload), key=lambda e: list(e.path))

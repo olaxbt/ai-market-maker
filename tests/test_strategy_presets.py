@@ -1,5 +1,7 @@
 """Strategy preset defaults and API list shape."""
 
+import pytest
+
 from strategies.presets import (
     DEFAULT_QUANT_STRATEGY_ID,
     get_preset,
@@ -26,6 +28,7 @@ def test_quant_trace_meta_shape():
     assert "signals" in meta
 
 
+@pytest.mark.slow
 def test_http_strategies_list():
     from fastapi.testclient import TestClient
 
