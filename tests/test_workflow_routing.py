@@ -54,4 +54,5 @@ def test_tier2_debate_and_arbitration_edges_present():
     assert ("desk_risk", "bear_case") in edges
     assert ("bull_case", "signal_arbitrator") in edges
     assert ("bear_case", "signal_arbitrator") in edges
-    assert ("signal_arbitrator", "portfolio_proposal") in edges
+    assert ("signal_arbitrator", "trade_intent") in edges
+    assert ("trade_intent", "portfolio_proposal") in edges

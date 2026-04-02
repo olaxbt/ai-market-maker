@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from api.payload_adapter import build_nexus_payload
+from api.schema_validation import validate_nexus_payload
 from backtest.metrics import compute_basic_metrics
 from backtest.trade_book import append_jsonl
 from config.run_mode import RunMode
@@ -96,12 +98,15 @@ def run_multi_step_backtest(
     equity_path = job_dir / "equity.jsonl"
     events_path = base / f"{rid}.events.jsonl"
     summary_path = job_dir / "summary.json"
+    payload_path = job_dir / "payload.json"
 
     if events_path.exists():
         events_path.unlink()
     for p in (trades_path, equity_path):
         if p.exists():
             p.unlink()
+    if payload_path.exists():
+        payload_path.unlink()
 
     n_bars = len(bars)
     steps = min(n_bars, max_steps) if max_steps is not None else n_bars
@@ -218,9 +223,19 @@ def run_multi_step_backtest(
             "trades": str(trades_path),
             "equity": str(equity_path),
             "events": str(events_path),
+            "payload": str(payload_path),
         },
     }
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+    # Materialize the payload next to backtest artifacts for review/debugging.
+    try:
+        payload, _events = build_nexus_payload(events_path)
+        validate_nexus_payload(payload)
+        payload_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    except Exception:
+        # Validation is already exercised in tests; don't fail export on payload issues.
+        pass
 
     logger.info(
         "backtest finished run_id=%s steps=%s trade_count=%s final_equity=%.4f",

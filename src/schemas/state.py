@@ -21,6 +21,7 @@ class HedgeFundState(TypedDict):
     # Tier 2 — debate + structured signal into risk / execution.
     debate_transcript: Annotated[List[Dict[str, str]], operator.add]
     proposed_signal: Dict[str, Any]
+    trade_intent: NotRequired[Dict[str, Any]]
 
     # Tier 3 — risk veto + execution.
     risk_report: Dict[str, Any]
@@ -62,6 +63,7 @@ def initial_hedge_fund_state(
         market_context=[],
         debate_transcript=[],
         proposed_signal=proposed_signal if proposed_signal is not None else {},
+        trade_intent={},
         risk_report={},
         is_vetoed=False,
         veto_reason="",

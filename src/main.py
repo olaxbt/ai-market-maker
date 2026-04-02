@@ -473,6 +473,29 @@ def signal_arbitrator(state: HedgeFundState) -> dict[str, Any]:
 
     bull_score = bull_votes + (1 if sentiment_score >= 55 else 0)
     bear_score = bear_votes + (1 if high_vol_assets >= 1 else 0)
+
+    # Use agent outputs (not raw indicators) for tie-breaking.
+    arb = state.get("arb_analysis") or {}
+    arb_analysis = arb.get("analysis") if isinstance(arb, dict) else None
+    if isinstance(arb_analysis, dict):
+        for item in arb_analysis.values():
+            if not isinstance(item, dict):
+                continue
+            sig = str(item.get("signal") or "").lower()
+            if sig == "buy":
+                bull_score += 1
+            elif sig == "sell":
+                bear_score += 1
+
+    pat = state.get("pattern_analysis") or {}
+    pat_status = str((pat.get("status") if isinstance(pat, dict) else "") or "").lower()
+    if pat_status == "success":
+        bull_score += 1
+    elif pat_status == "error":
+        bear_score += 1
+
+    if sentiment_score <= 45:
+        bear_score += 1
     stance = "neutral"
     if bull_score > bear_score:
         stance = "bullish"
@@ -480,12 +503,15 @@ def signal_arbitrator(state: HedgeFundState) -> dict[str, Any]:
         stance = "bearish"
 
     confidence = round(min(0.95, 0.5 + (abs(bull_score - bear_score) * 0.15)), 2)
+    if stance != "neutral":
+        confidence = max(0.55, confidence)
     reasons = [
         f"bull_score={bull_score}",
         f"bear_score={bear_score}",
         f"sentiment={sentiment_score:.1f}",
         f"high_vol_assets={high_vol_assets}",
     ]
+    reasons.append("stance_sources=debate+risk+sentiment+stat_arb+pattern")
     proposed_signal = {
         "action": "PROPOSAL",
         "params": {
@@ -506,6 +532,74 @@ def signal_arbitrator(state: HedgeFundState) -> dict[str, Any]:
                 node="signal_arbitrator",
                 thought="Synthesized bull/bear debate into a structured proposed signal.",
                 decision=proposed_signal,
+            )
+        ],
+    }
+
+
+def trade_intent(state: HedgeFundState) -> dict[str, Any]:
+    """Convert proposed_signal into an explicit trade-intent contract (BUY/SELL/HOLD)."""
+    ticker = str(state.get("ticker") or "BTC/USDT")
+    run_mode = str(state.get("run_mode") or "paper").lower()
+    sm = state.get("shared_memory") or {}
+    bt = sm.get("backtest") if isinstance(sm, dict) and isinstance(sm.get("backtest"), dict) else {}
+    cash = float(bt.get("cash", 0.0)) if run_mode == RunMode.BACKTEST.value else None
+    qty = float(bt.get("qty", 0.0)) if run_mode == RunMode.BACKTEST.value else None
+
+    md = state.get("market_data") or {}
+    price = None
+    try:
+        price = float(((md.get(ticker) or {}).get("ohlcv") or [])[-1][4])
+    except Exception:
+        price = None
+
+    proposed = state.get("proposed_signal") or {}
+    params = proposed.get("params") if isinstance(proposed, dict) else None
+    stance = (params or {}).get("stance") if isinstance(params, dict) else None
+    confidence = (params or {}).get("confidence") if isinstance(params, dict) else None
+    reasons = (params or {}).get("reasons") if isinstance(params, dict) else None
+
+    stance_s = str(stance or "neutral").lower()
+    conf_f = float(confidence) if isinstance(confidence, (int, float)) else 0.5
+    if stance_s not in ("bullish", "bearish", "neutral"):
+        stance_s = "neutral"
+    if not isinstance(reasons, list):
+        reasons = []
+
+    action = "HOLD"
+    if stance_s == "bullish" and conf_f >= 0.55:
+        action = "BUY"
+    elif stance_s == "bearish" and conf_f >= 0.55:
+        action = "SELL"
+
+    max_notional_usd = None
+    if run_mode == RunMode.BACKTEST.value and cash is not None:
+        max_notional_usd = max(0.0, cash) * 0.10
+
+    intent = {
+        "ticker": ticker,
+        "action": action,
+        "confidence": round(max(0.0, min(0.95, conf_f)), 2),
+        "reasons": [str(r) for r in reasons][:12],
+        "constraints": {
+            "max_notional_usd": max_notional_usd,
+            "requires_price": True,
+        },
+        "context": {
+            "run_mode": run_mode,
+            "cash_usd": cash,
+            "qty_base": qty,
+            "price": price,
+        },
+        "meta": {"source": "trade_intent_v1"},
+    }
+    return {
+        "trade_intent": intent,
+        "reasoning_logs": [
+            _reasoning_entry(
+                node="trade_intent",
+                thought="Converted proposed_signal into explicit trade intent.",
+                decision=intent,
             )
         ],
     }
@@ -535,6 +629,7 @@ def _portfolio_agent_kwargs(state: HedgeFundState) -> dict[str, Any]:
     out: dict[str, Any] = {"run_mode": state.get("run_mode")}
     if str(state.get("run_mode") or "").lower() == RunMode.BACKTEST.value:
         out["external_position_qty"] = float(bt.get("qty", 0.0))
+        out["external_cash_usd"] = float(bt.get("cash", 0.0))
     return out
 
 
@@ -552,6 +647,8 @@ def portfolio_proposal(state: HedgeFundState) -> dict[str, Any]:
         state.get("risk") or {},
         state.get("liquidity") or {},
         execute=False,
+        strategy_context=state.get("proposed_signal") or {},
+        trade_intent=state.get("trade_intent") or {},
         **_portfolio_agent_kwargs(state),
     )
     prop = proposal if isinstance(proposal, dict) else {}
@@ -676,6 +773,8 @@ def portfolio_execute(state: HedgeFundState) -> dict[str, Any]:
         state.get("risk") or {},
         state.get("liquidity") or {},
         execute=False,
+        strategy_context=state.get("proposed_signal") or {},
+        trade_intent=state.get("trade_intent") or {},
         **_portfolio_agent_kwargs(state),
     )
 
@@ -684,13 +783,15 @@ def portfolio_execute(state: HedgeFundState) -> dict[str, Any]:
     smart_order = None
     if isinstance(portfolio_result, dict):
         trades = portfolio_result.get("trades") or {}
-        trade = trades.get(state.get("ticker", "BTC/USDT"))
+        ticker = state.get("ticker", "BTC/USDT")
+        trade = trades.get(ticker)
+
         if isinstance(trade, dict) and trade.get("status") in ("proposed", "success"):
             side = trade.get("action")
             qty = float(trade.get("quantity") or 0.0)
             if side in ("buy", "sell") and qty > 0:
                 smart_order = get_nexus_adapter().place_smart_order(
-                    symbol=state.get("ticker", "BTC/USDT"),
+                    symbol=ticker,
                     side=side,
                     qty=qty,
                     order_type="market",
@@ -764,6 +865,7 @@ def build_workflow() -> StateGraph:
     use_llm = os.getenv("AI_MARKET_MAKER_USE_LLM") in ("1", "true", "yes")
     arbitrator_fn = signal_arbitrator_llm if use_llm else signal_arbitrator
     workflow.add_node("signal_arbitrator", _instrument_node("signal_arbitrator", arbitrator_fn))
+    workflow.add_node("trade_intent", _instrument_node("trade_intent", trade_intent))
     workflow.add_node(
         "portfolio_proposal",
         _instrument_node("portfolio_proposal", portfolio_proposal),
@@ -790,7 +892,8 @@ def build_workflow() -> StateGraph:
     workflow.add_edge("desk_risk", "bear_case")
     workflow.add_edge("bull_case", "signal_arbitrator")
     workflow.add_edge("bear_case", "signal_arbitrator")
-    workflow.add_edge("signal_arbitrator", "portfolio_proposal")
+    workflow.add_edge("signal_arbitrator", "trade_intent")
+    workflow.add_edge("trade_intent", "portfolio_proposal")
     workflow.add_edge("portfolio_proposal", "desk_risk_guard")
     path_map = route_after_risk_guard_mapping()
     workflow.add_conditional_edges("desk_risk_guard", route_after_risk_guard, path_map)

@@ -126,6 +126,7 @@ export function BacktestLabPanel({
   embedded?: boolean;
   initialRunId?: string | null;
 }) {
+  const LIVE_RUN_STORAGE_KEY = "nexus_backtest_live_run_id";
   const router = useRouter();
 
   const [embeddedTab, setEmbeddedTab] = useState<EmbeddedWorkspaceTab>("saved");
@@ -157,10 +158,19 @@ export function BacktestLabPanel({
   const [feeBps, setFeeBps] = useState("");
   const [initialCash, setInitialCash] = useState("");
 
-  const [showRaw, setShowRaw] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
 
   const lastUrlRunRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const existing = window.localStorage.getItem(LIVE_RUN_STORAGE_KEY);
+    if (!existing) return;
+    // If the app reloads mid-run, resume polling.
+    setLiveRunId(existing);
+    setPollingJobId(existing);
+    setJobState({ status: "queued", step: 0, total_steps: 0 });
+  }, []);
 
   useEffect(() => {
     fetch("/api/strategies")
@@ -253,6 +263,8 @@ export function BacktestLabPanel({
     }
   }, []);
 
+  const jobRunning = !!pollingJobId && (jobState?.status === "running" || jobState?.status === "queued");
+
   useEffect(() => {
     if (!pollingJobId) return;
     const base = getFlowApiOrigin();
@@ -268,6 +280,7 @@ export function BacktestLabPanel({
           setPollingJobId(null);
           setLiveRunId(null);
           setLoading(false);
+          if (typeof window !== "undefined") window.localStorage.removeItem(LIVE_RUN_STORAGE_KEY);
           setRunPayload(j.result);
           if (j.result.run_id) {
             lastUrlRunRef.current = j.result.run_id;
@@ -287,6 +300,7 @@ export function BacktestLabPanel({
           setPollingJobId(null);
           setLiveRunId(null);
           setLoading(false);
+          if (typeof window !== "undefined") window.localStorage.removeItem(LIVE_RUN_STORAGE_KEY);
           setError(typeof j.error === "string" ? j.error : "Backtest failed");
         }
       } catch {
@@ -346,6 +360,7 @@ export function BacktestLabPanel({
       setLiveRunId(data.run_id);
       setPollingJobId(data.run_id);
       setJobState({ status: "queued", step: 0, total_steps: 0 });
+      if (typeof window !== "undefined") window.localStorage.setItem(LIVE_RUN_STORAGE_KEY, data.run_id);
     } catch (e) {
       setLoading(false);
       setError(e instanceof Error ? e.message : "Request failed");
@@ -365,8 +380,6 @@ export function BacktestLabPanel({
       setTradesData(null);
       setTracePayload(null);
       setJobState(null);
-      setPollingJobId(null);
-      setLiveRunId(null);
       try {
         const base = getFlowApiOrigin();
         const sRes = await fetch(`${base}/backtests/${encodeURIComponent(runId)}/summary`);
@@ -391,14 +404,12 @@ export function BacktestLabPanel({
   );
 
   const clearToNewRun = useCallback(() => {
+    setHistoryLoading(false);
     setRunPayload(null);
     setSummaryPayload(null);
     setEquitySeries(null);
     setTradesData(null);
     setTracePayload(null);
-    setJobState(null);
-    setPollingJobId(null);
-    setLiveRunId(null);
     setSelectedHistoryId("");
     setError(null);
     lastUrlRunRef.current = null;
@@ -450,7 +461,7 @@ export function BacktestLabPanel({
 
   const tracesToShow = tracePayload?.traces ?? [];
   const messageLog = tracePayload?.message_log ?? [];
-  const streamingThoughts = loading && (jobState?.status === "running" || jobState?.status === "queued");
+  const streamingThoughts = jobRunning && embeddedTab === "new";
   const timelineEmptyHint =
     embedded &&
     kpis &&
@@ -459,7 +470,7 @@ export function BacktestLabPanel({
     tracesToShow.length === 0
       ? "This run loaded, but the saved trace has no bar events yet. Re-run the backtest or check GET /runs/<id>/payload (message_log)."
       : null;
-  const formBusy = loading || historyLoading;
+  const formBusy = jobRunning || loading || historyLoading;
 
   const progressPct =
     jobState?.total_steps && jobState.total_steps > 0 && jobState.step != null
@@ -623,9 +634,9 @@ export function BacktestLabPanel({
                   : "rounded-lg border border-[var(--nexus-glow)]/50 bg-[var(--nexus-glow)]/15 px-5 py-2.5 font-mono text-[11px] font-medium uppercase tracking-widest text-[var(--nexus-glow)] shadow-[0_0_20px_rgba(0,212,170,0.12)] transition hover:bg-[var(--nexus-glow)]/25 disabled:opacity-50"
               }
             >
-              {loading ? "Running replay…" : "Run backtest"}
+              {streamingThoughts ? "Running replay…" : "Run backtest"}
             </button>
-            {(summaryPayload || runPayload) && !loading ? (
+            {(summaryPayload || runPayload) && !streamingThoughts ? (
               <button
                 type="button"
                 onClick={() => {
@@ -670,7 +681,7 @@ export function BacktestLabPanel({
           ) : null}
         </div>
 
-        {loading && jobState ? (
+        {jobRunning && jobState ? (
           <div
             className={`space-y-1.5 rounded-lg border border-[var(--nexus-glow)]/25 bg-[var(--nexus-glow)]/5 ${compactForm ? "mt-2 p-2" : "mt-4 space-y-2 p-3"}`}
           >
@@ -824,23 +835,7 @@ export function BacktestLabPanel({
           </div>
         </div>
 
-        <div className={compact ? "rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)]/40" : "rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)]/40"}>
-          <button
-            type="button"
-            onClick={() => setShowRaw((s) => !s)}
-            className={`flex w-full items-center justify-between font-mono uppercase tracking-widest text-[var(--nexus-muted)] ${compact ? "px-2.5 py-2 text-[9px]" : "px-4 py-3 text-[10px]"}`}
-          >
-            Raw API payload
-            <span>{showRaw ? "−" : "+"}</span>
-          </button>
-          {showRaw && displayPayload ? (
-            <pre
-              className={`nexus-scroll overflow-auto border-t border-[var(--nexus-rule-soft)] font-mono leading-relaxed text-[var(--nexus-text)] ${compact ? "max-h-[240px] p-2 text-[9px]" : "max-h-[360px] p-4 text-[10px]"}`}
-            >
-              {JSON.stringify(displayPayload, null, 2)}
-            </pre>
-          ) : null}
-        </div>
+        <div className={compact ? "h-0.5" : "h-2"} />
       </section>
     );
   }
@@ -870,7 +865,10 @@ export function BacktestLabPanel({
       ) : (
         <EmbeddedBacktestChrome
           tab={embeddedTab}
-          onTabChange={setEmbeddedTab}
+          onTabChange={(t) => {
+            setEmbeddedTab(t);
+            if (t === "new") clearToNewRun();
+          }}
           runList={runList}
           selectedHistoryId={selectedHistoryId}
           historyLoading={historyLoading}
@@ -897,6 +895,25 @@ export function BacktestLabPanel({
             ) : null}
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <div className="nexus-scroll flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto px-2 pb-3 pt-2">
+                {jobRunning && embeddedTab === "saved" ? (
+                  <div className="shrink-0 rounded-lg border border-[var(--nexus-glow)]/25 bg-[var(--nexus-glow)]/5 px-2 py-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-muted)]">
+                        Live backtest running
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setEmbeddedTab("new")}
+                        className="rounded border border-[var(--nexus-glow)]/45 bg-[var(--nexus-glow)]/10 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-glow)] hover:bg-[var(--nexus-glow)]/15"
+                      >
+                        Resume
+                      </button>
+                    </div>
+                    <p className="mt-1 font-mono text-[9px] text-[var(--nexus-muted)]">
+                      {jobState?.step ?? 0}/{jobState?.total_steps || "…"} bars · fills {jobState?.trade_count ?? 0}
+                    </p>
+                  </div>
+                ) : null}
                 {embeddedTab === "saved" ? (
                   <div className="flex w-full max-w-none min-h-0 flex-1 flex-col gap-3">
                     {historyLoading ? (
@@ -908,19 +925,16 @@ export function BacktestLabPanel({
                       </div>
                     ) : null}
                     {!historyLoading && kpis ? (
-                      <>
-                        <div className="shrink-0">{renderResultsDetail("embedded")}</div>
-                        <section
-                          id="backtest-timeline"
-                          className="flex min-h-0 flex-1 flex-col border-t border-[var(--nexus-rule-soft)] pt-3 scroll-mt-2"
-                        >
+                      <section className="flex min-h-0 flex-1 flex-col gap-3">
+                        <div className="min-w-0 shrink-0">{renderResultsDetail("embedded")}</div>
+                        <section id="backtest-timeline" className="flex min-h-0 flex-1 flex-col">
                           <h2 className="shrink-0 font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-muted)]">
                             Timeline
                           </h2>
                           <p className="mt-0.5 font-mono text-[8px] text-[var(--nexus-muted)]">
                             Expand a bar: chain-of-thought and event log sit in two columns when the panel is wide enough.
                           </p>
-                          <div className="mt-1.5 flex min-h-[min(50vh,520px)] flex-1 flex-col overflow-hidden rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)]/30">
+                          <div className="mt-1.5 flex min-h-[min(44vh,520px)] flex-1 flex-col overflow-hidden rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)]/30">
                             <div className="min-h-0 flex-1 overflow-hidden p-1">
                               <BacktestBarTimeline
                                 entries={messageLog}
@@ -933,7 +947,7 @@ export function BacktestLabPanel({
                             </div>
                           </div>
                         </section>
-                      </>
+                      </section>
                     ) : null}
                   </div>
                 ) : null}
@@ -944,6 +958,33 @@ export function BacktestLabPanel({
                     className="scroll-mt-1 rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/75 p-3"
                   >
                     {renderSetupForm(true)}
+
+                    {streamingThoughts || tracesToShow.length > 0 || messageLog.length > 0 ? (
+                      <section className="mt-3 border-t border-[var(--nexus-rule-soft)] pt-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <h2 className="font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-muted)]">
+                              Live timeline
+                            </h2>
+                            <p className="mt-0.5 font-mono text-[8px] text-[var(--nexus-muted)]">
+                              Updates while the replay runs (soft payload). Expand a bar for CoT + log.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="mt-1.5 flex min-h-[min(42vh,420px)] flex-1 flex-col overflow-hidden rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)]/30">
+                          <div className="min-h-0 flex-1 overflow-hidden p-1">
+                            <BacktestBarTimeline
+                              entries={messageLog}
+                              traces={tracesToShow}
+                              streaming={streamingThoughts}
+                              emptyHint={timelineEmptyHint}
+                              compact
+                              className="h-full min-h-0 w-full text-[10px]"
+                            />
+                          </div>
+                        </div>
+                      </section>
+                    ) : null}
                   </section>
                 ) : null}
               </div>
@@ -964,30 +1005,35 @@ export function BacktestLabPanel({
               </div>
             ) : null}
 
-            {(streamingThoughts || tracesToShow.length > 0 || messageLog.length > 0) ? (
-              <section className="flex min-h-[280px] w-full flex-col rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 shadow-[0_0_24px_rgba(0,212,170,0.04)]">
-                <div className="shrink-0 space-y-2 border-b border-[var(--nexus-rule-soft)] px-3 py-2">
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
-                      Bar timeline
-                    </h3>
-                    <p className="mt-0.5 text-[10px] leading-relaxed text-[var(--nexus-muted)]">
-                      Vertical list of bars. When expanded, chain-of-thought and event log use two columns on wide screens.
-                    </p>
+            {(kpis || streamingThoughts || tracesToShow.length > 0 || messageLog.length > 0) ? (
+              <section className="flex w-full flex-col gap-4">
+                <div className="min-w-0">
+                  {kpis ? renderResultsDetail("standalone") : null}
+                </div>
+
+                <section className="flex min-h-[320px] w-full flex-col overflow-hidden rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 shadow-[0_0_24px_rgba(0,212,170,0.04)]">
+                  <div className="shrink-0 space-y-2 border-b border-[var(--nexus-rule-soft)] px-3 py-2">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
+                        Bar timeline
+                      </h3>
+                      <p className="mt-0.5 text-[10px] leading-relaxed text-[var(--nexus-muted)]">
+                        Expand a bar: chain-of-thought and event log use two columns when the panel is wide enough.
+                      </p>
+                    </div>
                   </div>
-                </div>
-                <div className="flex min-h-[220px] flex-1 flex-col gap-2 p-2">
-                  <BacktestBarTimeline
-                    entries={messageLog}
-                    traces={tracesToShow}
-                    streaming={streamingThoughts}
-                    className="min-h-[200px] flex-1 p-0.5"
-                  />
-                </div>
+                  <div className="flex min-h-[240px] flex-1 flex-col gap-2 p-2">
+                    <BacktestBarTimeline
+                      entries={messageLog}
+                      traces={tracesToShow}
+                      streaming={streamingThoughts}
+                      emptyHint={timelineEmptyHint}
+                      className="min-h-0 flex-1 p-0.5"
+                    />
+                  </div>
+                </section>
               </section>
             ) : null}
-
-            {kpis ? renderResultsDetail("standalone") : null}
           </>
         )}
       </div>

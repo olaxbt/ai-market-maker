@@ -60,12 +60,25 @@ class PortfolioManagementAgent:
         execute: bool = True,
         run_mode: str | None = None,
         external_position_qty: float | None = None,
+        external_cash_usd: float | None = None,
+        strategy_context: Dict[str, Any] | None = None,
+        trade_intent: Dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         try:
+            market_data = market_data if isinstance(market_data, dict) else {}
+            pattern_analysis = pattern_analysis if isinstance(pattern_analysis, dict) else {}
+            sentiment_analysis = sentiment_analysis if isinstance(sentiment_analysis, dict) else {}
+            arb_analysis = arb_analysis if isinstance(arb_analysis, dict) else {}
+            quant_analysis = quant_analysis if isinstance(quant_analysis, dict) else {}
+            valuation = valuation if isinstance(valuation, dict) else {}
+            risk = risk if isinstance(risk, dict) else {}
+            liquidity = liquidity if isinstance(liquidity, dict) else {}
+
             # Step 1: Compute portfolio allocations
             allocations = {}
             total_budget = 5000  # Total USD budget
-            risk_analysis = risk.get("analysis", {})
+            risk_analysis = risk.get("analysis")
+            risk_analysis = risk_analysis if isinstance(risk_analysis, dict) else {}
             tickers = [
                 t for t in market_data if market_data[t].get("status") in ("success", "backtest")
             ]
@@ -104,7 +117,13 @@ class PortfolioManagementAgent:
                     or 50.0
                 )
                 arb_signal = (
-                    arb_analysis.get("analysis", {}).get(f"{ticker}-*", {}).get("signal", "hold")
+                    (
+                        arb_analysis.get("analysis")
+                        if isinstance(arb_analysis.get("analysis"), dict)
+                        else {}
+                    )
+                    .get(f"{ticker}-*", {})
+                    .get("signal", "hold")
                 )
                 qa = quant_analysis.get("analysis")
                 qtick = qa.get(ticker, {}) if isinstance(qa, dict) else {}
@@ -113,6 +132,10 @@ class PortfolioManagementAgent:
                     if isinstance(qtick, dict)
                     else quant_analysis.get("signal", "hold")
                 )
+                intent = trade_intent if isinstance(trade_intent, dict) else {}
+                action = str(intent.get("action") or "HOLD").upper()
+                confidence = intent.get("confidence")
+                conf_f = float(confidence) if isinstance(confidence, (int, float)) else 0.0
                 portfolio_alloc = allocations.get(ticker, {})
                 target_amount = portfolio_alloc.get("amount", 0)  # USD amount to allocate
                 stop_price = portfolio_alloc.get("stop_price", 0)
@@ -139,21 +162,24 @@ class PortfolioManagementAgent:
                 # Buy logic: Increase position to match target allocation
                 if target_quantity > current_quantity:
                     if run_m == "backtest":
-                        # Simulation: follow risk target unless MACD says sell
-                        buy_signal = quant_signal != "sell" and (
-                            (quant_signal == "buy")
-                            or (arb_signal == "buy")
-                            or (sentiment_score >= 55 and quant_signal == "hold")
-                        )
+                        buy_signal = action == "BUY" and conf_f >= 0.55
                     else:
-                        buy_signal = (sentiment_score > 75 and quant_signal == "buy") or (
-                            arb_signal == "buy"
-                        )
+                        if action in ("BUY", "SELL"):
+                            buy_signal = action == "BUY" and conf_f >= 0.55
+                        else:
+                            buy_signal = (sentiment_score > 75 and quant_signal == "buy") or (
+                                arb_signal == "buy"
+                            )
 
                     if buy_signal:
                         quantity_to_buy = target_quantity - current_quantity
                         if run_m == "backtest":
                             quantity_to_buy = min(quantity_to_buy, 0.05)
+                            if external_cash_usd is not None and current_price > 0:
+                                quantity_to_buy = min(
+                                    quantity_to_buy,
+                                    float(external_cash_usd) / float(current_price),
+                                )
                         trade_result = {
                             "status": "proposed",
                             "action": "buy",
@@ -198,11 +224,21 @@ class PortfolioManagementAgent:
                 # Sell logic: Reduce position if below target or signals are negative
                 elif has_position:
                     entry_price = position["entry_price"]
-                    should_sell = (
-                        (target_quantity < current_quantity)
-                        or (sentiment_score < 25 or quant_signal == "sell" or arb_signal == "sell")
-                        or (stop_price > 0 and current_price <= stop_price)
-                    )
+                    if run_m == "backtest":
+                        should_sell = action == "SELL" and conf_f >= 0.55
+                    else:
+                        if action in ("BUY", "SELL"):
+                            should_sell = action == "SELL" and conf_f >= 0.55
+                        else:
+                            should_sell = (
+                                (target_quantity < current_quantity)
+                                or (
+                                    sentiment_score < 25
+                                    or quant_signal == "sell"
+                                    or arb_signal == "sell"
+                                )
+                                or (stop_price > 0 and current_price <= stop_price)
+                            )
                     if should_sell:
                         quantity_to_sell = (
                             min(current_quantity - target_quantity, current_quantity)

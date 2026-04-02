@@ -40,7 +40,7 @@ export function BacktestEquityChart({
 
   const data: Row[] = points.map((p) => ({
     ...p,
-    label: `Step ${p.step}`,
+    label: `Bar ${p.step + 1}`,
   }));
 
   return (
@@ -52,7 +52,7 @@ export function BacktestEquityChart({
             dataKey="step"
             tick={{ fill: "var(--nexus-muted)", fontSize: 10 }}
             tickLine={false}
-            label={{ value: "Bar step", fill: "var(--nexus-muted)", fontSize: 10, offset: -2 }}
+            tickFormatter={(v: number) => String(v + 1)}
           />
           <YAxis
             domain={["auto", "auto"]}
@@ -99,6 +99,7 @@ export function BacktestEquityChart({
             stroke="var(--nexus-card-stroke)"
             fill="rgba(10, 13, 18, 0.85)"
             travellerWidth={8}
+            tickFormatter={(v: number) => String(v + 1)}
           />
         </LineChart>
       </ResponsiveContainer>
