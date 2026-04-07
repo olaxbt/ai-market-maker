@@ -1,0 +1,32 @@
+{
+  "_meta": {
+    "name": "example_policy",
+    "description": "Annotated example policy. Copy this file, edit values, and point AIMM_CONFIG_PATH to it.",
+    "notes": [
+      "JSON has no comments; annotations live under _meta.",
+      "All values are validated/clamped in code (see src/config/policy_loader.py).",
+      "Env vars can still override these fields (env is always the final layer)."
+    ]
+  },
+  "policy": {
+    "portfolio_budget_usd": 5000,
+    "risk_position_cap_usd": 1000,
+
+    "max_leverage": 4,
+    "allows_short": false,
+
+    "stop_loss_pct": 0.03,
+    "take_profit_pct": 0.08,
+
+    "min_confidence_directional": 0.45,
+
+    "trade_cooldown_bars": 48,
+
+    "bull_exposure_floor": 0.6,
+    "bear_exposure_cap": 0.15,
+
+    "risk_max_drawdown_stop": 0.2,
+    "risk_kill_switch_cooldown_bars": 240
+  }
+}
+

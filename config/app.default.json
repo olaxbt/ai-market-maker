@@ -1,0 +1,20 @@
+{
+  "paper": {
+    "start_usdt": 10000
+  },
+  "market": {
+    "default_ticker": "BTC/USDT",
+    "universe_size": 7,
+    "universe_symbols": [
+      "BTC/USDT",
+      "ETH/USDT",
+      "SOL/USDT",
+      "AIO/USDT",
+      "BNB/USDT",
+      "XRP/USDT",
+      "ADA/USDT"
+    ],
+    "ohlcv_cache_dir": "data/ohlcv"
+  }
+}
+

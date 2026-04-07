@@ -1,0 +1,17 @@
+{
+  "policy": {
+    "stop_loss_pct": 0.03,
+    "take_profit_pct": 0.08,
+    "max_leverage": 4,
+    "min_confidence_directional": 0.45,
+    "trade_cooldown_bars": 48,
+    "allows_short": false,
+    "bull_exposure_floor": 0.6,
+    "bear_exposure_cap": 0.15,
+    "risk_max_drawdown_stop": 0.2,
+    "risk_kill_switch_cooldown_bars": 240,
+    "portfolio_budget_usd": 5000,
+    "risk_position_cap_usd": 1000
+  }
+}
+

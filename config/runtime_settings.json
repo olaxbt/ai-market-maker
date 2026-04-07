@@ -1,0 +1,10 @@
+{
+  "policy": {
+    "rule_sentiment_buy_min": 50,
+    "min_confidence_directional": 0.45,
+    "trade_cooldown_bars": 48,
+    "portfolio_budget_usd": 5000,
+    "risk_position_cap_usd": 1000
+  }
+}
+
