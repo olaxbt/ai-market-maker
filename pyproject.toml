@@ -19,8 +19,10 @@ name = "ai-market-maker"
 version = "0.1.0"
 description = "Crypto Market-Making AI Agent"
 readme = "README.md"
+license = { text = "GNU Affero General Public License v3.0 only" }
 requires-python = ">=3.11"
 dependencies = [
+    "httpx>=0.27.0",
     "ccxt>=4.4.85",
     "fastapi>=0.117.0",
     "jsonschema>=4.25.1",
@@ -56,14 +58,18 @@ exclude = [
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B"]
+ignore = ["E501"]
 
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
 
 [tool.pytest.ini_options]
-addopts = ["-q", "-m", "not slow"]
+addopts = ["-q", "-m", "not slow", "--ignore=tests/extended"]
+pythonpath = ["src", "tests"]
 testpaths = ["tests"]
+norecursedirs = ["extended"]
 markers = [
     "slow: full LangGraph invoke, HTTP TestClient, or heavy multi-step backtest (opt-in)",
+    "agentic: full graph with Tier-0 Nexus fixtures (runs in default CI suite)",
 ]

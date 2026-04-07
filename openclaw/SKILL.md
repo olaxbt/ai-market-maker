@@ -1,35 +1,51 @@
-# Skill: AI Market Maker (Hedge Fund OS)
+# AI Market Maker Skill
 
 ## Purpose
 
-Operate and explain a **multi-agent trading workflow** with a **hard Risk Guard veto** before execution. Prefer **structured traces** (`thought_process`, proposals, veto) for transparency—aligned with the Nexus dashboard and `schema/agent_trace.json`.
+This skill provides tooling and documentation to run, inspect, and extend the multi-agent LangGraph trading workflow.
 
-## When to use
+It includes a hard Risk Guard veto before any execution, structured tracing for transparency, and a simple HTTP API surface for external tools.
 
-- Running or auditing the **LangGraph** pipeline (`src/main.py`).
-- Mapping **personas** (`docs/personas/`) to **topology nodes** (`n1`–`n9`)—see `docs/persona_architecture_map.md`.
-- Preparing **OpenClaw** tool calls against the future **NexusAdapter** (see `manifest.json` → `tools`).
+## When to Use
 
-## Boundaries
+- Running or debugging the main LangGraph pipeline (`src/main.py`)
+- Understanding how personas map to graph nodes (see `docs/personas/` and `src/api/payload_adapter.py`)
+- Integrating with the Flow API (`/runs/*`, `/pm/*`, `/backtests`)
 
-- **Secrets**: Never serialize untrusted dicts through LangChain `dumps`/`loads` with sensitive data; keep `langchain-core` patched (see `pyproject.toml`).
-- **Live trading**: Execution is testnet-oriented today; production requires explicit mode flags and adapter work (roadmap P3/P4).
-- **Veto**: Treat **Risk Guard** as **code-gated** (`risk_guard` node)—not a soft LLM suggestion.
+## Important Boundaries
 
-## Key files
+- **Secrets**: Never pass sensitive data through LangChain serialization (`dumps`/`loads`). Keep `langchain-core` up to date.
+- **Live Trading**: Currently focused on testnet/paper. Real execution requires explicit `live` mode + safety flags (planned for P3/P4).
+- **Risk Guard**: This is a hard, code-level veto — not just an LLM suggestion.
 
-| Area | Location |
-|------|----------|
-| Workflow | `src/main.py` |
-| State (target contract) | `src/schemas/state.py` |
-| Flow events | `src/schemas/flow_events.py`, `src/flow_log.py` |
-| Traces / UI contract | `schema/agent_trace.json`, `src/api/schema/nexus_payload.json` |
-| Web dashboard | `web/` (Next.js) |
+## Flow API (for external tools)
 
-## Tool naming (future)
+The repo exposes a lightweight, mostly read-only HTTP API:
 
-Use **stable names** from `openclaw/manifest.json` (`nexus.*`) so host runtimes can register MCP/OpenClaw tools without renames when the adapter lands.
+- `GET /runs/latest`          → Latest run data
+- `GET /runs/{run_id}/payload` → Full payload of a run
+- `GET /runs/{run_id}/events`  → Events and traces
+- `GET /pm/portfolio-health`   → Portfolio summary
+- `GET /backtests`             → List backtest runs
 
-## Versioning
+### Security
 
-Bump `manifest.json` → `version` when changing tool schemas or breaking payload fields.
+- If `AIMM_API_KEY` is not set → API is open (intended for local development only).
+- If `AIMM_API_KEY` is set → All non-local requests require `x-api-key` header.
+- In production, always put the Flow API behind a reverse proxy and configure `AIMM_CORS_ORIGINS` appropriately.
+
+## Key Files
+
+| Area                  | Location                                      |
+|-----------------------|-----------------------------------------------|
+| Main workflow         | `src/main.py`                                 |
+| Core state schema     | `src/schemas/state.py`                        |
+| Flow events & logging | `src/schemas/flow_events.py`, `src/flow_log.py` |
+| Trace schemas         | `schema/agent_trace.json`                     |
+| Web dashboard         | `web/` (Next.js)                              |
+
+## Versioning & Stability
+
+When changing tool schemas or breaking payload formats, bump the version in `manifest.json`.
+
+Future tool names under the `nexus.*` namespace will remain stable for external integrations (OpenClaw / MCP).

@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "skill_id": "ai-market-maker",
   "name": "AI Market Maker (Agentic Hedge Fund OS)",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "summary": "Multi-agent LangGraph workflow: research desks → portfolio proposal → Risk Guard veto → execution. Emits structured traces for Nexus / OpenClaw UIs.",
   "entrypoints": {
     "workflow_cli": {
@@ -19,22 +19,58 @@
   },
   "tools": [
     {
-      "name": "nexus.get_portfolio_health",
-      "description": "Account exposure, balances, and risk caps (NexusAdapter / future).",
-      "status": "planned",
-      "phase": "P3"
+      "name": "flow.health",
+      "description": "Health check for the Flow API.",
+      "status": "available",
+      "transport": "http",
+      "method": "GET",
+      "path": "/health",
+      "auth": "optional_x_api_key"
     },
     {
-      "name": "nexus.place_smart_order",
-      "description": "TWAP/VWAP or guarded market order via Nexus bridge (future).",
-      "status": "planned",
-      "phase": "P3"
+      "name": "flow.latest_run",
+      "description": "Resolve the most recent run id.",
+      "status": "available",
+      "transport": "http",
+      "method": "GET",
+      "path": "/runs/latest",
+      "auth": "optional_x_api_key"
     },
     {
-      "name": "nexus.fetch_market_depth",
-      "description": "Order book depth for slippage estimates (future).",
-      "status": "planned",
-      "phase": "P3"
+      "name": "flow.get_payload",
+      "description": "Fetch the Nexus UI payload (topology + traces + agent_prompts) for a run id.",
+      "status": "available",
+      "transport": "http",
+      "method": "GET",
+      "path": "/runs/{run_id}/payload",
+      "auth": "optional_x_api_key"
+    },
+    {
+      "name": "flow.get_events",
+      "description": "Fetch raw flow events for a run id (trimmed by tail).",
+      "status": "available",
+      "transport": "http",
+      "method": "GET",
+      "path": "/runs/{run_id}/events",
+      "auth": "optional_x_api_key"
+    },
+    {
+      "name": "pm.get_portfolio_health",
+      "description": "Live portfolio health (balances, positions, risk caps).",
+      "status": "available",
+      "transport": "http",
+      "method": "GET",
+      "path": "/pm/portfolio-health",
+      "auth": "optional_x_api_key"
+    },
+    {
+      "name": "backtest.list_runs",
+      "description": "List backtest run ids stored under .runs/backtests.",
+      "status": "available",
+      "transport": "http",
+      "method": "GET",
+      "path": "/backtests",
+      "auth": "optional_x_api_key"
     }
   ],
   "agents": {
