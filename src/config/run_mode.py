@@ -54,4 +54,9 @@ def load_run_mode(
     return mode
 
 
-__all__ = ["LIVE_CONFIRM_ENV", "MODE_ENV", "RunMode", "load_run_mode"]
+def is_backtest_run(run_mode: str | None) -> bool:
+    """True when ``run_mode`` is the backtest graph driver (anchored sim book)."""
+    return (run_mode or "").strip().lower() == RunMode.BACKTEST.value
+
+
+__all__ = ["LIVE_CONFIRM_ENV", "MODE_ENV", "RunMode", "is_backtest_run", "load_run_mode"]

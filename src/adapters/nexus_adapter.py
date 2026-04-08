@@ -5,6 +5,8 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, Literal, Optional
 
+from config.app_settings import load_app_settings
+from config.fund_policy import load_fund_policy
 from config.nexus_env import load_nexus_data_base_url
 
 OrderSide = Literal["buy", "sell"]
@@ -35,13 +37,20 @@ class NexusAdapter:
 
     def get_portfolio_health(self, *, account_id: str | None = None) -> Dict[str, Any]:
         # Mock baseline; in real mode this comes from wallet/risk hub.
+        start_usdt = float(load_app_settings().paper.start_usdt)
+        fp = load_fund_policy()
+        max_lev = max(1.0, float(fp.max_leverage))
         return {
             "account_id": account_id or "default",
             "ts": int(time.time()),
             "mode": self.config.mode,
-            "balances": {"USDT": 5000.0},
+            "balances": {"USDT": start_usdt},
             "positions": [],
-            "risk_caps": {"max_notional_usd": 5000.0, "max_leverage": 1.0},
+            "risk_caps": {
+                # Simple policy-based cap: gross notional <= equity * leverage.
+                "max_notional_usd": round(float(start_usdt) * max_lev, 2),
+                "max_leverage": max_lev,
+            },
         }
 
     def fetch_market_depth(self, *, symbol: str, limit: int = 5) -> Dict[str, Any]:

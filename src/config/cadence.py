@@ -12,6 +12,8 @@ import sys
 import warnings
 from typing import Mapping
 
+from config.llm_env import use_llm_arbitrator
+
 STRATEGY_INTERVAL_ENV = "STRATEGY_INTERVAL_SEC"
 # Default ~3 minutes: aligns with common “desk refresh” loops and limits token burn.
 DEFAULT_STRATEGY_INTERVAL_SEC = 180
@@ -57,11 +59,7 @@ def load_strategy_interval_sec(
 def warn_if_aggressive_cadence(interval_sec: int, *, env: Mapping[str, str] | None = None) -> None:
     """Emit a stderr hint when LLM is on but the loop is faster than a typical desk cycle."""
     env_map = env if env is not None else os.environ
-    use_llm = (env_map.get("AI_MARKET_MAKER_USE_LLM") or "").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-    )
+    use_llm = use_llm_arbitrator(env_map)
     if use_llm and interval_sec < LLM_SANE_MIN_INTERVAL_SEC:
         print(
             f"[cadence] AI_MARKET_MAKER_USE_LLM=1 with {STRATEGY_INTERVAL_ENV}={interval_sec}s "
