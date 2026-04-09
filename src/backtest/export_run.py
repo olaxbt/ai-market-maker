@@ -14,15 +14,23 @@ RUNS_DIR = Path(".runs")
 LATEST_RUN_FILE = RUNS_DIR / "latest_run.txt"
 
 
-def _resolve_run_log(run_id: str) -> Path:
-    if run_id == "latest" and LATEST_RUN_FILE.exists():
-        latest = LATEST_RUN_FILE.read_text().strip()
+def _resolve_run_log(run_id: str, *, runs_base: Path | None = None) -> Path:
+    base = runs_base if runs_base is not None else RUNS_DIR
+    latest_file = base / "latest_run.txt"
+    if run_id == "latest" and latest_file.exists():
+        latest = latest_file.read_text().strip()
         if latest:
-            return RUNS_DIR / f"{latest}.events.jsonl"
-    return RUNS_DIR / f"{run_id}.events.jsonl"
+            return base / f"{latest}.events.jsonl"
+    return base / f"{run_id}.events.jsonl"
 
 
-def export_run_bundle(*, run_id: str, out_dir: Path, seed: int | None = None) -> dict[str, Any]:
+def export_run_bundle(
+    *,
+    run_id: str,
+    out_dir: Path,
+    runs_base: Path | None = None,
+    seed: int | None = None,
+) -> dict[str, Any]:
     """Export an immutable replay bundle for the web UI.
 
     Bundle contains:
@@ -33,7 +41,7 @@ def export_run_bundle(*, run_id: str, out_dir: Path, seed: int | None = None) ->
     if seed is not None:
         random.seed(seed)
 
-    log_path = _resolve_run_log(run_id)
+    log_path = _resolve_run_log(run_id, runs_base=runs_base)
     if not log_path.exists():
         raise FileNotFoundError(f"Run log not found: {log_path}")
 
