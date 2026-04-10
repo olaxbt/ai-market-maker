@@ -15,7 +15,9 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from backtest.bars import load_ohlcv_json, synthetic_ohlcv_bars
+from backtest.exchange_trade_format import normalize_trade_row_for_api
 from backtest.loop import MultiStepResult, run_multi_step_backtest
+from backtest.trade_book import read_jsonl_dict_records
 from strategies.presets import (
     DEFAULT_QUANT_STRATEGY_ID,
     get_preset,
@@ -38,31 +40,11 @@ def _max_api_steps() -> int:
 
 
 def _jsonl_preview(path: Path, *, limit: int = 20) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    if not path.is_file():
-        return rows
-    with path.open(encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            rows.append(json.loads(line))
-            if len(rows) >= limit:
-                break
-    return rows
+    return read_jsonl_dict_records(path, limit=limit)
 
 
 def _read_jsonl_all(path: Path) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    if not path.is_file():
-        return rows
-    with path.open(encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            rows.append(json.loads(line))
-    return rows
+    return read_jsonl_dict_records(path)
 
 
 def _downsample_rows(rows: list[dict[str, Any]], max_points: int) -> list[dict[str, Any]]:
@@ -79,18 +61,33 @@ def _evaluation_block(
     result: MultiStepResult,
     initial_cash: float,
 ) -> dict[str, Any]:
-    final = float(result.metrics.get("final_equity") or initial_cash)
+    final = float(result.final_equity) if result.final_equity is not None else float(initial_cash)
     ret_pct = ((final - initial_cash) / initial_cash * 100.0) if initial_cash else 0.0
-    return {
+    block: dict[str, Any] = {
         "initial_cash": initial_cash,
         "final_equity": final,
         "total_return_pct": round(ret_pct, 4),
         "trade_count": result.trade_count,
-        "trades_preview": _jsonl_preview(result.trades_path, limit=15),
+        "trades_preview": [
+            normalize_trade_row_for_api(r) for r in _jsonl_preview(result.trades_path, limit=15)
+        ],
         "note": (
             "Fills are simulated at each bar's close when Risk Guard approves and the portfolio "
             "desk proposes a trade; see paths.trades for the full JSONL ledger."
         ),
+    }
+    if result.benchmark is not None:
+        block["benchmark"] = dict(result.benchmark)
+    return block
+
+
+def _backtest_paths_response(result: MultiStepResult) -> dict[str, Any]:
+    return {
+        "summary": str(result.summary_path),
+        "trades": str(result.trades_path),
+        "equity": str(result.equity_path),
+        "iterations": str(result.iterations_path) if result.iterations_path else None,
+        "events": str(result.events_path),
     }
 
 
@@ -156,7 +153,7 @@ def _execute_quick_backtest(
         runs_dir=RUNS_DIR,
         max_steps=effective,
         run_id=run_id,
-        on_bar_complete=on_bar_complete,
+        progress_callback=on_bar_complete,
     )
     logger.info(
         "backtest done run_id=%s trade_count=%s final_equity=%s",
@@ -170,12 +167,7 @@ def _execute_quick_backtest(
         "trade_count": result.trade_count,
         "metrics": result.metrics,
         "evaluation": _evaluation_block(result=result, initial_cash=req.initial_cash),
-        "paths": {
-            "summary": str(result.summary_path),
-            "trades": str(result.trades_path),
-            "equity": str(result.equity_path),
-            "events": str(result.events_path),
-        },
+        "paths": _backtest_paths_response(result),
         "capped": effective < min(want, req.n_bars),
         "server_max_steps": cap,
     }
@@ -188,7 +180,7 @@ def _execute_quick_backtest(
 def post_quick_backtest(req: QuickBacktestRequest) -> dict[str, Any]:
     """
     Run a **synthetic** OHLCV replay: one LangGraph pass per bar, book simulated fills,
-    write ``.runs/backtests/<run_id>/`` (trades, equity, summary) and flow events under ``.runs/``.
+    write ``.runs/backtests/<run_id>/`` (trades, equity, ``iterations.jsonl``, summary) and flow events under ``.runs/``.
     """
     return _execute_quick_backtest(req)
 
@@ -357,12 +349,7 @@ def post_backtest_from_file(req: FileBacktestRequest) -> dict[str, Any]:
         "trade_count": result.trade_count,
         "metrics": result.metrics,
         "evaluation": _evaluation_block(result=result, initial_cash=req.initial_cash),
-        "paths": {
-            "summary": str(result.summary_path),
-            "trades": str(result.trades_path),
-            "equity": str(result.equity_path),
-            "events": str(result.events_path),
-        },
+        "paths": _backtest_paths_response(result),
         "capped": effective < min(want, len(bars)),
         "server_max_steps": cap,
     }
@@ -414,12 +401,39 @@ def get_backtest_trades(
     total = len(rows)
     if total > limit:
         rows = rows[-limit:]
+    normalized = [normalize_trade_row_for_api(r) for r in rows]
     return {
         "run_id": run_id,
         "total": total,
-        "returned": len(rows),
-        "truncated": total > len(rows),
-        "trades": rows,
+        "returned": len(normalized),
+        "truncated": total > len(normalized),
+        "trades": normalized,
+    }
+
+
+@router.get("/backtests/{run_id}/bars")
+def get_backtest_bars(
+    run_id: str,
+    max_points: int = Query(2000, ge=10, le=50_000),
+) -> dict[str, Any]:
+    """Return OHLCV bars used for the run (primary ticker), downsampled for charting."""
+    bars_path = BACKTESTS_DIR / run_id / "bars.json"
+    if not bars_path.is_file():
+        raise HTTPException(status_code=404, detail="Unknown backtest run_id or missing bars.json")
+    raw = json.loads(bars_path.read_text(encoding="utf-8"))
+    bars = raw.get("bars")
+    if not isinstance(bars, list):
+        raise HTTPException(status_code=500, detail="bars.json is invalid (missing bars)")
+    raw_count = len(bars)
+    sampled = _downsample_rows(bars, max_points) if raw_count > max_points else bars
+    return {
+        "run_id": run_id,
+        "ticker": raw.get("ticker"),
+        "interval_sec": raw.get("interval_sec"),
+        "count": raw_count,
+        "max_points": max_points,
+        "downsampled": raw_count > len(sampled),
+        "bars": sampled,
     }
 
 
