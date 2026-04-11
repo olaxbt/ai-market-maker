@@ -1,184 +1,182 @@
-# AI Crypto Market Maker
+# AI Market Maker: Agentic Trading System for Crypto Hedge Funds
 
-**AI-Market-Maker** is an open-source project to simulate a cryptocurrency market-making system using AI agents. It is built for **agentic trading** in a **hedge fund**-style setup: multiple specialist agents (desks) coordinating through a shared workflow with a hard risk gate before execution—patterned after **hedge funds** that separate research, alpha, risk, and execution behind formal controls. The repo is **OpenClaw**-oriented—skill and tool metadata live under `openclaw/` so OpenClaw-style hosts can discover entrypoints, contracts, and future Nexus tools. Beyond simulation, it is a multi-agent stack for fund-style workflows: research → signals → proposal → risk veto → execution. The edge is **separation of concerns** (specialist desks), **governance** (risk can halt execution), and **traceability** (personas + structured reasoning so decisions are explainable and auditable).
+**AI-Market-Maker** is an open-source, **hedge-fund-style** trading stack for crypto. It combines **specialist AI trading agents** (acting as trading desks), a **LangGraph** orchestration layer, a **hard Risk Guard veto** before any execution, and quant-grade discipline including centralized policy, benchmarks against buy-and-hold, and full traceability.
+
+Designed to feel like a small professional trading firm — not just another bot.
+
+### Key Features
+- Multi-agent workflow with clear desk responsibilities
+- Strict **Risk Guard** that can veto any trade
+- Quant-style backtesting with built-in benchmarks (excess return vs buy-and-hold)
+- Unified agent interface + governance layer
+- OpenClaw-ready packaging (`SKILL.md` + `manifest.json`)
+- Paper trading on Binance Testnet + rich local backtester
+- Modern web dashboard for telemetry and traces
+- Clean configuration (JSON policy + env for secrets only)
+
+---
 
 ## Goals
 
-- **Trading Mode (now)**: Fetch real-time market data, generate signals, and place testnet trades gated by Risk Guard.
-- **Agentic trading & OpenClaw**: Package skills and planned tools under `openclaw/` (`SKILL.md`, `manifest.json`) so OpenClaw-compatible hosts can drive and audit **agentic trading** workflows.
-- **Platform direction**: Treat agents as desks with clear contracts, reasoning logs, and measurable KPIs.
-- Support future features like arbitrage, sentiment analysis, and risk management.
-  Note: This project is an experimental simulation currently in development.
+**Current (Trading Mode)**  
+Fetch real-time data, generate signals through specialist agents, run portfolio logic, apply Risk Guard veto, and execute on Binance Testnet.
 
-## Agents
+**Near-term**  
+Full position lifecycle, multi-asset portfolio management, configurable leverage, and improved long/short handling.
 
-- **Market Scanner Agent**: Scans for newly listed, to-be-delisted, and high-potential tokens with high-momentum price shifts.
-- **Technical Analysis Agent**: Analyzes price patterns and candlestick data for actionable trading insights.
-- **Sentiment Analysis Agent**: Processes KOL tweets and news to gauge market sentiment trends.
-- **Statistical Arbitrage Agent**: Calculates correlations and hedge ratios to identify token pairs for arbitrage and hedging.
-- **Quantitative Analysis Agent**: Generates trading signals by evaluating momentum and market trends.
-- **Valuation Agent**: Assesses token value by benchmarking against similar category assets.
-- **Liquidity Agent**: Evaluates circulating supply and on-chain liquidity for efficient trades.
-- **Risk Management Agent**: Optimizes TP/SL and position limits using reinforcement learning on volatility.
-- **Portfolio Management Agent**: Manages portfolio and balance for optimized order placement across DEX and CEX venues.
-- **Risk Guard (Veto Layer)**: Final approval gate that can **VETO** execution proposals before any order placement.
+**Longer-term**  
+Deeper agentic capabilities, better OpenClaw integration, and support for additional execution venues and data sources.
 
-## Why this repo is different
+---
 
-- **Standard interfaces**: Agents can follow a unified SOP contract (**Input → Process → Output → Feedback**) via `src/agents/base_agent.py`.
-- **Governance (Veto Power)**: `Risk Guard` is a governance layer with **final say** to stop unsafe execution.
-- **Personas included**: See `docs/personas/` for the 9 agent persona definitions.
-- **Architecture map**: `docs/persona_architecture_map.md` (Python graph vs Nexus `n1`–`n9` UI).
-- **LangGraph contract**: `docs/langgraph-workflow.md` (`HedgeFundState`, conditional risk edge, node naming).
-- **OpenClaw packaging (P1)**: `openclaw/SKILL.md` + `openclaw/manifest.json` (tool IDs and contracts for future adapters).
+## Why This Project Stands Out
 
-## Hedge-fund style workflow (current)
+- **Real risk governance** — Risk Guard has final veto power, not just logging.
+- **Quant discipline** — Every backtest includes clear benchmarks. No hand-waving.
+- **Standardized agents** — All agents follow the same `Input → Process → Output → Feedback` contract.
+- **Transparency** — Full traces, reasoning logs, and event ledger.
+- **Extensibility** — Built with LangGraph, clean personas, and OpenClaw skill packaging.
 
-The default pipeline is structured like a small fund:
+## System Architecture
 
-- **Research desks**: Market Scan / Technical / Sentiment / Valuation
-- **Alpha desks**: Quant / Stat-Arb
-- **Risk desks**: Risk Management + **Risk Guard (veto)**
-- **PM desk**: Portfolio proposal (capital allocation + actions)
-- **Execution**: Only runs when Risk Guard returns **APPROVED**
+The workflow mimics a small hedge fund:
 
-![flow_diagram](https://github.com/user-attachments/assets/b07dc7b2-e482-416a-b684-7bc40cced45c)
+1. **Research Desks** — Market Scan, Technical Analysis, Statistical Alpha, Sentiment
+2. **Alpha Generation** — Signal synthesis and thesis building
+3. **Portfolio Management** — Risk-weighted allocation and trade sizing
+4. **Risk Guard** — Final safety layer (can veto everything)
+5. **Execution** — Only proceeds if Risk Guard approves  
 
-## Setup
+<img width="784" height="1138" alt="workflow_diagram" src="https://github.com/user-attachments/assets/fcf5d491-7562-4acc-8499-3d93d24d395b" />
 
-### Prerequisites
+See `docs/langgraph-workflow.md` for detailed graph state and routing.
 
-- Python 3.11+
-- [uv](https://github.com/astral-sh/uv)
-- pre-commit (recommended for contributors)
-- Binance Testnet API keys (for paper trading, optional)
-- OpenAI API key (for GPT-4o, optional)
-- Twitter/X API bearer token (for sentiment, optional)
-- TA-Lib C library (`libta-lib`) for technical indicators
+---
 
-### Steps
-
-- **Clone the Repository**:
+## Quick Start
 
 ```bash
+# 1. Clone the repo
 git clone https://github.com/olaxbt/ai-market-maker.git
 cd ai-market-maker
-```
 
-- Install Dependencies:
-
-```
+# 2. Install dependencies
 pip install uv
-uv sync
-```
-
-- (Recommended) Install dev tools + git hooks:
-
-```bash
 uv sync --extra dev
 uv run pre-commit install
-```
 
-- Install TA-Lib
-  TA-Lib requires the C library (libta-lib) to be installed before you can install the Python wrapper. For easier installation, it is recommended to use Conda:
-
-```
-conda install -c conda-forge ta-lib
-```
-
-You can also use UV to add TA-Lib:
-If you encounter any issues during the installation of TA-Lib, please refer to the [TA-Lib](https://github.com/TA-Lib/ta-lib-python) GitHub repository for assistance.
-
-```
-uv add ta-lib
-```
-
-- Set Up Environment Variables:  
-   Copy `.env.example` to `.env` and add API keys:
-
-```bash
+# 3. Set up environment
 cp .env.example .env
-```
+# Edit .env with your API keys (Binance Testnet + OpenAI recommended)
 
-Example .env:
-
-```
-BINANCE_API_KEY=your_key
-BINANCE_API_SECRET=your_secret
-OPENAI_API_KEY=your_openai_api_key
-TWITTER_BEARER_TOKEN=your_twitter_bearer_token
-```
-
-## Usage
-
-Run the main script (**Trading Mode**, Binance testnet). The workflow generates a **portfolio proposal**, runs it through **Risk Guard**, and executes only if **APPROVED**:
-
-```
-uv run python src/main.py
-```
-
-### One-command local stack (recommended)
-
-Start API streaming + strategy loop + web in one terminal:
-
-```bash
+# 4. Run the full stack (API + strategy + web UI)
 ./start.sh
 ```
 
-Optional env knobs:
+Open http://localhost:3000 to view the dashboard.
 
+For CLI-only trading mode:
 ```bash
-MODE=paper TICKER=BTC/USDT FLOW_API_PORT=8001 WEB_PORT=3000 RUN_STRATEGY=1 STRATEGY_INTERVAL_SEC=20 ./start.sh
+uv run python src/main.py
 ```
 
-## Web UI (Agentic Nexus, OpenClaw-oriented)
+---
 
-The **`web/`** app is the React (Next.js) dashboard for **agentic trading** visibility: real-time **agent thought-chain** transparency (Agentic Nexus) and payloads shaped for **OpenClaw**-style live canvases. Each card shows actor, timestamp, thought steps, proposal, and veto status.
+## Setup Details
 
+### Prerequisites
+- Python 3.11+
+- [uv](https://github.com/astral-sh/uv)
+- TA-Lib (C library + Python wrapper)
+- Binance Testnet API keys (for paper trading)
+- OpenAI API key (optional, enables LLM nodes)
+- (Optional) Nexus Skills API access
+
+### Configuration Philosophy
+- **Policy & universe** → `config/policy.default.json` and `config/app.default.json` (single source of truth)
+- **Secrets** → only in `.env`
+
+Detailed docs:
+- [`docs/configuration.md`](docs/configuration.md)
+- [`docs/policy-schema.md`](docs/policy-schema.md)
+- [`docs/run-modes.md`](docs/run-modes.md)
+
+### Testing
+
+```bash
+# Default unit tests (no network)
+uv run pytest -q
+
+# Full agentic E2E tests
+uv run pytest -q tests/test_agentic_trading_e2e.py tests/test_tier0_consensus.py
+```
+
+---
+
+## Agents (Desks)
+
+- **Market Scan** — New listings, momentum, universe coverage
+- **Technical TA Engine** — Pattern recognition, MACD, indicators
+- **Statistical Alpha Engine** — Factor and cross-sectional signals
+- **Sentiment & Narrative** — News, retail hype, whale behavior
+- **Risk Management** — Position sizing, volatility-based limits
+- **Portfolio Management** — Multi-asset allocation and proposal generation
+- **Risk Guard** — Hard veto layer before execution
+
+All agents follow a standardized interface defined in `src/agents/base_agent.py`.
+
+---
+
+## Backtesting & Research Expectations
+
+Every backtest automatically includes:
+- Performance metrics (Sortino, Profit Factor, etc.)
+- Benchmark vs. **buy-and-hold** (spot move + equity curve)
+- Excess return calculation
+- Full trade ledger and forced risk exits
+
+**Important**: A single profitable backtest is **not** proof of edge. Always validate across multiple regimes and out-of-sample periods.
+
+You can run backtests via:
+```bash
+uv run python -m backtest.run_demo --symbols BTC/USDT,ETH/USDT --steps 80
+```
+
+---
+
+## Web UI
+
+A Next.js dashboard is included for viewing:
+- Live agent traces and reasoning
+- Backtest results
+- Topology visualization
+- Prompt editing (where applicable)
+
+Run with:
 ```bash
 cd web && npm install && npm run dev
 ```
 
-Open http://localhost:3000. Mock traces are served from `/api/traces`; wire to your backend’s telemetry (`LogPublisher`) for live data.
-
-To consume live Python flow events manually, run the stream server:
-
-```bash
-uv run python -m uvicorn src.api.main:app --reload --port 8001
-```
-
-Then start the web app with:
-
-```bash
-FLOW_API_BASE_URL=http://localhost:8001 NEXT_PUBLIC_FLOW_WS_URL=ws://localhost:8001 npm run dev
-```
+---
 
 ## Project Structure
 
 ```
 ai-market-maker/
-├── src/
-│   ├── agents/
-│   │   ├── market_scan.py          # Scans market and meme coins
-│   │   ├── price_pattern.py        # Analyzes price patterns
-│   │   ├── sentiment.py            # Analyzes sentiment
-│   │   ├── stat_arb.py             # Arbitrage with cointegration
-│   │   ├── quant.py                # MACD and volume signals
-│   │   ├── valuation.py            # Asset valuation
-│   │   ├── risk_management.py      # Position limits, stop-losses
-│   │   ├── portfolio_management.py # Allocates budget and places orders
-│   │   ├── liquidity_management.py # Bid-ask spread management
-│   ├── tools/
-│   │   ├── api.py                  # Exchange APIs
-│   │   ├── technical_indicators.py # Technical analysis
-│   │   ├── sentiment_tools.py      # Sentiment utilities
-│   ├── main.py                     # Main entry point
-├── web/                            # Next.js UI (agent thought stream, OpenClaw-ready)
-├── uv.toml                         # uv configuration
-├── .env.example                    # Environment variables
-├── LICENSE                         # License
-├── README.md                       # Documentation
+├── src/                    # Core Python logic
+│   ├── agents/             # Individual trading desks
+│   ├── tools/              # Exchange, TA, sentiment tools
+│   ├── backtest/           # Backtesting engine
+│   └── api/                # FastAPI endpoints
+├── web/                    # Next.js dashboard
+├── openclaw/               # OpenClaw skill definitions
+├── config/                 # Default policy and app config
+├── docs/                   # Detailed documentation
+├── tests/                  # Test suite
+└── .env.example
 ```
+
+---
 
 ## Using with Nexus on BNB Chain
 
@@ -188,6 +186,22 @@ Fund your Nexus-connected wallet with BNB or supported stablecoins on BNB Chain,
 
 This lets agents and trading tools consume data and actions through Nexus while keeping payments and accounting native to the BNB Chain ecosystem.
 
+---
+
+## Contributing
+
+We welcome contributions! Please read [`CONTRIBUTING.md`](CONTRIBUTING.md) first.
+
+Growth is driven by issues and pull requests. See the open issues for current priorities.
+
+---
+
 ## License
 
-MIT License. See LICENSE for details.
+[GNU Affero General Public License v3.0](https://www.gnu.org/licenses/agpl-3.0.html) — see [`LICENSE`](LICENSE). If you modify this software and run it as a network service, AGPL obligations (including source offer to users) may apply; read the license carefully.
+
+---
+
+**Built with LangGraph • FastAPI • Next.js • TA-Lib**
+
+Ready to experiment with serious agentic trading infrastructure.
