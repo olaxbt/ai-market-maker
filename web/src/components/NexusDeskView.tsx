@@ -4,7 +4,7 @@ import { NexusStarSystem } from "@/components/NexusStarSystem";
 import { NexusThoughtStreamPanel } from "@/components/NexusThoughtStreamPanel";
 import { TopologyGraph } from "@/components/TopologyGraph";
 import type { RefObject } from "react";
-import type { NexusTrace, TopologyEdge, TopologyNode } from "@/types/nexus-payload";
+import type { MessageLogEntry, NexusTrace, TopologyEdge, TopologyNode } from "@/types/nexus-payload";
 
 interface NexusDeskViewProps {
   nodes: TopologyNode[];
@@ -14,6 +14,7 @@ interface NexusDeskViewProps {
   signalCount: number;
   streaming: boolean;
   tracesToShow: NexusTrace[];
+  messageLog?: MessageLogEntry[];
   streamRef: RefObject<HTMLDivElement>;
   setCardRef: (traceId: string, el: HTMLDivElement | null) => void;
   readyToReveal: boolean;
@@ -29,6 +30,7 @@ export function NexusDeskView({
   signalCount,
   streaming,
   tracesToShow,
+  messageLog,
   streamRef,
   setCardRef,
   readyToReveal,
@@ -82,6 +84,7 @@ export function NexusDeskView({
         streaming={streaming}
         selectedNodeId={selectedNodeId}
         tracesToShow={tracesToShow}
+        messageLog={messageLog}
         streamRef={streamRef}
         setCardRef={setCardRef}
       />

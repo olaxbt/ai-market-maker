@@ -39,8 +39,23 @@ export function AgentDetailPanel({
   const [taskPrompt, setTaskPrompt] = useState("");
   const [savedSnapshot, setSavedSnapshot] = useState<PromptSnapshot | null>(null);
   const [saveAck, setSaveAck] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const cotEnabled = !!promptDefaults?.cot_enabled;
+  const appliesToRuntime =
+    !!promptDefaults &&
+    typeof promptDefaults === "object" &&
+    "applies_to_runtime" in promptDefaults
+      ? Boolean((promptDefaults as unknown as { applies_to_runtime?: boolean }).applies_to_runtime)
+      : false;
+  const effectiveMode =
+    !!promptDefaults &&
+    typeof promptDefaults === "object" &&
+    "mode" in promptDefaults
+      ? String((promptDefaults as unknown as { mode?: string }).mode ?? "")
+      : "";
 
+  // Hydrate prompt fields when the selected node changes.
+  // Do NOT depend on `promptDefaults` here, or streaming payload refreshes will collapse the panel.
   useEffect(() => {
     if (promptDefaults) {
       setSystemPrompt(promptDefaults.system_prompt);
@@ -55,7 +70,9 @@ export function AgentDetailPanel({
       setSavedSnapshot({ system: "", task: "" });
     }
     setSaveAck(false);
-  }, [nodeId, promptDefaults]);
+    setShowAdvanced(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodeId]);
 
   const promptDirty = useMemo(() => {
     const baseline = savedSnapshot ?? {
@@ -75,10 +92,39 @@ export function AgentDetailPanel({
     });
     setSaveAck(false);
   };
-  const savePromptsMock = () => {
-    setSavedSnapshot({ system: systemPrompt, task: taskPrompt });
-    setSaveAck(true);
-    setTimeout(() => setSaveAck(false), 1600);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const savePrompts = async () => {
+    setSaveError(null);
+    if (!appliesToRuntime) {
+      setSaveError(
+        "This agent is deterministic right now. Prompt edits don’t affect runtime until the node is LLM-backed.",
+      );
+      return;
+    }
+    try {
+      const res = await fetch(`/api/agent-prompts/${encodeURIComponent(nodeId)}`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          system_prompt: systemPrompt,
+          task_prompt: taskPrompt,
+          model: promptDefaults?.model ?? null,
+          temperature: promptDefaults?.temperature ?? null,
+          max_tokens: promptDefaults?.max_tokens ?? null,
+          tools: promptDefaults?.tools ?? null,
+          cot_enabled: promptDefaults?.cot_enabled ?? null,
+        }),
+      });
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(msg || `Failed to save (${res.status})`);
+      }
+      setSavedSnapshot({ system: systemPrompt, task: taskPrompt });
+      setSaveAck(true);
+      setTimeout(() => setSaveAck(false), 1600);
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e));
+    }
   };
   const runtimeLabel = runtimeStatusLabel(node?.status);
   const avatarBorder =
@@ -146,6 +192,32 @@ export function AgentDetailPanel({
 
       <div className="nexus-scroll min-h-0 flex-1 overflow-y-auto">
         <div className="space-y-6 p-4">
+          {promptDefaults ? (
+            <section className="rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)]/35 p-3">
+              <div className="text-[10px] uppercase tracking-widest text-[var(--nexus-muted)] mb-1">
+                Runtime integration
+              </div>
+              <div className="font-mono text-[10px] text-slate-300 leading-relaxed">
+                <span className="text-[var(--nexus-muted)]">mode</span>{" "}
+                <span className="text-slate-100">{effectiveMode || "unknown"}</span>
+                {" · "}
+                <span className="text-[var(--nexus-muted)]">applies</span>{" "}
+                <span className={appliesToRuntime ? "text-emerald-200" : "text-amber-200"}>
+                  {appliesToRuntime ? "yes" : "no"}
+                </span>
+              </div>
+              {!appliesToRuntime ? (
+                <p className="mt-2 font-mono text-[10px] text-[var(--nexus-muted)] leading-relaxed">
+                  This node runs deterministic code today. Prompt settings are shown for transparency, but editing them
+                  won’t change behavior until this node is upgraded to an LLM-backed implementation.
+                </p>
+              ) : (
+                <p className="mt-2 font-mono text-[10px] text-[var(--nexus-muted)] leading-relaxed">
+                  This node consumes the prompt/model settings at runtime (file-based hot reload).
+                </p>
+              )}
+            </section>
+          ) : null}
           {promptDefaults && (promptDefaults.model != null || (promptDefaults.tools?.length ?? 0) > 0) ? (
             <section className="rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)]/50 p-3">
               <div className="text-[10px] uppercase tracking-widest text-[var(--nexus-muted)] mb-2">Model & tools</div>
@@ -190,12 +262,20 @@ export function AgentDetailPanel({
                     Prompt configuration
                   </h3>
                   <p className="mt-1 max-w-prose text-[10px] leading-relaxed text-slate-400">
-                    System and task prompts are <strong className="font-semibold text-slate-300">fully editable</strong>.
-                    Actions appear only after you make changes.
+                    Hidden by default to keep the panel clean. Open Advanced to view/edit (LLM-backed nodes only).
                   </p>
                 </div>
               </div>
-              {promptDirty || saveAck ? (
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced((v) => !v)}
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--nexus-border)] bg-[var(--nexus-surface)]/80 px-2.5 font-mono text-[9px] uppercase tracking-wide text-slate-200 transition-colors hover:border-[var(--nexus-glow)]/45"
+                >
+                  {showAdvanced ? "Hide" : "Advanced"}
+                </button>
+              </div>
+              {showAdvanced && appliesToRuntime && (promptDirty || saveAck) ? (
                 <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                   {promptDirty ? (
                     <span className="inline-flex h-7 items-center rounded-md bg-amber-500/10 px-2.5 font-mono text-[9px] uppercase tracking-wide text-amber-200/90 ring-1 ring-amber-500/35">
@@ -211,7 +291,7 @@ export function AgentDetailPanel({
                     <>
                       <button
                         type="button"
-                        onClick={savePromptsMock}
+                        onClick={savePrompts}
                         className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--nexus-glow)]/45 bg-[var(--nexus-glow)]/10 px-2.5 font-mono text-[9px] uppercase tracking-wide text-[var(--nexus-glow)] transition-colors hover:border-[var(--nexus-glow)]/70"
                       >
                         Save
@@ -231,7 +311,20 @@ export function AgentDetailPanel({
                 </div>
               ) : null}
             </div>
+            {saveError ? (
+              <p className="mb-3 rounded border border-[rgba(242,92,84,0.35)] bg-[rgba(242,92,84,0.08)] px-3 py-2 font-mono text-[10px] text-[rgba(242,92,84,0.95)]">
+                Save failed: {saveError}
+              </p>
+            ) : null}
 
+            {!showAdvanced ? (
+              <p className="font-mono text-[10px] text-[var(--nexus-muted)] leading-relaxed">
+                Advanced is closed.
+              </p>
+            ) : null}
+
+            {showAdvanced ? (
+              <>
             <label className="mb-1 block text-[10px] font-semibold uppercase tracking-widest text-[var(--nexus-muted)]">
               System prompt
             </label>
@@ -241,6 +334,7 @@ export function AgentDetailPanel({
               rows={6}
               placeholder="System prompt for this agent…"
               spellCheck={false}
+              disabled={!appliesToRuntime}
               className="nexus-prompt-input w-full rounded-lg px-3 py-2 font-mono text-[11px] leading-relaxed placeholder:opacity-90"
             />
             <div className="h-3" />
@@ -253,6 +347,7 @@ export function AgentDetailPanel({
               rows={5}
               placeholder="Task / instruction template…"
               spellCheck={false}
+              disabled={!appliesToRuntime}
               className="nexus-prompt-input w-full rounded-lg px-3 py-2 font-mono text-[11px] leading-relaxed placeholder:opacity-90"
             />
             <div className="nexus-cot-inner-rule mt-4 flex items-center justify-between gap-3 bg-transparent px-0 py-3">
@@ -276,6 +371,8 @@ export function AgentDetailPanel({
               <p className="mt-3 pt-3 text-[10px] leading-relaxed text-[var(--nexus-muted)] font-mono">
                 No agent_prompts row for this node — add one in mock data or API.
               </p>
+            ) : null}
+              </>
             ) : null}
           </section>
 

@@ -20,7 +20,9 @@ const statusColors = {
 
 function runtimeStatusLabel(status: TopologyNode["status"]): string {
   if (status === "ACTIVE") return "RUNNING";
-  if (status === "COMPLETED") return "COMPLETED";
+  // In an always-on system, nodes that finished their last turn are effectively "idle/monitoring",
+  // not permanently "completed".
+  if (status === "COMPLETED") return "MONITORING";
   return "STANDBY";
 }
 

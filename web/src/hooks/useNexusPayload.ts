@@ -28,6 +28,7 @@ export function useNexusPayload() {
   const [payload, setPayload] = useState<NexusPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  const [wsConnected, setWsConnected] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -37,6 +38,7 @@ export function useNexusPayload() {
       setPayload(mockTraces as NexusPayload);
       setError(null);
       setLoading(false);
+      setWsConnected(false);
       return () => {
         cancelled = true;
       };
@@ -56,7 +58,9 @@ export function useNexusPayload() {
         }
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       });
 
     return () => {
@@ -107,9 +111,11 @@ export function useNexusPayload() {
 
       socket.onopen = () => {
         attempt = 0;
+        setWsConnected(true);
       };
 
       socket.onclose = () => {
+        setWsConnected(false);
         if (closed) return;
         // Exponential-ish backoff capped so local dev restarts recover quickly.
         const delay = Math.min(8000, 400 * 2 ** attempt);
@@ -126,9 +132,10 @@ export function useNexusPayload() {
 
     return () => {
       closed = true;
+      setWsConnected(false);
       cleanup();
     };
   }, []);
 
-  return { payload, loading, error };
+  return { payload, loading, error, wsConnected };
 }

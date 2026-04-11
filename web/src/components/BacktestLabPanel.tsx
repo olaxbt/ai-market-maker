@@ -10,6 +10,7 @@ import {
 import { BacktestEquityChart } from "@/components/backtest/BacktestEquityChart";
 import { BacktestTradesTable } from "@/components/backtest/BacktestTradesTable";
 import { copyText } from "@/components/backtest/embeddedBacktestUtils";
+import { BacktestPriceChart } from "@/features/backtest/components/BacktestPriceChart";
 import {
   amountUnitToIntervalSec,
   BAR_INTERVAL_UNIT_LABEL,
@@ -21,7 +22,9 @@ import { getFlowApiOrigin } from "@/lib/flowApiOrigin";
 import type { NexusPayload } from "@/types/nexus-payload";
 import type {
   BacktestRunResult,
+  BarsResponse,
   EquitySeriesResponse,
+  OhlcvBar,
   SummaryPayload,
   TradeRow,
   TradesResponse,
@@ -141,6 +144,7 @@ export function BacktestLabPanel({
   const [summaryPayload, setSummaryPayload] = useState<SummaryPayload | null>(null);
   const [equitySeries, setEquitySeries] = useState<EquitySeriesResponse | null>(null);
   const [tradesData, setTradesData] = useState<TradesResponse | null>(null);
+  const [barsData, setBarsData] = useState<BarsResponse | null>(null);
   const [tracePayload, setTracePayload] = useState<NexusPayload | null>(null);
 
   const [runList, setRunList] = useState<string[]>([]);
@@ -242,14 +246,17 @@ export function BacktestLabPanel({
 
   const fetchSeries = useCallback(async (runId: string) => {
     const base = getFlowApiOrigin();
-    const [eqRes, trRes] = await Promise.all([
+    const [eqRes, trRes, barRes] = await Promise.all([
       fetch(`${base}/backtests/${encodeURIComponent(runId)}/equity?max_points=2500`),
       fetch(`${base}/backtests/${encodeURIComponent(runId)}/trades?limit=2000`),
+      fetch(`${base}/backtests/${encodeURIComponent(runId)}/bars?max_points=2500`),
     ]);
     if (eqRes.ok) setEquitySeries((await eqRes.json()) as EquitySeriesResponse);
     else setEquitySeries(null);
     if (trRes.ok) setTradesData((await trRes.json()) as TradesResponse);
     else setTradesData(null);
+    if (barRes.ok) setBarsData((await barRes.json()) as BarsResponse);
+    else setBarsData(null);
   }, []);
 
   const fetchTracePayload = useCallback(async (runId: string, soft: boolean) => {
@@ -653,32 +660,7 @@ export function BacktestLabPanel({
               </button>
             ) : null}
           </div>
-          {!embedded && runList.length > 0 ? (
-            <div className="w-full min-w-0 space-y-1.5">
-              <label className="block font-mono text-[10px] uppercase tracking-widest text-[var(--nexus-muted)]">
-                Open a previous run
-              </label>
-              <select
-                className="w-full min-h-[2.75rem] rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)] px-3 py-2.5 font-mono text-xs text-[var(--nexus-text)]"
-                value={selectedHistoryId}
-                disabled={historyLoading}
-                title={selectedHistoryId || "Choose a completed run"}
-                onChange={(e) => {
-                  const id = e.target.value.trim();
-                  if (id) void loadHistoricalRun(id);
-                  else clearToNewRun();
-                }}
-              >
-                <option value="">— Select a run —</option>
-                {[...runList].reverse().map((id) => (
-                  <option key={id} value={id} title={id}>
-                    {id}
-                  </option>
-                ))}
-              </select>
-              <p className="text-[10px] text-[var(--nexus-muted)]">Full run id on each row (hover for tooltip).</p>
-            </div>
-          ) : null}
+          {/* Standalone run picker lives in the page header area (not inside the setup form). */}
         </div>
 
         {jobRunning && jobState ? (
@@ -699,7 +681,9 @@ export function BacktestLabPanel({
             </div>
             <p className="font-mono text-[10px] text-[var(--nexus-muted)]">
               Equity{" "}
-              {jobState.equity != null ? jobState.equity.toLocaleString(undefined, { maximumFractionDigits: 2 }) : "…"}{" "}
+              {typeof jobState.equity === "number"
+                ? jobState.equity.toLocaleString(undefined, { maximumFractionDigits: 2 })
+                : "…"}{" "}
               · fills {jobState.trade_count ?? 0}
               {jobState.vetoed != null ? ` · last bar veto: ${jobState.vetoed ? "yes" : "no"}` : ""}
             </p>
@@ -744,7 +728,7 @@ export function BacktestLabPanel({
 
         <div className={card}>
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h3 className={h3}>Equity curve</h3>
+            <h3 className={h3}>Price + equity</h3>
             {equitySeries?.downsampled ? (
               <span className="font-mono text-[9px] text-[var(--nexus-muted)]">
                 Chart: {equitySeries.points.length} pts (of {equitySeries.count})
@@ -755,28 +739,46 @@ export function BacktestLabPanel({
           </div>
           {!compact ? (
             <p className="mb-3 text-[10px] text-[var(--nexus-muted)]">
-              Teal: marked equity; dashed: initial cash. Brush to zoom the window.
+              Candles show price action; arrows show fills. Equity is the strategy curve below.
             </p>
           ) : (
-            <p className="mb-1.5 text-[9px] text-[var(--nexus-muted)]">Teal = equity · dashed = initial cash</p>
+            <p className="mb-1.5 text-[9px] text-[var(--nexus-muted)]">Candles = price · arrows = fills</p>
           )}
-          <BacktestEquityChart points={equitySeries?.points ?? []} initialCash={kpis.initialCash} />
+          <div className="mb-3 min-w-0">
+            <BacktestPriceChart
+              bars={(barsData?.bars ?? []) as OhlcvBar[]}
+              trades={(tradesData?.trades ?? (evaluation?.trades_preview as TradeRow[] | undefined) ?? [])}
+              height={compact ? 240 : 300}
+            />
+          </div>
+          <BacktestEquityChart
+            points={equitySeries?.points ?? []}
+            initialCash={kpis.initialCash}
+            trades={(tradesData?.trades ?? (evaluation?.trades_preview as TradeRow[] | undefined) ?? [])}
+          />
         </div>
 
         <div className={compact ? "grid gap-2 lg:grid-cols-2" : "grid gap-4 lg:grid-cols-2"}>
           <div className={card}>
-            <h3 className={h3}>Simulated fills</h3>
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h3 className={h3}>Trade fills</h3>
+              <span className="font-mono text-[9px] text-[var(--nexus-muted)]">
+                {kpis.trades.toLocaleString()} fills
+              </span>
+            </div>
             <div className={compact ? "mt-1.5" : "mt-3"}>
               <BacktestTradesTable
                 trades={(tradesData?.trades ?? (evaluation?.trades_preview as TradeRow[] | undefined) ?? [])}
                 truncated={tradesData?.truncated}
+                total={tradesData?.total}
+                returned={tradesData?.returned}
               />
             </div>
             {kpis.trades === 0 ? (
               <p className={`text-[var(--nexus-muted)] ${compact ? "mt-2 text-[9px] leading-snug" : "mt-3 text-[10px] leading-relaxed"}`}>
                 {compact
                   ? "No fills — see timeline for desk / risk detail."
-                  : "No simulated fills: the combined desk signals and synthesis path likely did not yield a buy that cleared portfolio and risk rules, or position sizing was zero. Use the bar timeline to inspect each desk, debate, arbitrator output, and risk guard per step."}
+                  : "No simulated fills: the combined desk signals and synthesis path likely did not yield a buy that cleared portfolio and risk rules, or position sizing was zero. Use the bar timeline to inspect each desk, the evidence board, arbitrator output, and risk guard per step."}
               </p>
             ) : null}
           </div>
@@ -789,7 +791,11 @@ export function BacktestLabPanel({
               </div>
               <div className="flex justify-between gap-4 border-b border-[var(--nexus-rule-soft)] pb-2">
                 <dt className="text-[var(--nexus-muted)]">Final equity</dt>
-                <dd className="tabular-nums">{kpis.finalEquity.toLocaleString(undefined, { maximumFractionDigits: 2 })}</dd>
+                <dd className="tabular-nums">
+                  {typeof kpis.finalEquity === "number"
+                    ? kpis.finalEquity.toLocaleString(undefined, { maximumFractionDigits: 2 })
+                    : "—"}
+                </dd>
               </div>
               <div className="flex justify-between gap-4 border-b border-[var(--nexus-rule-soft)] pb-2">
                 <dt className="text-[var(--nexus-muted)]">Bar interval</dt>
@@ -817,20 +823,50 @@ export function BacktestLabPanel({
               <button
                 type="button"
                 disabled={!activeRunId}
-                onClick={() => activeRunId && void copyText(activeRunId)}
-                className={`rounded border border-[color:var(--nexus-card-stroke)] font-mono uppercase tracking-wider text-[var(--nexus-muted)] hover:border-[var(--nexus-glow)]/40 disabled:opacity-40 ${compact ? "px-2 py-1 text-[9px]" : "px-3 py-1.5 text-[10px]"}`}
+                onClick={() => {
+                  if (!activeRunId) return;
+                  router.replace(`/?view=supervisor&run=${encodeURIComponent(activeRunId)}`, {
+                    scroll: false,
+                  });
+                }}
+                className={`rounded border border-[rgba(0,212,170,0.35)] bg-[rgba(0,212,170,0.10)] font-mono uppercase tracking-wider text-[var(--nexus-glow)] hover:bg-[rgba(0,212,170,0.14)] disabled:opacity-40 ${
+                  compact ? "px-2 py-1 text-[9px]" : "px-3 py-1.5 text-[10px]"
+                }`}
               >
-                Copy run id
+                Ask Supervisor
               </button>
-              {displayPayload ? (
-                <button
-                  type="button"
-                  onClick={() => downloadJson(displayPayload, `${activeRunId || "backtest"}-result.json`)}
-                  className={`rounded border border-[color:var(--nexus-card-stroke)] font-mono uppercase tracking-wider text-[var(--nexus-muted)] hover:border-[var(--nexus-glow)]/40 ${compact ? "px-2 py-1 text-[9px]" : "px-3 py-1.5 text-[10px]"}`}
+              <details className="relative">
+                <summary
+                  className={`list-none cursor-pointer rounded border border-[color:var(--nexus-card-stroke)] font-mono uppercase tracking-wider text-[var(--nexus-muted)] hover:border-[var(--nexus-glow)]/40 hover:text-[var(--nexus-text)] ${
+                    compact ? "px-2 py-1 text-[9px]" : "px-3 py-1.5 text-[10px]"
+                  }`}
                 >
-                  Download JSON
-                </button>
-              ) : null}
+                  More
+                </summary>
+                <div className="absolute right-0 mt-2 w-44 overflow-hidden rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/95 shadow-[0_10px_30px_rgba(0,0,0,0.35)] backdrop-blur">
+                  <button
+                    type="button"
+                    disabled={!activeRunId}
+                    onClick={() => {
+                      if (!activeRunId) return;
+                      void copyText(activeRunId);
+                    }}
+                    className="block w-full px-3 py-2 text-left font-mono text-[11px] text-[var(--nexus-text)] hover:bg-[var(--nexus-surface)] disabled:opacity-40"
+                  >
+                    Copy run id
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!displayPayload}
+                    onClick={() =>
+                      displayPayload && downloadJson(displayPayload, `${activeRunId || "backtest"}-result.json`)
+                    }
+                    className="block w-full px-3 py-2 text-left font-mono text-[11px] text-[var(--nexus-text)] hover:bg-[var(--nexus-surface)] disabled:opacity-40"
+                  >
+                    Download JSON
+                  </button>
+                </div>
+              </details>
             </div>
           </div>
         </div>
@@ -856,7 +892,7 @@ export function BacktestLabPanel({
               <h1 className="text-lg font-semibold tracking-tight">Backtest lab</h1>
               <p className="mt-2 max-w-2xl text-[12px] leading-relaxed text-[var(--nexus-muted)]">
                 Replays the full LangGraph once per synthetic bar. Traces use the same FlowEvent contract
-                as live runs: perception desks, debate and arbitration, risk guard, and execution — with
+                as live runs: perception desks, evidence board + arbitration, risk guard, and execution — with
                 structured reasoning visible in the timeline.
               </p>
             </div>
@@ -889,12 +925,12 @@ export function BacktestLabPanel({
         {embedded ? (
           <>
             {error ? (
-              <div className="shrink-0 border-b border-red-900/45 bg-red-950/35 px-2 py-1.5 font-mono text-[10px] text-red-100" role="alert">
+              <div className="shrink-0 border-b border-red-900/45 bg-red-950/35 px-3 py-1.5 font-mono text-[10px] text-red-100" role="alert">
                 {error}
               </div>
             ) : null}
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <div className="nexus-scroll flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto px-2 pb-3 pt-2">
+              <div className="nexus-scroll flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto px-3 pb-3 pt-2">
                 {jobRunning && embeddedTab === "saved" ? (
                   <div className="shrink-0 rounded-lg border border-[var(--nexus-glow)]/25 bg-[var(--nexus-glow)]/5 px-2 py-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -916,14 +952,6 @@ export function BacktestLabPanel({
                 ) : null}
                 {embeddedTab === "saved" ? (
                   <div className="flex w-full max-w-none min-h-0 flex-1 flex-col gap-3">
-                    {historyLoading ? (
-                      <div className="shrink-0 space-y-1.5 rounded border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/40 p-2">
-                        <p className="font-mono text-[10px] text-[var(--nexus-text)]">Loading…</p>
-                        <div className="h-1 w-full max-w-xs rounded-full bg-[var(--nexus-surface)]" role="progressbar" aria-label="Loading">
-                          <div className="h-full w-1/3 animate-pulse rounded-full bg-[var(--nexus-glow)]/50" />
-                        </div>
-                      </div>
-                    ) : null}
                     {!historyLoading && kpis ? (
                       <section className="flex min-h-0 flex-1 flex-col gap-3">
                         <div className="min-w-0 shrink-0">{renderResultsDetail("embedded")}</div>
@@ -987,11 +1015,79 @@ export function BacktestLabPanel({
                     ) : null}
                   </section>
                 ) : null}
+
               </div>
             </div>
           </>
         ) : (
           <>
+            <section className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                    Run picker
+                  </p>
+                  <p className="mt-1 font-mono text-[11px] text-[var(--nexus-muted)]">
+                    {activeRunId ? (
+                      <>
+                        Active: <span className="text-[var(--nexus-glow)]">{activeRunId}</span>
+                      </>
+                    ) : (
+                      "No run loaded yet."
+                    )}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {runList.length > 0 ? (
+                    <select
+                      className="h-9 w-full max-w-[28rem] rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)] px-3 font-mono text-[11px] text-[var(--nexus-text)] sm:w-[28rem]"
+                      value={selectedHistoryId}
+                      disabled={historyLoading}
+                      title={selectedHistoryId || "Choose a completed run"}
+                      onChange={(e) => {
+                        const id = e.target.value.trim();
+                        if (id) void loadHistoricalRun(id);
+                        else clearToNewRun();
+                      }}
+                    >
+                      <option value="">Saved runs…</option>
+                      {[...runList].reverse().map((id) => (
+                        <option key={id} value={id} title={id}>
+                          {shortBacktestRunLabel(id)}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="font-mono text-[11px] text-[var(--nexus-muted)]">No saved runs</span>
+                  )}
+                  <button
+                    type="button"
+                    disabled={historyLoading || runList.length === 0}
+                    onClick={() => {
+                      const latest = [...runList].slice(-1)[0];
+                      if (latest) void loadHistoricalRun(latest);
+                    }}
+                    className="h-9 rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)] px-3 font-mono text-[10px] uppercase tracking-wider text-[var(--nexus-muted)] hover:border-[var(--nexus-glow)]/35 hover:text-[var(--nexus-text)] disabled:opacity-40"
+                  >
+                    Latest
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!activeRunId}
+                    onClick={() => {
+                      if (!activeRunId) return;
+                      router.replace(`/?view=supervisor&run=${encodeURIComponent(activeRunId)}`, {
+                        scroll: false,
+                      });
+                    }}
+                    className="h-9 rounded-lg border border-[rgba(0,212,170,0.35)] bg-[rgba(0,212,170,0.10)] px-3 font-mono text-[10px] uppercase tracking-wider text-[var(--nexus-glow)] hover:bg-[rgba(0,212,170,0.14)] disabled:opacity-40"
+                  >
+                    Ask Supervisor
+                  </button>
+                </div>
+              </div>
+            </section>
+
             <section
               id="backtest-setup"
               className="scroll-mt-4 rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/80 p-5 shadow-[0_0_24px_rgba(0,212,170,0.06)]"
@@ -1006,32 +1102,93 @@ export function BacktestLabPanel({
             ) : null}
 
             {(kpis || streamingThoughts || tracesToShow.length > 0 || messageLog.length > 0) ? (
-              <section className="flex w-full flex-col gap-4">
-                <div className="min-w-0">
-                  {kpis ? renderResultsDetail("standalone") : null}
+              <section className="grid w-full grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_420px]">
+                <div className="min-w-0 space-y-4">
+                  <div className="min-w-0">{kpis ? renderResultsDetail("standalone") : null}</div>
+
+                  <section className="flex min-h-[320px] w-full flex-col overflow-hidden rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 shadow-[0_0_24px_rgba(0,212,170,0.04)]">
+                    <div className="shrink-0 space-y-2 border-b border-[var(--nexus-rule-soft)] px-3 py-2">
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
+                          Bar timeline
+                        </h3>
+                        <p className="mt-0.5 text-[10px] leading-relaxed text-[var(--nexus-muted)]">
+                          Expand a bar: chain-of-thought and event log use two columns when the panel is wide enough.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex min-h-[240px] flex-1 flex-col gap-2 p-2">
+                      <BacktestBarTimeline
+                        entries={messageLog}
+                        traces={tracesToShow}
+                        streaming={streamingThoughts}
+                        emptyHint={timelineEmptyHint}
+                        className="min-h-0 flex-1 p-0.5"
+                      />
+                    </div>
+                  </section>
                 </div>
 
-                <section className="flex min-h-[320px] w-full flex-col overflow-hidden rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 shadow-[0_0_24px_rgba(0,212,170,0.04)]">
-                  <div className="shrink-0 space-y-2 border-b border-[var(--nexus-rule-soft)] px-3 py-2">
-                    <div className="min-w-0 flex-1">
-                      <h3 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
-                        Bar timeline
-                      </h3>
-                      <p className="mt-0.5 text-[10px] leading-relaxed text-[var(--nexus-muted)]">
-                        Expand a bar: chain-of-thought and event log use two columns when the panel is wide enough.
-                      </p>
+                <aside className="flex min-h-0 flex-col gap-4">
+                  <section className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 p-4 shadow-[0_0_24px_rgba(0,212,170,0.04)]">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                          Insight
+                        </p>
+                        <p className="mt-2 text-[12px] leading-relaxed text-[var(--nexus-text)]">
+                          {kpis ? (
+                            <>
+                              Final equity{" "}
+                              <span className="font-mono">
+                                {typeof kpis.finalEquity === "number"
+                                  ? kpis.finalEquity.toLocaleString(undefined, { maximumFractionDigits: 2 })
+                                  : "—"}
+                              </span>
+                              .{" "}
+                              {typeof kpis.maxDrawdownPct === "number" ? (
+                                <>
+                                  Max DD{" "}
+                                  <span className="font-mono">
+                                    {(kpis.maxDrawdownPct * 100).toFixed(2)}%
+                                  </span>
+                                  .
+                                </>
+                              ) : null}
+                            </>
+                          ) : (
+                            <span className="text-[var(--nexus-muted)]">Run data will appear here.</span>
+                          )}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex min-h-[240px] flex-1 flex-col gap-2 p-2">
-                    <BacktestBarTimeline
-                      entries={messageLog}
-                      traces={tracesToShow}
-                      streaming={streamingThoughts}
-                      emptyHint={timelineEmptyHint}
-                      className="min-h-0 flex-1 p-0.5"
-                    />
-                  </div>
-                </section>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={!activeRunId}
+                        onClick={() => {
+                          if (!activeRunId) return;
+                          router.replace(`/?view=supervisor&run=${encodeURIComponent(activeRunId)}`, {
+                            scroll: false,
+                          });
+                        }}
+                        className="h-9 rounded-lg border border-[rgba(0,212,170,0.35)] bg-[rgba(0,212,170,0.10)] px-3 font-mono text-[10px] uppercase tracking-wider text-[var(--nexus-glow)] hover:bg-[rgba(0,212,170,0.14)] disabled:opacity-40"
+                      >
+                        Ask Supervisor
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const el = document.getElementById("backtest-setup");
+                          el?.scrollIntoView({ block: "start" });
+                        }}
+                        className="h-9 rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)] px-3 font-mono text-[10px] uppercase tracking-wider text-[var(--nexus-muted)] hover:border-[var(--nexus-glow)]/35 hover:text-[var(--nexus-text)]"
+                      >
+                        Edit config
+                      </button>
+                    </div>
+                  </section>
+                </aside>
               </section>
             ) : null}
           </>

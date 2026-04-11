@@ -1,6 +1,7 @@
 import React from "react";
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { AgentDetailPanel } from "@/components/AgentDetailPanel";
 import type { AgentPromptSettings, NexusTrace, TopologyNode } from "@/types/nexus-payload";
 
@@ -14,7 +15,7 @@ const node: TopologyNode = {
 const traces: NexusTrace[] = [];
 
 describe("AgentDetailPanel", () => {
-  it("hydrates prompt inputs from promptDefaults", () => {
+  it("hydrates prompt inputs from promptDefaults", async () => {
     const promptDefaults: AgentPromptSettings = {
       node_id: "n6",
       actor_id: "strategy-planner",
@@ -34,10 +35,14 @@ describe("AgentDetailPanel", () => {
     );
 
     expect(screen.getByText("Prompt configuration")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("System prompt for this agent…")).toHaveValue(
+    // Prompt inputs are behind the Advanced toggle (release UX).
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Advanced" }));
+
+    expect(await screen.findByPlaceholderText("System prompt for this agent…")).toHaveValue(
       "You are Strategy Planner.",
     );
-    expect(screen.getByPlaceholderText("Task / instruction template…")).toHaveValue(
+    expect(await screen.findByPlaceholderText("Task / instruction template…")).toHaveValue(
       "Given scorecard, propose next action.",
     );
     expect(screen.getByText("Chain-of-thought")).toBeInTheDocument();

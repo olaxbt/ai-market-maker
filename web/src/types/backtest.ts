@@ -2,8 +2,11 @@
 
 export type BacktestMetrics = {
   sharpe: number;
+  sortino?: number;
   max_drawdown: number;
   win_rate: number;
+  profit_factor?: number | null;
+  periods_per_year?: number;
   final_equity: number;
   initial_cash: number;
   steps: number;
@@ -45,6 +48,26 @@ export type EquitySeriesResponse = {
   max_points: number;
   downsampled: boolean;
   points: EquityPoint[];
+};
+
+export type OhlcvBar = {
+  step: number;
+  ts_ms: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
+};
+
+export type BarsResponse = {
+  run_id: string;
+  ticker?: string;
+  interval_sec?: number;
+  count: number;
+  max_points: number;
+  downsampled: boolean;
+  bars: OhlcvBar[];
 };
 
 export type TradeRow = {

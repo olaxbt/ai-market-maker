@@ -2,10 +2,10 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AgentsConsoleView } from "@/components/AgentsConsoleView";
-import { BacktestLabPanel } from "@/components/BacktestLabPanel";
-import { NexusConsoleHeader, type NexusViewMode } from "@/components/NexusConsoleHeader";
-import { NexusDeskView } from "@/components/NexusDeskView";
+import { BacktestLabPanel } from "@/features/backtest";
+import { SupervisorPanel } from "@/features/supervisor";
+import { AgentsConsoleView, NexusConsoleHeader, NexusDeskView, NexusStarSystem, type NexusViewMode } from "@/features/nexus";
+import { LiveMonitorPanel } from "@/features/monitor/components/LiveMonitorPanel";
 import { useNexusPayload } from "@/hooks/useNexusPayload";
 import { useNexusSignalCount } from "@/hooks/useNexusSignalCount";
 import type { Topology } from "@/types/nexus-payload";
@@ -16,13 +16,20 @@ function NexusPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const backtestRunParam = searchParams.get("run");
-  const { payload, loading: streaming, error: loadError } = useNexusPayload();
+  const { payload, loading, wsConnected, error: loadError } = useNexusPayload();
   const [hubRevealDone, setHubRevealDone] = useState(false);
+  const [bootOverlayVisible, setBootOverlayVisible] = useState(true);
+  const [bootBursting, setBootBursting] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<NexusViewMode>("nexus");
 
   useEffect(() => {
-    if (searchParams.get("view") === "backtest") setViewMode("backtest");
+    const v = searchParams.get("view");
+    if (v === "backtest") setViewMode("backtest");
+    else if (v === "supervisor") setViewMode("supervisor");
+    else if (v === "grid") setViewMode("grid");
+    else if (v === "monitor") setViewMode("monitor");
+    else setViewMode("nexus");
   }, [searchParams]);
 
   const handleViewModeChange = useCallback(
@@ -30,6 +37,12 @@ function NexusPageInner() {
       setViewMode(mode);
       if (mode === "backtest") {
         router.replace("/?view=backtest", { scroll: false });
+      } else if (mode === "supervisor") {
+        router.replace("/?view=supervisor", { scroll: false });
+      } else if (mode === "grid") {
+        router.replace("/?view=grid", { scroll: false });
+      } else if (mode === "monitor") {
+        router.replace("/?view=monitor", { scroll: false });
       } else {
         router.replace("/", { scroll: false });
       }
@@ -83,19 +96,23 @@ function NexusPageInner() {
   }, [viewMode]);
 
   useEffect(() => {
-    if (viewMode !== "grid" || streaming || topology.nodes.length === 0) return;
+    if (viewMode !== "grid" || loading || topology.nodes.length === 0) return;
     if (agentsAutoOpenedRef.current) return;
     const activeId = topology.nodes.find((n) => n.status === "ACTIVE")?.id ?? null;
     if (activeId) setSelectedAgentId(activeId);
     agentsAutoOpenedRef.current = true;
-  }, [viewMode, streaming, topology.nodes]);
+  }, [viewMode, loading, topology.nodes]);
 
   const viewModeTitle =
     viewMode === "nexus"
       ? "Nexus: live topology, event stream, and mesh."
       : viewMode === "grid"
         ? "Agents: pick a card; detail, traces, and prompts open in the side panel (same page)."
-        : "Backtest: async bar replay, per-step progress, and the same FlowEvent agent traces as live runs.";
+        : viewMode === "backtest"
+          ? "Backtest: async bar replay, per-step progress, and the same FlowEvent agent traces as live runs."
+          : viewMode === "monitor"
+            ? "Monitor: balances, positions, and the latest system decision."
+            : "Supervisor: ask questions and get an executive snapshot for a backtest run.";
 
   const setCardRef = useCallback((traceId: string, el: HTMLDivElement | null) => {
     if (el) cardRefs.current.set(traceId, el);
@@ -107,9 +124,12 @@ function NexusPageInner() {
     const first = tracesToShow[0];
     const el = first && cardRefs.current.get(first.trace_id);
     if (el) el.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  }, [selectedNodeId, tracesToShow]);
+    // Only run this when the user changes the filter (selectedNodeId).
+    // Do NOT depend on `tracesToShow` or live streaming updates will yank scroll position.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedNodeId]);
 
-  const readyToReveal = Boolean(payload) || (!streaming && Boolean(loadError));
+  const readyToReveal = Boolean(payload) || (!loading && Boolean(loadError));
   useEffect(() => {
     // Never "un-reveal" once visible. If intro callback is missed for any reason,
     // force reveal after a short watchdog timeout.
@@ -119,7 +139,36 @@ function NexusPageInner() {
   }, [readyToReveal, hubRevealDone]);
 
   return (
-    <div className="min-h-screen flex flex-col nexus-bg lg:h-screen lg:min-h-0 lg:overflow-hidden">
+    <div className="relative min-h-screen flex flex-col nexus-bg lg:h-screen lg:min-h-0 lg:overflow-hidden">
+      {bootOverlayVisible ? (
+        <div
+          className={`fixed inset-0 z-50 transition-[background-color,opacity] duration-700 ${
+            bootBursting
+              ? "pointer-events-none bg-transparent opacity-0"
+              : "bg-[var(--nexus-bg)] opacity-100"
+          }`}
+        >
+          <NexusStarSystem
+            nodes={[]}
+            edges={[]}
+            activeNodeId={null}
+            signalCount={0}
+            readyToReveal={readyToReveal}
+            onBurstStart={() => {
+              // Reveal dashboard *as burst begins* so the explode blends into the app.
+              setBootBursting(true);
+              setHubRevealDone(true);
+            }}
+            onIntroDone={() => {
+              // Unmount overlay after burst finishes.
+              setBootOverlayVisible(false);
+              setBootBursting(false);
+            }}
+            playIntro
+            frameless
+          />
+        </div>
+      ) : null}
       <NexusConsoleHeader
         metadata={metadata}
         viewMode={viewMode}
@@ -127,48 +176,57 @@ function NexusPageInner() {
         viewModeTitle={viewModeTitle}
       />
 
-      {loadError && !streaming ? (
-        <div
-          className="shrink-0 border-b border-[var(--nexus-danger)]/40 bg-[var(--nexus-danger)]/10 px-4 py-2 text-center font-mono text-[11px] text-[var(--nexus-danger)]"
-          role="alert"
-        >
-          Failed to load traces: {loadError.message}
-        </div>
-      ) : null}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        {loadError && !loading ? (
+          <div
+            className="pointer-events-none absolute inset-x-0 top-0 z-20 border-b border-[rgba(242,92,84,0.28)] bg-[rgba(6,8,11,0.72)] px-4 py-2 text-center font-mono text-[11px] text-[rgba(242,92,84,0.95)] backdrop-blur"
+            role="alert"
+          >
+            Failed to load traces: {loadError.message}
+          </div>
+        ) : null}
 
-      {viewMode === "backtest" ? (
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <BacktestLabPanel embedded initialRunId={backtestRunParam} />
-        </div>
-      ) : viewMode === "grid" ? (
-        <AgentsConsoleView
-          nodes={topology.nodes}
-          edges={topology.edges}
-          traces={traces}
-          agentPrompts={payload?.agent_prompts}
-          selectedAgentId={selectedAgentId}
-          onSelectAgent={setSelectedAgentId}
-          selectedAgentTraces={selectedAgentTraces}
-          selectedAgentNode={selectedAgentNode}
-          selectedAgentPrompt={selectedAgentPrompt}
-          streaming={streaming}
-        />
-      ) : (
-        <NexusDeskView
-          nodes={topology.nodes}
-          edges={topology.edges}
-          selectedNodeId={selectedNodeId}
-          onSelectNode={setSelectedNodeId}
-          signalCount={signalCount}
-          streaming={streaming}
-          tracesToShow={tracesToShow}
-          streamRef={streamRef}
-          setCardRef={setCardRef}
-          readyToReveal={readyToReveal}
-          revealDone={hubRevealDone}
-          onIntroDone={() => setHubRevealDone(true)}
-        />
-      )}
+        {viewMode === "backtest" ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <BacktestLabPanel embedded initialRunId={backtestRunParam} />
+          </div>
+        ) : viewMode === "supervisor" ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+            <SupervisorPanel initialRunId={backtestRunParam} />
+          </div>
+        ) : viewMode === "monitor" ? (
+          <LiveMonitorPanel payload={payload ?? null} />
+        ) : viewMode === "grid" ? (
+          <AgentsConsoleView
+            nodes={topology.nodes}
+            edges={topology.edges}
+            traces={traces}
+            agentPrompts={payload?.agent_prompts}
+            selectedAgentId={selectedAgentId}
+            onSelectAgent={setSelectedAgentId}
+            selectedAgentTraces={selectedAgentTraces}
+            selectedAgentNode={selectedAgentNode}
+            selectedAgentPrompt={selectedAgentPrompt}
+            streaming={wsConnected}
+          />
+        ) : (
+          <NexusDeskView
+            nodes={topology.nodes}
+            edges={topology.edges}
+            selectedNodeId={selectedNodeId}
+            onSelectNode={setSelectedNodeId}
+            signalCount={signalCount}
+            streaming={wsConnected}
+            tracesToShow={tracesToShow}
+            messageLog={payload?.message_log ?? []}
+            streamRef={streamRef}
+            setCardRef={setCardRef}
+            readyToReveal={readyToReveal}
+            revealDone={hubRevealDone}
+            onIntroDone={() => setHubRevealDone(true)}
+          />
+        )}
+      </div>
 
       <footer className="border-t border-[var(--nexus-rule-soft)] bg-[var(--nexus-panel)]/80 px-4 py-2 text-[10px] text-[var(--nexus-muted)] font-mono">
         {viewMode === "backtest" ? (
@@ -185,8 +243,20 @@ export default function NexusPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex min-h-screen items-center justify-center bg-[var(--nexus-bg)] font-mono text-xs text-[var(--nexus-muted)]">
-          Loading console…
+        <div className="flex min-h-screen items-center justify-center bg-[var(--nexus-bg)]">
+          <div className="fixed inset-0 bg-[var(--nexus-bg)]">
+            <div className="flex h-full w-full items-center justify-center">
+              <NexusStarSystem
+                nodes={[]}
+                edges={[]}
+                activeNodeId={null}
+                signalCount={0}
+                readyToReveal={false}
+                playIntro
+                frameless
+              />
+            </div>
+          </div>
         </div>
       }
     >

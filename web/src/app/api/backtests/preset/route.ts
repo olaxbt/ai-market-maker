@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { flowAuthHeaders } from "../../_flowAuth";
 
 /** Proxy to Flow API: POST /backtests/preset (named Quant strategy preset). */
 export async function POST(req: Request) {
@@ -12,7 +13,7 @@ export async function POST(req: Request) {
   try {
     const res = await fetch(`${flowApiBase}/backtests/preset`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...flowAuthHeaders() },
       body: JSON.stringify(body),
     });
     const data = await res.json().catch(() => ({}));

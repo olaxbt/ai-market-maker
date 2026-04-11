@@ -1,9 +1,9 @@
 "use client";
 
-import { FlaskConical, LayoutGrid, Orbit } from "lucide-react";
+import { Activity, FlaskConical, LayoutGrid, MessageSquareText, Orbit } from "lucide-react";
 import type { Metadata } from "@/types/nexus-payload";
 
-export type NexusViewMode = "nexus" | "grid" | "backtest";
+export type NexusViewMode = "nexus" | "grid" | "backtest" | "supervisor" | "monitor";
 
 interface NexusConsoleHeaderProps {
   metadata: Metadata | null | undefined;
@@ -69,15 +69,33 @@ export function NexusConsoleHeader({
   onViewModeChange,
   viewModeTitle,
 }: NexusConsoleHeaderProps) {
+  const title =
+    viewMode === "backtest"
+      ? "BACKTEST LAB"
+      : viewMode === "supervisor"
+        ? "SUPERVISOR CONSOLE"
+        : viewMode === "grid"
+          ? "AGENTS CONSOLE"
+          : viewMode === "monitor"
+            ? "LIVE MONITOR"
+          : "NEXUS TRADING CONSOLE";
   return (
     <header className="border-b border-[var(--nexus-rule-strong)] bg-[var(--nexus-panel)]/95 backdrop-blur-sm px-4 py-2.5">
       <div className="w-full flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-sm font-bold tracking-[0.2em] text-[var(--nexus-glow)] nexus-glow-text">
-            NEXUS TRADING CONSOLE
+            {title}
           </h1>
           <p className="mt-0.5 text-[10px] tracking-wide text-[var(--nexus-muted)]">
-            AI Market Maker · Global telemetry, agent topology, and traceable decision flow.
+            {viewMode === "backtest"
+              ? "Replay saved runs, run new backtests, and inspect per-bar agent traces."
+              : viewMode === "supervisor"
+                ? "Ask questions and get an executive snapshot for a saved run."
+                : viewMode === "grid"
+                  ? "Browse desks and agents. Inspect traces and edit prompts (where applicable)."
+                  : viewMode === "monitor"
+                    ? "Balances, positions, and last decisions — designed for always-on ops."
+                  : "AI Market Maker · Global telemetry, agent topology, and traceable decision flow."}
           </p>
         </div>
         <div className="flex items-center gap-4 font-mono text-xs">
@@ -94,16 +112,8 @@ export function NexusConsoleHeader({
               <span className="text-[var(--nexus-text)]">{metadata.run_id}</span>
             </span>
           )}
-          {metadata?.ticker && (
-            <span className="text-[var(--nexus-muted)]">
-              Ticker: <span className="text-[var(--nexus-text)]">{metadata.ticker}</span>
-            </span>
-          )}
           <span className="px-2 py-1 rounded border border-[var(--nexus-glow)]/40 bg-[var(--nexus-glow)]/10 text-[var(--nexus-glow)]">
             {metadata?.status ?? "ACTIVE"}
-          </span>
-          <span className="px-2 py-1 rounded border border-slate-500/50 bg-slate-800/40 text-slate-200">
-            OpenClaw-ready
           </span>
         </div>
       </div>
@@ -144,6 +154,26 @@ export function NexusConsoleHeader({
             >
               <FlaskConical className="h-3.5 w-3.5 opacity-80 group-hover:opacity-100" />
               <span className="leading-none">Backtest</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onViewModeChange("supervisor")}
+              className={`nexus-segment-btn group flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] tracking-widest uppercase transition-all ${
+                viewMode === "supervisor" ? "is-active" : ""
+              }`}
+            >
+              <MessageSquareText className="h-3.5 w-3.5 opacity-80 group-hover:opacity-100" />
+              <span className="leading-none">Supervisor</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onViewModeChange("monitor")}
+              className={`nexus-segment-btn group flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] tracking-widest uppercase transition-all ${
+                viewMode === "monitor" ? "is-active" : ""
+              }`}
+            >
+              <Activity className="h-3.5 w-3.5 opacity-80 group-hover:opacity-100" />
+              <span className="leading-none">Monitor</span>
             </button>
           </div>
         </div>

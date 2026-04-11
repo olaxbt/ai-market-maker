@@ -3,7 +3,8 @@
 import { motion } from "framer-motion";
 import { Cpu, Activity, ShieldCheck } from "lucide-react";
 import { formatTraceTime } from "@/lib/formatTraceTime";
-import type { NexusTrace } from "@/types/nexus-payload";
+import type { NexusTrace, SynthesisBoardPayload } from "@/types/nexus-payload";
+import { SynthesisBoardVisual } from "@/components/SynthesisBoardVisual";
 
 interface AgentTraceCardProps {
   trace: NexusTrace;
@@ -55,6 +56,27 @@ export function AgentTraceCard({
     (extraObj && "tool_name" in extraObj ? extraObj.tool_name : null) ?? null;
   const toolArgs = extraObj && "tool_args" in extraObj ? extraObj.tool_args : null;
   const wireName = extraObj && "wire_name" in extraObj ? extraObj.wire_name : null;
+  const synthesisBoardRaw =
+    (content && typeof content === "object" && "synthesis_board" in content
+      ? (content as { synthesis_board?: unknown }).synthesis_board
+      : null) ??
+    (extraObj && "synthesis_board" in extraObj ? extraObj.synthesis_board : null);
+  const synthesisBoard =
+    synthesisBoardRaw &&
+    typeof synthesisBoardRaw === "object" &&
+    synthesisBoardRaw !== null &&
+    (synthesisBoardRaw as SynthesisBoardPayload).kind === "synthesis_board"
+      ? (synthesisBoardRaw as SynthesisBoardPayload)
+      : null;
+
+  const debatePreview =
+    decision &&
+    typeof decision === "object" &&
+    decision !== null &&
+    "debate_preview" in (decision as Record<string, unknown>) &&
+    Array.isArray((decision as { debate_preview?: unknown }).debate_preview)
+      ? ((decision as { debate_preview?: unknown }).debate_preview as Array<Record<string, unknown>>)
+      : null;
 
   const shellClass =
     `mb-4 w-full bg-[var(--nexus-surface)] border border-[color:var(--nexus-card-stroke)] rounded-lg overflow-hidden shadow-xl font-mono ${shellExtra ?? ""}`.trim();
@@ -115,6 +137,12 @@ export function AgentTraceCard({
             )}
           </div>
         </div>
+
+        {synthesisBoard && (
+          <div className="mt-1">
+            <SynthesisBoardVisual board={synthesisBoard} reduceMotion={reduceMotion} />
+          </div>
+        )}
 
         {signalVal != null && (
           <div className="text-[10px]">
@@ -180,8 +208,69 @@ export function AgentTraceCard({
             <div className="bg-[var(--nexus-panel)] p-3 rounded border border-[color:var(--nexus-card-stroke)] sm:col-span-2">
               <div className="flex items-center gap-2 mb-1">
                 <Activity size={14} className="text-[var(--nexus-glow)]" />
-                <span className="text-[10px] text-[var(--nexus-muted)] uppercase">Tool</span>
+                <span className="text-[10px] text-[var(--nexus-muted)] uppercase">
+                  {debatePreview ? "Debate" : "Tool"}
+                </span>
               </div>
+              {debatePreview ? (
+                <div className="mt-2 space-y-2">
+                  {debatePreview.slice(0, 6).map((row, idx) => {
+                    const speaker = String(row.speaker ?? "desk");
+                    const role = row.role != null ? String(row.role) : "";
+                    const text = row.text != null ? String(row.text) : "";
+                    const toolsUsed = Array.isArray(row.tools_used) ? row.tools_used.map(String) : [];
+                    return (
+                      <div
+                        key={`${speaker}-${idx}`}
+                        className="rounded border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)]/30 px-3 py-2"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-mono text-[10px] font-semibold uppercase tracking-widest text-slate-200">
+                              {speaker}
+                              {role ? (
+                                <span className="ml-2 font-normal text-[var(--nexus-muted)]">
+                                  {role}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+                          {toolsUsed.length ? (
+                            <div className="flex flex-wrap gap-1">
+                              {toolsUsed.slice(0, 3).map((t) => (
+                                <span
+                                  key={t}
+                                  className="rounded border border-[var(--nexus-glow)]/25 bg-[var(--nexus-glow)]/10 px-2 py-0.5 font-mono text-[9px] text-[var(--nexus-glow)]"
+                                  title={t}
+                                >
+                                  {t}
+                                </span>
+                              ))}
+                              {toolsUsed.length > 3 ? (
+                                <span className="font-mono text-[9px] text-[var(--nexus-muted)]">
+                                  +{toolsUsed.length - 3}
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <span className="font-mono text-[9px] text-[var(--nexus-muted)]">no tools</span>
+                          )}
+                        </div>
+                        {text ? (
+                          <p className="mt-1 font-mono text-[11px] leading-relaxed text-slate-200/95">
+                            {text}
+                          </p>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                  {debatePreview.length > 6 ? (
+                    <div className="font-mono text-[9px] text-[var(--nexus-muted)]">
+                      Showing 6 / {debatePreview.length} entries
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
               {toolName ? (
                 <div className="text-xs font-bold text-[var(--nexus-glow)] break-all">
                   {String(toolName)}
@@ -245,7 +334,11 @@ export function AgentTraceCard({
         </div>
       </div>
 
-      <div className="h-0.5 w-full bg-gradient-to-r from-transparent via-[var(--nexus-glow)]/20 to-transparent animate-pulse" />
+      <div
+        className={`h-0.5 w-full bg-gradient-to-r from-transparent via-[var(--nexus-glow)]/20 to-transparent ${
+          reduceMotion ? "" : "animate-pulse"
+        }`}
+      />
     </>
   );
 

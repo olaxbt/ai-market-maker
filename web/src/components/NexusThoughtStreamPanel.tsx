@@ -4,12 +4,13 @@ import type { RefObject } from "react";
 import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { AgentTraceCard } from "@/components/AgentTraceCard";
-import type { NexusTrace } from "@/types/nexus-payload";
+import type { MessageLogEntry, NexusTrace } from "@/types/nexus-payload";
 
 interface NexusThoughtStreamPanelProps {
   streaming: boolean;
   selectedNodeId: string | null;
   tracesToShow: NexusTrace[];
+  messageLog?: MessageLogEntry[];
   streamRef: RefObject<HTMLDivElement>;
   setCardRef: (traceId: string, el: HTMLDivElement | null) => void;
   /** Merged onto outer section (e.g. backtest right rail: full height, no extra chrome). */
@@ -22,6 +23,7 @@ export function NexusThoughtStreamPanel({
   streaming,
   selectedNodeId,
   tracesToShow,
+  messageLog,
   streamRef,
   setCardRef,
   className,
@@ -77,6 +79,12 @@ export function NexusThoughtStreamPanel({
   }, [tracesToShow.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const hasTraces = tracesToShow.length > 0;
+  const renderTraces = hasTraces ? tracesToShow.slice(-350) : tracesToShow;
+  // `selectedNodeId` is the topology node id (e.g. "n11"), not the actor string.
+  const filteredLog = (messageLog ?? []).filter((m) =>
+    selectedNodeId ? m.node_id === selectedNodeId : true,
+  );
+  const logToShow = filteredLog.slice(-120);
 
   return (
     <section
@@ -85,18 +93,19 @@ export function NexusThoughtStreamPanel({
         "nexus-panel rounded-none lg:rounded-r-lg border-r-0 lg:border-r border-[var(--nexus-border)] flex flex-col min-h-0 overflow-hidden"
       }
     >
-      <div className="shrink-0 px-3 py-2 border-b border-[var(--nexus-border)]">
-        <h2 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
-          Event stream · chain-of-thought & provenance · node_id / parent_id
-        </h2>
-      </div>
       <div className="relative flex-1 min-h-0 overflow-hidden">
         <div
           ref={streamRef}
-          className="thought-stream h-full overflow-y-auto overflow-x-hidden p-3 space-y-3"
+          className="thought-stream h-full overflow-y-auto overflow-x-hidden"
           role="log"
           aria-label="Agent thought process stream"
         >
+          <div className="sticky top-0 z-10 border-b border-[var(--nexus-border)] bg-[var(--nexus-panel)]/95 px-3 py-2 backdrop-blur">
+            <h2 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
+              Event stream · chain-of-thought & provenance · node_id / parent_id
+            </h2>
+          </div>
+          <div className="p-3 space-y-3">
           {streaming && !hasTraces && (
             <motion.div
               animate={{ opacity: [0.5, 1, 0.5] }}
@@ -106,6 +115,29 @@ export function NexusThoughtStreamPanel({
               Waiting for traces…
             </motion.div>
           )}
+          {logToShow.length > 0 ? (
+            <div className="space-y-2">
+              <div className="text-[10px] font-mono uppercase tracking-widest text-[var(--nexus-muted)]">
+                Recent events
+              </div>
+              <div className="space-y-1.5">
+                {logToShow.map((m) => (
+                  <div
+                    key={m.seq}
+                    className="rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)]/70 px-3 py-2 font-mono text-[11px] text-[var(--nexus-text)]"
+                  >
+                    <div className="flex items-center justify-between gap-2 text-[10px] text-[var(--nexus-muted)]">
+                      <span className="truncate">
+                        {m.actor_id} · {m.kind}
+                      </span>
+                      <span className="tabular-nums">{new Date(m.ts).toLocaleTimeString()}</span>
+                    </div>
+                    <div className="mt-1 whitespace-pre-wrap break-words">{m.message}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {!streaming && !hasTraces && (
             <p className="text-[var(--nexus-muted)] text-xs">
               {selectedNodeId
@@ -114,7 +146,7 @@ export function NexusThoughtStreamPanel({
             </p>
           )}
           {hasTraces &&
-            tracesToShow.map((trace, i) => (
+            renderTraces.map((trace, i) => (
               <div
                 key={trace.trace_id}
                 ref={(el) => setCardRef(trace.trace_id, el)}
@@ -124,7 +156,12 @@ export function NexusThoughtStreamPanel({
                     : ""
                 }
               >
-                <AgentTraceCard trace={trace} index={i} reduceMotion={reduceMotion} />
+                <AgentTraceCard
+                  trace={trace}
+                  index={i}
+                  // Live updates look bad if every new card animates.
+                  reduceMotion={reduceMotion || streaming}
+                />
               </div>
             ))}
           {streaming && hasTraces ? (
@@ -132,6 +169,7 @@ export function NexusThoughtStreamPanel({
               Live · trace stream updating as bars complete
             </p>
           ) : null}
+          </div>
         </div>
 
         {unseenCount > 0 ? (

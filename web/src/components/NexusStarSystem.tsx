@@ -23,7 +23,7 @@ type Dot3D = {
 const BASE_SIZE = 520;
 const BASE_RADIUS = [55, 120, 190, 265, 335] as const;
 const DOTS_PER_RING = [24, 36, 48, 60, 72] as const;
-const INTRO_MS = 2600;
+const INTRO_MS = 2000;
 const BURST_MS = 1300;
 
 function parseNodeOrder(id: string): number {
@@ -194,7 +194,7 @@ function RotatingSphereCanvas({
     const cx = width / 2;
     const cy = height / 2;
     // Denser and smaller sphere silhouette in center.
-    const radius = size * 0.31;
+    const radius = size * 0.25;
     const perspective = size * 1.35;
     let raf = 0;
 
@@ -420,7 +420,11 @@ interface NexusStarSystemProps {
   signalCount?: number;
   readyToReveal: boolean;
   onIntroDone?: () => void;
+  /** Called when the burst/explode phase starts (useful for syncing global reveal). */
+  onBurstStart?: () => void;
   playIntro?: boolean;
+  /** When true, remove the framed "card" look (used for full-screen loading). */
+  frameless?: boolean;
 }
 
 export function NexusStarSystem({
@@ -430,7 +434,9 @@ export function NexusStarSystem({
   signalCount = 0,
   readyToReveal,
   onIntroDone,
+  onBurstStart,
   playIntro = true,
+  frameless = false,
 }: NexusStarSystemProps) {
   const edgeGradId = useId().replace(/:/g, "");
   const containerRef = useRef<HTMLDivElement>(null);
@@ -497,6 +503,11 @@ export function NexusStarSystem({
   }, [readyToReveal, hubPhase, playIntro]);
 
   useEffect(() => {
+    if (hubPhase !== "burst") return;
+    onBurstStart?.();
+  }, [hubPhase, onBurstStart]);
+
+  useEffect(() => {
     if (!playIntro) return;
     if (hubPhase !== "burst") return;
     const done = window.setTimeout(() => {
@@ -530,7 +541,11 @@ export function NexusStarSystem({
   return (
     <div
       ref={containerRef}
-      className="relative h-full min-h-[min(480px,70vh)] w-full overflow-hidden rounded-3xl border border-[color:var(--nexus-hub-frame)] bg-[var(--nexus-bg)] shadow-inner"
+      className={
+        frameless
+          ? "relative h-full w-full overflow-hidden bg-transparent"
+          : "relative h-full min-h-[min(480px,70vh)] w-full overflow-hidden rounded-3xl border border-[color:var(--nexus-hub-frame)] bg-[var(--nexus-bg)] shadow-inner"
+      }
     >
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_40%,rgba(34,211,238,0.08),transparent_55%)]" />
       {hubPhase === "done" && (

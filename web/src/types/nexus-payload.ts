@@ -3,6 +3,9 @@
 export interface Metadata {
   run_id: string;
   ticker: string;
+  /** Configured symbol universe for this run (may be larger than ticker-only). */
+  universe_symbols?: string[];
+  universe_size?: number;
   status: string;
   version?: string;
   pid?: number;
@@ -37,6 +40,28 @@ export interface Topology {
   edges: TopologyEdge[];
 }
 
+/** Deterministic bull/bear evidence snapshot emitted with signal_arbitrator traces. */
+export interface SynthesisBoardPayload {
+  schema_version?: string;
+  kind?: string;
+  ticker?: string;
+  headline?: string;
+  bull_case?: { label?: string; lines?: string[]; signal_count?: number };
+  bear_case?: { label?: string; lines?: string[]; signal_count?: number };
+  consensus?: {
+    summary?: string;
+    bull_tilt?: unknown;
+    bear_tilt?: unknown;
+    block_aggressive_long?: boolean;
+  };
+  scores?: {
+    bull_score?: number;
+    bear_score?: number;
+    sentiment_score?: number;
+    bull_weight?: number;
+  };
+}
+
 export interface TraceContent {
   thought_process?: Array<{ step: number; label: string; detail: string }>;
   signal?: string;
@@ -47,6 +72,8 @@ export interface TraceContent {
   decision?: unknown;
   /** Optional extra metadata from reasoning events (e.g. tool args). */
   extra?: Record<string, unknown>;
+  /** Structured evidence board (also often nested under `extra.synthesis_board`). */
+  synthesis_board?: SynthesisBoardPayload;
   veto_status?: { checked_by?: string; status: string; reason?: string };
   context?: { pair?: string; signal?: string; confidence?: number; [key: string]: unknown };
 }

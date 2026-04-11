@@ -43,6 +43,18 @@ function promptRowFor(nodeId: string, rows: AgentPromptSettings[] | null | undef
   return rows?.find((p) => p.node_id === nodeId);
 }
 
+function promptFlags(row: AgentPromptSettings | undefined): { applies: boolean; mode: string } {
+  const applies =
+    !!row && typeof row === "object" && "applies_to_runtime" in row
+      ? Boolean((row as unknown as { applies_to_runtime?: boolean }).applies_to_runtime)
+      : false;
+  const mode =
+    !!row && typeof row === "object" && "mode" in row
+      ? String((row as unknown as { mode?: string }).mode ?? "")
+      : "";
+  return { applies, mode };
+}
+
 export function AgentGridView({ nodes, edges = [], traces, agentPrompts, selectedAgentId, onSelectAgent }: AgentGridViewProps) {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const { traceCountByNode, lastTsByNode, lastTraceByNode, latestGlobalTs } = buildAgentTraceIndex(traces);
@@ -65,6 +77,7 @@ export function AgentGridView({ nodes, edges = [], traces, agentPrompts, selecte
           const badge = statusBadge[runtime];
           const selected = selectedAgentId === n.id;
           const pr = promptRowFor(n.id, agentPrompts ?? undefined);
+          const { applies } = promptFlags(pr);
           const toolCount = pr?.tools?.length ?? 0;
           const beat = latestBeat(lastTrace);
           const nextHop = nextHopSummary(n.id, edges, byId);
@@ -156,6 +169,16 @@ export function AgentGridView({ nodes, edges = [], traces, agentPrompts, selecte
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
+                  <span
+                    className={`rounded-md border px-2 py-1 font-mono text-[9px] font-semibold uppercase leading-none tracking-wide ${
+                      applies
+                        ? "border-[var(--nexus-glow)]/40 bg-[var(--nexus-glow)]/10 text-[var(--nexus-glow)]"
+                        : "border-[var(--nexus-border)] bg-[var(--nexus-surface)]/50 text-slate-200"
+                    }`}
+                    title={applies ? "LLM-backed (settings apply at runtime)" : "Deterministic (prompt settings don’t apply)"}
+                  >
+                    {applies ? "LLM" : "DET"}
+                  </span>
                   <span
                     className={`inline-flex rounded-md p-1 transition-colors ${
                       selected

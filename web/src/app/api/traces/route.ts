@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import mockTraces from "@/data/mock-traces.json";
+import { flowAuthHeaders } from "../_flowAuth";
 
 export async function GET() {
   const useMock =
@@ -17,6 +18,7 @@ export async function GET() {
   try {
     const res = await fetch(`${flowApiBase}/runs/latest/payload`, {
       cache: "no-store",
+      headers: { ...flowAuthHeaders() },
     });
     if (!res.ok) {
       if (allowMockFallback) {
