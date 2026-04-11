@@ -12,28 +12,54 @@ from dotenv import load_dotenv
 from langgraph.graph import END, StateGraph
 
 from adapters.nexus_adapter import get_nexus_adapter
+from agents.governance.policy_orchestrator import PolicyOrchestratorAgent
 from agents.governance.risk_guard import RiskGuardAgent
-from agents.liquidity_management import LiquidityManagementAgent
+from agents.liquidity_order_flow import LiquidityOrderFlowAgent
 from agents.market_scan import MarketScanAgent
+from agents.monetary_sentinel import MonetarySentinelAgent
+from agents.news_narrative_miner import NewsNarrativeMinerAgent
+from agents.pattern_recognition_bot import PatternRecognitionBotAgent
 from agents.portfolio_management import PortfolioManagementAgent
-from agents.price_pattern import PricePatternAgent
-from agents.quant import QuantAgent
+from agents.pro_bias_analyst import ProBiasAnalystAgent
+from agents.retail_hype_tracker import RetailHypeTrackerAgent
 from agents.risk_management import RiskManagementAgent
-from agents.sentiment import SentimentAgent
-from agents.stat_arb import StatArbAgent
-from agents.valuation import ValuationAgent
+from agents.statistical_alpha_engine import StatisticalAlphaEngineAgent
+from agents.technical_ta_engine import TechnicalTaEngineAgent
+from agents.whale_behavior_analyst import WhaleBehaviorAnalystAgent
+from config.app_settings import load_app_settings
+from config.llm_env import use_llm_arbitrator
+from config.llm_mode import llm_mode_enabled
 from config.run_mode import RunMode, load_run_mode
 from flow_log import FlowEventRepo, get_flow_repo, set_flow_repo
 from llm.arbitrator_llm import signal_arbitrator_llm
+from llm.portfolio_llm import llm_portfolio_execute, llm_portfolio_proposal
+from market.universe import augment_universe_with_oi, select_universe_from_tickers
+from nexus_data.client import NexusDataClient
+from nexus_data.feeds import (
+    fetch_nexus_global_bundle,
+    fetch_nexus_per_symbol,
+    merge_bundle_with_per_symbol,
+    nexus_feeds_enabled,
+    oi_ccxt_candidates,
+)
 from schemas.flow_events import FlowEvent
 from schemas.state import HedgeFundState, initial_hedge_fund_state
+from schemas.tier0_contract import build_tier0_contract_json
 from telemetry.logger import LogPublisher, get_log_publisher, set_log_publisher
+from tier1 import apply_strategy, effective_portfolio_desk_bridge, load_tier1_blueprint_from_env
+from tier1.signal_params import build_tier1_proposed_params
+from trading.desk_inputs import quant_analysis_for_portfolio
+from workflow.arbitrator_shadow import backtest_momentum_score_delta
+from workflow.desk_debate import desk_debate
+from workflow.execution_intent import derive_trade_intent
 from workflow.routing import route_after_risk_guard, route_after_risk_guard_mapping
+from workflow.tier2_context import build_synthesis_board, compute_legacy_arbitrator_scores
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-load_dotenv()
+# Always let `.env` win over inherited shell env (including empty values).
+load_dotenv(override=True)
 
 
 def _emit_flow(repo: FlowEventRepo | None, event: FlowEvent) -> None:
@@ -60,6 +86,14 @@ def _reasoning_entry(
 
 
 NodeFn = Callable[[HedgeFundState], dict[str, Any]]
+
+
+def _tier0_nexus_context(state: HedgeFundState) -> dict[str, Any] | None:
+    sm = state.get("shared_memory")
+    if not isinstance(sm, dict):
+        return None
+    nx = sm.get("nexus")
+    return nx if isinstance(nx, dict) else None
 
 
 def _flow_bt_extra(state: HedgeFundState) -> dict[str, Any]:
@@ -134,6 +168,10 @@ def _instrument_node(node_name: str, node_fn: NodeFn) -> NodeFn:
             ),
         )
         for entry in out.get("reasoning_logs") or []:
+            flow_extra: dict[str, Any] = dict(bt_x)
+            ent_ex = entry.get("extra")
+            if isinstance(ent_ex, dict) and ent_ex:
+                flow_extra = {**ent_ex, **flow_extra}
             _emit_flow(
                 repo,
                 FlowEvent.reasoning(
@@ -143,7 +181,7 @@ def _instrument_node(node_name: str, node_fn: NodeFn) -> NodeFn:
                     decision=entry.get("decision"),
                     run_id=run_id,
                     node=node_name,
-                    **bt_x,
+                    **flow_extra,
                 ),
             )
         return out
@@ -182,14 +220,33 @@ def market_scan(state: HedgeFundState) -> dict[str, Any]:
 
     data = dict(state.get("market_data") or {})
     run_mode = str(state.get("run_mode") or "paper").lower()
+    s = load_app_settings()
+    desired_universe_size = int(s.market.universe_size)
+    requested = list(s.market.universe_symbols)
+
+    sm_out = dict(state.get("shared_memory") or {})
 
     if run_mode == RunMode.BACKTEST.value:
         # Backtest mode must be deterministic and offline-friendly.
         meme_coins: list[dict[str, Any]] = []
         if ticker not in data:
             data[ticker] = {"status": "backtest", "note": "no market_data provided"}
+        universe = requested or list(data.keys()) or [ticker]
+        universe = [ticker] + [s for s in universe if s != ticker]
+        universe = universe[: max(1, desired_universe_size)]
+        pairs = [
+            [a, b]
+            for a, b in select_universe_from_tickers(None, primary=ticker, size=len(universe)).pairs
+        ]
+        scan_decision: dict[str, Any] = {"symbols": len(data), "meme_candidates": len(meme_coins)}
     else:
         agent = MarketScanAgent(testnet=True)
+        markets_keys = set(agent.exchange.markets.keys())
+        tickers = None
+        try:
+            tickers = agent.exchange.fetch_tickers()
+        except Exception:
+            tickers = None
         try:
             data[ticker] = agent.fetch_data(ticker)
             logger.debug("Fetched data for %s: %s", ticker, data[ticker])
@@ -197,7 +254,6 @@ def market_scan(state: HedgeFundState) -> dict[str, Any]:
             logger.error("Failed to fetch data for %s: %s", ticker, e)
             data[ticker] = {"status": "error", "error": str(e)}
 
-        # P3 tool-calling parity: attach a depth snapshot via NexusAdapter.
         try:
             data[ticker]["nexus_depth"] = get_nexus_adapter().fetch_market_depth(
                 symbol=ticker,
@@ -215,15 +271,92 @@ def market_scan(state: HedgeFundState) -> dict[str, Any]:
                     logger.error("Failed to fetch data for %s: %s", coin["symbol"], e)
                     data[coin["symbol"]] = {"status": "error", "error": str(e)}
 
+        nexus_bundle: dict[str, Any] | None = None
+        nxc: NexusDataClient | None = None
+        gb: dict[str, Any] = {}
+        oi_ccxt: list[str] = []
+        universe_source = "tickers_volume_rank"
+
+        if nexus_feeds_enabled():
+            try:
+                nxc = NexusDataClient()
+                gb = fetch_nexus_global_bundle(nxc)
+                oi_ccxt = oi_ccxt_candidates(gb)
+            except Exception as e:
+                logger.warning("Nexus global feeds failed: %s", e)
+                gb = {"endpoints": {}, "errors": [str(e)], "fetched_at_epoch": time.time()}
+                oi_ccxt = []
+
+        if requested:
+            universe = [ticker] + [s for s in requested if s != ticker]
+            universe = universe[: max(1, desired_universe_size)]
+            pairs = [[a, b] for i, a in enumerate(universe) for b in universe[i + 1 :]][:21]
+            universe_source = "env_aimm_universe"
+        else:
+            sel = augment_universe_with_oi(
+                oi_ccxt,
+                primary=ticker,
+                tickers=tickers,
+                size=max(1, desired_universe_size),
+                markets=markets_keys,
+            )
+            universe = sel.universe
+            pairs = [[a, b] for a, b in sel.pairs]
+            universe_source = sel.source
+
+        for sym in universe:
+            if sym not in data and sym in markets_keys:
+                try:
+                    data[sym] = agent.fetch_data(sym)
+                except Exception as e:
+                    logger.error("Failed to fetch data for %s: %s", sym, e)
+                    data[sym] = {"status": "error", "error": str(e)}
+            blob = data.get(sym)
+            if isinstance(blob, dict) and "nexus_depth" not in blob and sym in markets_keys:
+                try:
+                    blob["nexus_depth"] = get_nexus_adapter().fetch_market_depth(
+                        symbol=sym, limit=5
+                    )
+                except Exception as e:
+                    blob["nexus_depth"] = {"status": "error", "error": str(e)}
+
+        if nexus_feeds_enabled():
+            if nxc is not None:
+                try:
+                    per = fetch_nexus_per_symbol(nxc, universe)
+                    nexus_bundle = merge_bundle_with_per_symbol(gb, per)
+                except Exception as e:
+                    logger.warning("Nexus per-symbol feeds failed: %s", e)
+                    merged_errs = list(gb.get("errors") or []) + [str(e)]
+                    nexus_bundle = {**gb, "errors": merged_errs}
+            else:
+                nexus_bundle = gb if gb else None
+
+        if nexus_bundle is not None:
+            sm_out["nexus"] = nexus_bundle
+            ne = len(nexus_bundle.get("errors") or [])
+            if ne:
+                logger.info("Nexus bundle attached with %d partial endpoint errors", ne)
+
+        scan_decision = {
+            "symbols": len(data),
+            "meme_candidates": len(meme_coins),
+            "universe_source": universe_source,
+            "nexus_attached": nexus_bundle is not None,
+        }
+
     return {
         "ticker": ticker,
+        "universe": universe,
+        "universe_pairs": pairs,
         "market_data": data,
         "market_scan": meme_coins,
+        "shared_memory": sm_out,
         "market_context": [
             {
                 "node": "market_scan",
                 "ticker": ticker,
-                "symbols": list(data.keys())[:8],
+                "symbols": universe,
             }
         ],
         "reasoning_logs": [
@@ -234,136 +367,251 @@ def market_scan(state: HedgeFundState) -> dict[str, Any]:
                     if run_mode != RunMode.BACKTEST.value
                     else f"Backtest mode: using provided market_data (symbols={len(data)})."
                 ),
-                decision={"symbols": len(data), "meme_candidates": len(meme_coins)},
+                decision=scan_decision,
             )
         ],
     }
 
 
-def price_pattern(state: HedgeFundState) -> dict[str, Any]:
-    logger.debug("Running price_pattern node with state: %s", state)
-    ticker = state.get("ticker", "BTC/USDT")
-    market_data = state.get("market_data") or {}
-    agent = PricePatternAgent()
-    analysis = agent.analyze(ticker, market_data)
+def policy_orchestrator(state: HedgeFundState) -> dict[str, Any]:
+    """Supervisor layer: select policy config/preset across runs (persistent memory)."""
+    agent = PolicyOrchestratorAgent()
+    out = _run_async(
+        agent.process({"run_mode": state.get("run_mode"), "ticker": state.get("ticker")})
+    )
     return {
-        "pattern_analysis": analysis,
-        "market_context": [{"node": "price_pattern", "analysis": analysis}],
+        "policy_decision": out.get("policy_decision") if isinstance(out, dict) else {},
         "reasoning_logs": [
             _reasoning_entry(
-                node="price_pattern",
-                thought="Technical pattern analysis completed for primary ticker.",
+                node="policy_orchestrator",
+                thought=str(
+                    (out.get("reasoning") or {}).get("thought")
+                    if isinstance(out, dict)
+                    else "Policy orchestrator ran."
+                ),
+                decision=out.get("policy_decision") if isinstance(out, dict) else {},
+            )
+        ],
+    }
+
+
+#
+# Legacy Tier-0 agents (PricePatternAgent, SentimentAgent, StatArbAgent, QuantAgent,
+# ValuationAgent, LiquidityManagementAgent) were removed in favor of AIMM8.
+# Their corresponding node functions have been deleted to avoid keeping unused code.
+#
+
+
+def monetary_sentinel(state: HedgeFundState) -> dict[str, Any]:
+    ticker = str(state.get("ticker") or "BTC/USDT")
+    universe = state.get("universe") or [ticker]
+    md = state.get("market_data") or {}
+    nx = _tier0_nexus_context(state)
+    agent = MonetarySentinelAgent()
+    by_symbol = {
+        sym: agent.analyze(ticker=sym, market_data=md, nexus_context=nx) for sym in universe
+    }
+    analysis = by_symbol.get(ticker) or {}
+    return {
+        "monetary_sentinel": {"primary": analysis, "by_symbol": by_symbol},
+        "tier0_contracts": [build_tier0_contract_json("monetary_sentinel", analysis, ticker)],
+        "market_context": [{"node": "monetary_sentinel", "analysis": analysis}],
+        "reasoning_logs": [
+            _reasoning_entry(
+                node="monetary_sentinel",
+                thought="Macro liquidity + systemic beta computed.",
                 decision=analysis,
             )
         ],
     }
 
 
-def sentiment(state: HedgeFundState) -> dict[str, Any]:
-    logger.debug("Running sentiment node with state: %s", state)
-    ticker = state.get("ticker", "BTC/USDT")
-    run_mode = str(state.get("run_mode") or "paper").lower()
-    if run_mode == RunMode.BACKTEST.value:
-        analysis = {
-            "ticker": ticker,
-            "sentiment_score": 50.0,
-            "analysis": "Sentiment skipped in backtest (deterministic offline run).",
-            "status": "skipped",
-        }
-        return {
-            "sentiment_analysis": analysis,
-            "market_context": [{"node": "sentiment", "analysis": analysis}],
-            "reasoning_logs": [
-                _reasoning_entry(
-                    node="sentiment",
-                    thought="Backtest mode: no live social/news fetch.",
-                    decision=analysis,
-                )
-            ],
-        }
-    agent = SentimentAgent()
-    analysis = agent.analyze(ticker)
+def news_narrative_miner(state: HedgeFundState) -> dict[str, Any]:
+    ticker = str(state.get("ticker") or "BTC/USDT")
+    universe = state.get("universe") or [ticker]
+    md = state.get("market_data") or {}
+    nx = _tier0_nexus_context(state)
+    agent = NewsNarrativeMinerAgent()
+    by_symbol = {
+        sym: agent.analyze(ticker=sym, market_data=md, nexus_context=nx) for sym in universe
+    }
+    analysis = by_symbol.get(ticker) or {}
     return {
-        "sentiment_analysis": analysis,
-        "market_context": [{"node": "sentiment", "analysis": analysis}],
+        "news_narrative_miner": {"primary": analysis, "by_symbol": by_symbol},
+        "tier0_contracts": [build_tier0_contract_json("news_narrative_miner", analysis, ticker)],
+        "market_context": [{"node": "news_narrative_miner", "analysis": analysis}],
         "reasoning_logs": [
             _reasoning_entry(
-                node="sentiment",
-                thought="Sentiment scan completed from social/news signals.",
+                node="news_narrative_miner",
+                thought="News narrative miner evaluated systemic shock inputs.",
                 decision=analysis,
             )
         ],
     }
 
 
-def stat_arb(state: HedgeFundState) -> dict[str, Any]:
-    logger.debug("Running stat_arb node with state: %s", state)
-    market_data = state.get("market_data") or {}
-    market_scan = state.get("market_scan") or []
-    agent = StatArbAgent()
-    analysis = agent.analyze(market_data, market_scan)
+def pattern_recognition_bot(state: HedgeFundState) -> dict[str, Any]:
+    ticker = str(state.get("ticker") or "BTC/USDT")
+    universe = state.get("universe") or [ticker]
+    md = state.get("market_data") or {}
+    nx = _tier0_nexus_context(state)
+    agent = PatternRecognitionBotAgent()
+    by_symbol = {
+        sym: agent.analyze(ticker=sym, market_data=md, nexus_context=nx) for sym in universe
+    }
+    analysis = by_symbol.get(ticker) or {}
     return {
-        "arb_analysis": analysis,
-        "market_context": [{"node": "stat_arb", "analysis": analysis}],
+        "pattern_recognition_bot": {"primary": analysis, "by_symbol": by_symbol},
+        "tier0_contracts": [build_tier0_contract_json("pattern_recognition_bot", analysis, ticker)],
+        "market_context": [{"node": "pattern_recognition_bot", "analysis": analysis}],
         "reasoning_logs": [
             _reasoning_entry(
-                node="stat_arb",
-                thought="Pair and spread opportunities evaluated.",
+                node="pattern_recognition_bot",
+                thought="Pattern recognition computed setup confidence and regime.",
                 decision=analysis,
             )
         ],
     }
 
 
-def quant(state: HedgeFundState) -> dict[str, Any]:
-    logger.debug("Running quant node with state: %s", state)
-    market_data = state.get("market_data") or {}
-    agent = QuantAgent()
-    analysis = agent.analyze(market_data)
+def statistical_alpha_engine(state: HedgeFundState) -> dict[str, Any]:
+    ticker = str(state.get("ticker") or "BTC/USDT")
+    universe = state.get("universe") or [ticker]
+    md = state.get("market_data") or {}
+    nx = _tier0_nexus_context(state)
+    agent = StatisticalAlphaEngineAgent()
+    by_symbol = {
+        sym: agent.analyze(ticker=sym, market_data=md, nexus_context=nx) for sym in universe
+    }
+    analysis = by_symbol.get(ticker) or {}
     return {
-        "quant_analysis": analysis,
-        "market_context": [{"node": "quant", "analysis": analysis}],
+        "statistical_alpha_engine": {"primary": analysis, "by_symbol": by_symbol},
+        "tier0_contracts": [
+            build_tier0_contract_json("statistical_alpha_engine", analysis, ticker)
+        ],
+        "market_context": [{"node": "statistical_alpha_engine", "analysis": analysis}],
         "reasoning_logs": [
             _reasoning_entry(
-                node="quant",
-                thought="Momentum and quant indicators computed.",
+                node="statistical_alpha_engine",
+                thought="Cross-sectional alpha engine executed (stubbed if no Nexus data).",
                 decision=analysis,
             )
         ],
     }
 
 
-def valuation(state: HedgeFundState) -> dict[str, Any]:
-    logger.debug("Running valuation node with state: %s", state)
-    market_data = state.get("market_data") or {}
-    market_scan = state.get("market_scan") or []
-    agent = ValuationAgent()
-    analysis = agent.analyze(market_data, market_scan)
+def technical_ta_engine(state: HedgeFundState) -> dict[str, Any]:
+    """Tier-0 Agent 2.3: OHLCV → TA-Lib bundle (``ta_*`` Tier-1 metric_ids)."""
+    ticker = str(state.get("ticker") or "BTC/USDT")
+    universe = state.get("universe") or [ticker]
+    md = state.get("market_data") or {}
+    agent = TechnicalTaEngineAgent()
+    by_symbol = {sym: agent.analyze(ticker=sym, market_data=md) for sym in universe}
+    analysis = by_symbol.get(ticker) or {}
     return {
-        "valuation": analysis,
-        "market_context": [{"node": "valuation", "analysis": analysis}],
+        "technical_ta_engine": {"primary": analysis, "by_symbol": by_symbol},
+        "tier0_contracts": [build_tier0_contract_json("technical_ta_engine", analysis, ticker)],
+        "market_context": [{"node": "technical_ta_engine", "analysis": analysis}],
         "reasoning_logs": [
             _reasoning_entry(
-                node="valuation",
-                thought="Relative valuation baseline computed.",
+                node="technical_ta_engine",
+                thought="Classical TA bundle from OHLCV (Tier-0 contract 2.3).",
                 decision=analysis,
             )
         ],
     }
 
 
-def liquidity(state: HedgeFundState) -> dict[str, Any]:
-    logger.debug("Running liquidity node with state: %s", state)
-    market_data = state.get("market_data") or {}
-    agent = LiquidityManagementAgent()
-    analysis = agent.analyze(market_data)
+def retail_hype_tracker(state: HedgeFundState) -> dict[str, Any]:
+    ticker = str(state.get("ticker") or "BTC/USDT")
+    universe = state.get("universe") or [ticker]
+    md = state.get("market_data") or {}
+    nx = _tier0_nexus_context(state)
+    agent = RetailHypeTrackerAgent()
+    by_symbol = {
+        sym: agent.analyze(ticker=sym, market_data=md, nexus_context=nx) for sym in universe
+    }
+    analysis = by_symbol.get(ticker) or {}
     return {
-        "liquidity": analysis,
-        "market_context": [{"node": "liquidity", "analysis": analysis}],
+        "retail_hype_tracker": {"primary": analysis, "by_symbol": by_symbol},
+        "tier0_contracts": [build_tier0_contract_json("retail_hype_tracker", analysis, ticker)],
+        "market_context": [{"node": "retail_hype_tracker", "analysis": analysis}],
         "reasoning_logs": [
             _reasoning_entry(
-                node="liquidity",
-                thought="Liquidity and depth profile calculated.",
+                node="retail_hype_tracker",
+                thought="Retail hype and divergence evaluated (stubbed if no Nexus data).",
+                decision=analysis,
+            )
+        ],
+    }
+
+
+def pro_bias_analyst(state: HedgeFundState) -> dict[str, Any]:
+    ticker = str(state.get("ticker") or "BTC/USDT")
+    universe = state.get("universe") or [ticker]
+    md = state.get("market_data") or {}
+    nx = _tier0_nexus_context(state)
+    agent = ProBiasAnalystAgent()
+    by_symbol = {
+        sym: agent.analyze(ticker=sym, market_data=md, nexus_context=nx) for sym in universe
+    }
+    analysis = by_symbol.get(ticker) or {}
+    return {
+        "pro_bias_analyst": {"primary": analysis, "by_symbol": by_symbol},
+        "tier0_contracts": [build_tier0_contract_json("pro_bias_analyst", analysis, ticker)],
+        "market_context": [{"node": "pro_bias_analyst", "analysis": analysis}],
+        "reasoning_logs": [
+            _reasoning_entry(
+                node="pro_bias_analyst",
+                thought="Institutional flow regime evaluated (stubbed if no Nexus data).",
+                decision=analysis,
+            )
+        ],
+    }
+
+
+def whale_behavior_analyst(state: HedgeFundState) -> dict[str, Any]:
+    ticker = str(state.get("ticker") or "BTC/USDT")
+    universe = state.get("universe") or [ticker]
+    md = state.get("market_data") or {}
+    nx = _tier0_nexus_context(state)
+    agent = WhaleBehaviorAnalystAgent()
+    by_symbol = {
+        sym: agent.analyze(ticker=sym, market_data=md, nexus_context=nx) for sym in universe
+    }
+    analysis = by_symbol.get(ticker) or {}
+    return {
+        "whale_behavior_analyst": {"primary": analysis, "by_symbol": by_symbol},
+        "tier0_contracts": [build_tier0_contract_json("whale_behavior_analyst", analysis, ticker)],
+        "market_context": [{"node": "whale_behavior_analyst", "analysis": analysis}],
+        "reasoning_logs": [
+            _reasoning_entry(
+                node="whale_behavior_analyst",
+                thought="Whale behavior and supply-shock risk evaluated (stubbed if no Nexus data).",
+                decision=analysis,
+            )
+        ],
+    }
+
+
+def liquidity_order_flow(state: HedgeFundState) -> dict[str, Any]:
+    ticker = str(state.get("ticker") or "BTC/USDT")
+    universe = state.get("universe") or [ticker]
+    md = state.get("market_data") or {}
+    nx = _tier0_nexus_context(state)
+    agent = LiquidityOrderFlowAgent()
+    by_symbol = {
+        sym: agent.analyze(ticker=sym, market_data=md, nexus_context=nx) for sym in universe
+    }
+    analysis = by_symbol.get(ticker) or {}
+    return {
+        "liquidity_order_flow": {"primary": analysis, "by_symbol": by_symbol},
+        "tier0_contracts": [build_tier0_contract_json("liquidity_order_flow", analysis, ticker)],
+        "market_context": [{"node": "liquidity_order_flow", "analysis": analysis}],
+        "reasoning_logs": [
+            _reasoning_entry(
+                node="liquidity_order_flow",
+                thought="Liquidity/order-flow microstructure evaluated.",
                 decision=analysis,
             )
         ],
@@ -388,219 +636,100 @@ def risk(state: HedgeFundState) -> dict[str, Any]:
     }
 
 
-def bull_case(state: HedgeFundState) -> dict[str, Any]:
-    """Tier-2 debate node: optimistic argument from Tier-1 context."""
-    sentiment_score = ((state.get("sentiment_analysis") or {}).get("sentiment_score")) or 50.0
-    quant_data = ((state.get("quant_analysis") or {}).get("analysis")) or {}
-    if not isinstance(quant_data, dict):
-        quant_data = {}
-    bullish_signals = sum(
-        1
-        for item in quant_data.values()
-        if isinstance(item, dict) and item.get("macd_signal") == "buy"
-    )
-    argument = (
-        f"Bull case: sentiment={sentiment_score:.1f}, "
-        f"bullish_macd_signals={bullish_signals}. Momentum can continue if risk caps hold."
-    )
-    return {
-        "debate_transcript": [
-            {
-                "speaker": "bull",
-                "stance": "long-bias",
-                "argument": argument,
-            }
-        ],
-        "reasoning_logs": [
-            _reasoning_entry(
-                node="bull_case",
-                thought="Constructed bullish thesis from sentiment + quant context.",
-                decision={"sentiment_score": sentiment_score, "bullish_signals": bullish_signals},
-            )
-        ],
-    }
-
-
-def bear_case(state: HedgeFundState) -> dict[str, Any]:
-    """Tier-2 debate node: conservative argument from risk/volatility context."""
-    risk_analysis = ((state.get("risk") or {}).get("analysis")) or {}
-    high_vol_assets = sum(
-        1
-        for item in risk_analysis.values()
-        if isinstance(item, dict) and float(item.get("volatility", 0.0)) >= 0.01
-    )
-    spread_issues = 0
-    liquidity = ((state.get("liquidity") or {}).get("analysis")) or {}
-    for item in liquidity.values():
-        if isinstance(item, dict) and float(item.get("spread", 0.0)) >= 0.005:
-            spread_issues += 1
-    argument = (
-        f"Bear case: high_vol_assets={high_vol_assets}, "
-        f"wide_spread_assets={spread_issues}. Protect capital until signal quality improves."
-    )
-    return {
-        "debate_transcript": [
-            {
-                "speaker": "bear",
-                "stance": "risk-off",
-                "argument": argument,
-            }
-        ],
-        "reasoning_logs": [
-            _reasoning_entry(
-                node="bear_case",
-                thought="Constructed bearish thesis from risk + liquidity context.",
-                decision={"high_vol_assets": high_vol_assets, "spread_issues": spread_issues},
-            )
-        ],
-    }
-
-
 def signal_arbitrator(state: HedgeFundState) -> dict[str, Any]:
-    """Tier-2 synthesis node: pick strategy stance and emit structured proposed_signal."""
-    transcript = state.get("debate_transcript") or []
-    bull_votes = sum(1 for x in transcript if isinstance(x, dict) and x.get("speaker") == "bull")
-    bear_votes = sum(1 for x in transcript if isinstance(x, dict) and x.get("speaker") == "bear")
-    risk_analysis = ((state.get("risk") or {}).get("analysis")) or {}
-    high_vol_assets = sum(
-        1
-        for item in risk_analysis.values()
-        if isinstance(item, dict) and float(item.get("volatility", 0.0)) >= 0.01
-    )
-    sentiment_score = float(
-        ((state.get("sentiment_analysis") or {}).get("sentiment_score")) or 50.0
-    )
+    """Tier-2 synthesis: Tier-1 applier (if configured) else legacy scores from Tier-0 consensus + risk/sentiment.
 
-    bull_score = bull_votes + (1 if sentiment_score >= 55 else 0)
-    bear_score = bear_votes + (1 if high_vol_assets >= 1 else 0)
+    Preceding ``desk_debate`` appends human-readable rows to ``debate_transcript`` (deterministic + optional LLM).
+    """
+    legacy = compute_legacy_arbitrator_scores(state)
+    debate_n = len(state.get("debate_transcript") or [])
+    bull_score = int(legacy["bull_score"])
+    bear_score = int(legacy["bear_score"])
+    high_vol_assets = int(legacy["high_vol_assets"])
+    sentiment_score = float(legacy["sentiment_score"])
+    tc = legacy["tier0_consensus"]
 
-    # Use agent outputs (not raw indicators) for tie-breaking.
-    arb = state.get("arb_analysis") or {}
-    arb_analysis = arb.get("analysis") if isinstance(arb, dict) else None
-    if isinstance(arb_analysis, dict):
-        for item in arb_analysis.values():
-            if not isinstance(item, dict):
-                continue
-            sig = str(item.get("signal") or "").lower()
-            if sig == "buy":
-                bull_score += 1
-            elif sig == "sell":
-                bear_score += 1
+    mb, ms, mnote = backtest_momentum_score_delta(state)
+    bull_score += mb
+    bear_score += ms
 
-    pat = state.get("pattern_analysis") or {}
-    pat_status = str((pat.get("status") if isinstance(pat, dict) else "") or "").lower()
-    if pat_status == "success":
-        bull_score += 1
-    elif pat_status == "error":
-        bear_score += 1
+    tier1_blueprint = load_tier1_blueprint_from_env()
+    if tier1_blueprint is not None:
+        ep = apply_strategy(
+            state,
+            tier1_blueprint,
+            ticker=str(state.get("ticker") or "BTC/USDT"),
+        )
+        t1_params = build_tier1_proposed_params(
+            ep,
+            tier0_summary=str(tc.get("summary", "")),
+            legacy_bull_score=bull_score,
+            legacy_bear_score=bear_score,
+        )
+        t1_params["debate_entries"] = debate_n
+        t1_params["reasons"] = [
+            *(t1_params.get("reasons") or []),
+            f"desk_debate_entries={debate_n}",
+        ]
+        proposed_signal = {
+            "action": "PROPOSAL",
+            "params": t1_params,
+            "meta": {
+                "source": "signal_arbitrator",
+                "version": "v1_tier1",
+            },
+        }
+    else:
+        stance = "neutral"
+        if bull_score > bear_score:
+            stance = "bullish"
+        elif bear_score > bull_score:
+            stance = "bearish"
 
-    if sentiment_score <= 45:
-        bear_score += 1
-    stance = "neutral"
-    if bull_score > bear_score:
-        stance = "bullish"
-    elif bear_score > bull_score:
-        stance = "bearish"
-
-    confidence = round(min(0.95, 0.5 + (abs(bull_score - bear_score) * 0.15)), 2)
-    if stance != "neutral":
-        confidence = max(0.55, confidence)
-    reasons = [
-        f"bull_score={bull_score}",
-        f"bear_score={bear_score}",
-        f"sentiment={sentiment_score:.1f}",
-        f"high_vol_assets={high_vol_assets}",
-    ]
-    reasons.append("stance_sources=debate+risk+sentiment+stat_arb+pattern")
-    proposed_signal = {
-        "action": "PROPOSAL",
-        "params": {
-            "stance": stance,
-            "confidence": confidence,
-            "reasons": reasons,
-            "debate_entries": len(transcript),
-        },
-        "meta": {
-            "source": "signal_arbitrator",
-            "version": "v1",
-        },
-    }
+        confidence = round(min(0.95, 0.5 + (abs(bull_score - bear_score) * 0.15)), 2)
+        if stance != "neutral":
+            confidence = max(0.55, confidence)
+        reasons = [
+            f"bull_score={bull_score}",
+            f"bear_score={bear_score}",
+            f"sentiment={sentiment_score:.1f}",
+            f"high_vol_assets={high_vol_assets}",
+            f"tier0_consensus={tc.get('summary', '')}",
+        ]
+        reasons.append("stance_sources=risk+sentiment+tier0_contracts_legacy_scores")
+        if mnote:
+            reasons.append(mnote)
+        reasons.append(f"desk_debate_entries={debate_n}")
+        proposed_signal = {
+            "action": "PROPOSAL",
+            "params": {
+                "stance": stance,
+                "confidence": confidence,
+                "reasons": reasons,
+                "debate_entries": debate_n,
+            },
+            "meta": {
+                "source": "signal_arbitrator",
+                "version": "v1",
+            },
+        }
+    board = build_synthesis_board(state)
+    intent = derive_trade_intent(state, proposed_signal)
     return {
         "proposed_signal": proposed_signal,
-        "reasoning_logs": [
-            _reasoning_entry(
-                node="signal_arbitrator",
-                thought="Synthesized bull/bear debate into a structured proposed signal.",
-                decision=proposed_signal,
-            )
-        ],
-    }
-
-
-def trade_intent(state: HedgeFundState) -> dict[str, Any]:
-    """Convert proposed_signal into an explicit trade-intent contract (BUY/SELL/HOLD)."""
-    ticker = str(state.get("ticker") or "BTC/USDT")
-    run_mode = str(state.get("run_mode") or "paper").lower()
-    sm = state.get("shared_memory") or {}
-    bt = sm.get("backtest") if isinstance(sm, dict) and isinstance(sm.get("backtest"), dict) else {}
-    cash = float(bt.get("cash", 0.0)) if run_mode == RunMode.BACKTEST.value else None
-    qty = float(bt.get("qty", 0.0)) if run_mode == RunMode.BACKTEST.value else None
-
-    md = state.get("market_data") or {}
-    price = None
-    try:
-        price = float(((md.get(ticker) or {}).get("ohlcv") or [])[-1][4])
-    except Exception:
-        price = None
-
-    proposed = state.get("proposed_signal") or {}
-    params = proposed.get("params") if isinstance(proposed, dict) else None
-    stance = (params or {}).get("stance") if isinstance(params, dict) else None
-    confidence = (params or {}).get("confidence") if isinstance(params, dict) else None
-    reasons = (params or {}).get("reasons") if isinstance(params, dict) else None
-
-    stance_s = str(stance or "neutral").lower()
-    conf_f = float(confidence) if isinstance(confidence, (int, float)) else 0.5
-    if stance_s not in ("bullish", "bearish", "neutral"):
-        stance_s = "neutral"
-    if not isinstance(reasons, list):
-        reasons = []
-
-    action = "HOLD"
-    if stance_s == "bullish" and conf_f >= 0.55:
-        action = "BUY"
-    elif stance_s == "bearish" and conf_f >= 0.55:
-        action = "SELL"
-
-    max_notional_usd = None
-    if run_mode == RunMode.BACKTEST.value and cash is not None:
-        max_notional_usd = max(0.0, cash) * 0.10
-
-    intent = {
-        "ticker": ticker,
-        "action": action,
-        "confidence": round(max(0.0, min(0.95, conf_f)), 2),
-        "reasons": [str(r) for r in reasons][:12],
-        "constraints": {
-            "max_notional_usd": max_notional_usd,
-            "requires_price": True,
-        },
-        "context": {
-            "run_mode": run_mode,
-            "cash_usd": cash,
-            "qty_base": qty,
-            "price": price,
-        },
-        "meta": {"source": "trade_intent_v1"},
-    }
-    return {
         "trade_intent": intent,
         "reasoning_logs": [
             _reasoning_entry(
-                node="trade_intent",
-                thought="Converted proposed_signal into explicit trade intent.",
+                node="signal_arbitrator",
+                thought="Synthesized proposed_signal from Tier-1 applier or legacy Tier-0 consensus scores.",
+                decision=proposed_signal,
+                extra={"synthesis_board": board},
+            ),
+            _reasoning_entry(
+                node="execution_intent",
+                thought="Execution intent derived from thesis (deterministic stance → BUY/SELL/HOLD gate).",
                 decision=intent,
-            )
+            ),
         ],
     }
 
@@ -628,29 +757,88 @@ def _portfolio_agent_kwargs(state: HedgeFundState) -> dict[str, Any]:
     bt = sm.get("backtest") if isinstance(sm, dict) and isinstance(sm.get("backtest"), dict) else {}
     out: dict[str, Any] = {"run_mode": state.get("run_mode")}
     if str(state.get("run_mode") or "").lower() == RunMode.BACKTEST.value:
-        out["external_position_qty"] = float(bt.get("qty", 0.0))
         out["external_cash_usd"] = float(bt.get("cash", 0.0))
+        pos = bt.get("positions")
+        if isinstance(pos, dict):
+            ext_pos = {str(k): float(v) for k, v in pos.items()}
+            uni = state.get("universe")
+            if isinstance(uni, list):
+                for sym in uni:
+                    sk = str(sym)
+                    if sk not in ext_pos:
+                        ext_pos[sk] = 0.0
+            out["external_positions"] = ext_pos
+            ea = bt.get("entry_avg_by_symbol")
+            entry_map = {str(k): float(v) for k, v in ea.items()} if isinstance(ea, dict) else {}
+            if isinstance(uni, list):
+                for sym in uni:
+                    sk = str(sym)
+                    if sk not in entry_map:
+                        entry_map[sk] = 0.0
+            out["external_entry_avg_by_symbol"] = entry_map
+        else:
+            out["external_position_qty"] = float(bt.get("qty", 0.0))
+            out["external_entry_avg_price"] = float(bt.get("entry_avg_price", 0.0))
     return out
+
+
+def merged_quant_analysis_for_universe(state: HedgeFundState) -> dict[str, Any]:
+    """Per-symbol ``quant_analysis`` rows from Tier-0 ``by_symbol`` (multi-asset) or primary."""
+    tk = str(state.get("ticker") or "BTC/USDT")
+    uni = state.get("universe")
+    symbols: list[str] = [str(x) for x in uni] if isinstance(uni, list) and uni else [tk]
+    merged: dict[str, Any] = {}
+    desk_bridge = effective_portfolio_desk_bridge()
+    for sym in symbols:
+        frag = quant_analysis_for_portfolio(state, sym, desk_bridge=desk_bridge)
+        an = frag.get("analysis") if isinstance(frag, dict) else None
+        row = an.get(sym) if isinstance(an, dict) else None
+        if isinstance(row, dict):
+            merged[sym] = row
+    return {"status": "success", "analysis": merged}
 
 
 def portfolio_proposal(state: HedgeFundState) -> dict[str, Any]:
     logger.debug("Running portfolio_proposal node with state: %s", state)
-    agent = PortfolioManagementAgent(testnet=True)
-    proposal = agent.analyze(
-        state.get("ticker", "BTC/USDT"),
-        state.get("market_data") or {},
-        state.get("pattern_analysis") or {},
-        state.get("sentiment_analysis") or {},
-        state.get("arb_analysis") or {},
-        state.get("quant_analysis") or {},
-        state.get("valuation") or {},
-        state.get("risk") or {},
-        state.get("liquidity") or {},
-        execute=False,
-        strategy_context=state.get("proposed_signal") or {},
-        trade_intent=state.get("trade_intent") or {},
-        **_portfolio_agent_kwargs(state),
-    )
+    tk = state.get("ticker", "BTC/USDT")
+    if llm_mode_enabled():
+        proposal = llm_portfolio_proposal(state)
+        # Fallback if provider/model is misconfigured or output invalid.
+        if not isinstance(proposal, dict) or proposal.get("status") == "error":
+            logger.warning("LLM portfolio_proposal failed; falling back to deterministic agent.")
+            agent = PortfolioManagementAgent(testnet=True)
+            proposal = agent.analyze(
+                tk,
+                state.get("market_data") or {},
+                state.get("pattern_analysis") or {},
+                state.get("sentiment_analysis") or {},
+                state.get("arb_analysis") or {},
+                merged_quant_analysis_for_universe(state),
+                state.get("valuation") or {},
+                state.get("risk") or {},
+                state.get("liquidity") or {},
+                execute=False,
+                strategy_context=state.get("proposed_signal") or {},
+                trade_intent=state.get("trade_intent") or {},
+                **_portfolio_agent_kwargs(state),
+            )
+    else:
+        agent = PortfolioManagementAgent(testnet=True)
+        proposal = agent.analyze(
+            tk,
+            state.get("market_data") or {},
+            state.get("pattern_analysis") or {},
+            state.get("sentiment_analysis") or {},
+            state.get("arb_analysis") or {},
+            merged_quant_analysis_for_universe(state),
+            state.get("valuation") or {},
+            state.get("risk") or {},
+            state.get("liquidity") or {},
+            execute=False,
+            strategy_context=state.get("proposed_signal") or {},
+            trade_intent=state.get("trade_intent") or {},
+            **_portfolio_agent_kwargs(state),
+        )
     prop = proposal if isinstance(proposal, dict) else {}
     signal_context = state.get("proposed_signal") or {}
     if isinstance(prop, dict):
@@ -681,7 +869,16 @@ def risk_guard(state: HedgeFundState) -> dict[str, Any]:
     run_id = getattr(repo, "run_id", None) if repo else None
 
     guard = RiskGuardAgent()
-    decision = _run_async(guard.process(state.get("proposal") or {}))
+    decision = _run_async(
+        guard.process(
+            {
+                "proposal": state.get("proposal") or {},
+                "shared_memory": state.get("shared_memory") or {},
+                "ticker": state.get("ticker"),
+                "run_mode": state.get("run_mode"),
+            }
+        )
+    )
     reasoning = decision.get("reasoning") or {}
     is_vetoed = decision.get("status") == "VETOED"
     veto_reason = ""
@@ -760,50 +957,106 @@ def portfolio_execute(state: HedgeFundState) -> dict[str, Any]:
         logger.warning("portfolio_execute reached while vetoed; skipping (routing bug?)")
         return {}
 
-    agent = PortfolioManagementAgent(testnet=True)
     # For safety + tool-calling parity, treat this node as "execution intent" and place via adapter.
-    portfolio_result = agent.analyze(
-        state.get("ticker", "BTC/USDT"),
-        state.get("market_data") or {},
-        state.get("pattern_analysis") or {},
-        state.get("sentiment_analysis") or {},
-        state.get("arb_analysis") or {},
-        state.get("quant_analysis") or {},
-        state.get("valuation") or {},
-        state.get("risk") or {},
-        state.get("liquidity") or {},
-        execute=False,
-        strategy_context=state.get("proposed_signal") or {},
-        trade_intent=state.get("trade_intent") or {},
-        **_portfolio_agent_kwargs(state),
-    )
+    tk = state.get("ticker", "BTC/USDT")
+    if llm_mode_enabled():
+        # Prefer the proposal from the previous node if present.
+        portfolio_result = state.get("proposal")
+        if not isinstance(portfolio_result, dict):
+            portfolio_result = llm_portfolio_proposal(state)
+        exec_blk = llm_portfolio_execute(
+            state, portfolio_result=portfolio_result if isinstance(portfolio_result, dict) else {}
+        )
+        if not isinstance(exec_blk, dict) or exec_blk.get("status") in ("error",):
+            logger.warning("LLM portfolio_execute failed; falling back to deterministic agent.")
+            agent = PortfolioManagementAgent(testnet=True)
+            portfolio_result = agent.analyze(
+                tk,
+                state.get("market_data") or {},
+                state.get("pattern_analysis") or {},
+                state.get("sentiment_analysis") or {},
+                state.get("arb_analysis") or {},
+                merged_quant_analysis_for_universe(state),
+                state.get("valuation") or {},
+                state.get("risk") or {},
+                state.get("liquidity") or {},
+                execute=False,
+                strategy_context=state.get("proposed_signal") or {},
+                trade_intent=state.get("trade_intent") or {},
+                **_portfolio_agent_kwargs(state),
+            )
+            exec_blk = None
+    else:
+        agent = PortfolioManagementAgent(testnet=True)
+        portfolio_result = agent.analyze(
+            tk,
+            state.get("market_data") or {},
+            state.get("pattern_analysis") or {},
+            state.get("sentiment_analysis") or {},
+            state.get("arb_analysis") or {},
+            merged_quant_analysis_for_universe(state),
+            state.get("valuation") or {},
+            state.get("risk") or {},
+            state.get("liquidity") or {},
+            execute=False,
+            strategy_context=state.get("proposed_signal") or {},
+            trade_intent=state.get("trade_intent") or {},
+            **_portfolio_agent_kwargs(state),
+        )
+        exec_blk = None
 
     # P3: emit a safe "smart order" record via NexusAdapter (mock by default).
     # This does not place a real order yet; it provides tool-calling parity for the UI.
-    smart_order = None
-    if isinstance(portfolio_result, dict):
+    smart_orders: list[dict[str, Any]] = []
+    adapter = get_nexus_adapter()
+    if llm_mode_enabled() and isinstance(exec_blk, dict):
+        for row in exec_blk.get("smart_orders") or []:
+            if not isinstance(row, dict):
+                continue
+            sym = str(row.get("symbol") or "")
+            side = str(row.get("side") or "").lower()
+            qty = float(row.get("qty") or 0.0)
+            if sym and side in ("buy", "sell") and qty > 0:
+                smart_orders.append(
+                    adapter.place_smart_order(
+                        symbol=sym,
+                        side=side,
+                        qty=qty,
+                        order_type="market",
+                        post_only=True,
+                        max_slippage_bps=25.0,
+                    )
+                )
+    elif isinstance(portfolio_result, dict):
         trades = portfolio_result.get("trades") or {}
-        ticker = state.get("ticker", "BTC/USDT")
-        trade = trades.get(ticker)
-
-        if isinstance(trade, dict) and trade.get("status") in ("proposed", "success"):
+        for sym, trade in trades.items():
+            if not isinstance(trade, dict) or trade.get("status") not in ("proposed", "success"):
+                continue
             side = trade.get("action")
             qty = float(trade.get("quantity") or 0.0)
             if side in ("buy", "sell") and qty > 0:
-                smart_order = get_nexus_adapter().place_smart_order(
-                    symbol=ticker,
-                    side=side,
-                    qty=qty,
-                    order_type="market",
-                    post_only=True,
-                    max_slippage_bps=25.0,
+                smart_orders.append(
+                    adapter.place_smart_order(
+                        symbol=str(sym),
+                        side=side,
+                        qty=qty,
+                        order_type="market",
+                        post_only=True,
+                        max_slippage_bps=25.0,
+                    )
                 )
+    smart_order = smart_orders[0] if smart_orders else None
     out = {
-        "portfolio": portfolio_result,
+        "portfolio": portfolio_result
+        if exec_blk is None
+        else {**(portfolio_result or {}), "execution": exec_blk},
         "execution_result": {
-            "status": "executed" if smart_order else "skipped",
-            "portfolio": portfolio_result,
+            "status": "executed" if smart_orders else "skipped",
+            "portfolio": portfolio_result
+            if exec_blk is None
+            else {**(portfolio_result or {}), "execution": exec_blk},
             "smart_order": smart_order,
+            "smart_orders": smart_orders,
         },
         "reasoning_logs": [
             _reasoning_entry(
@@ -825,6 +1078,36 @@ def portfolio_execute(state: HedgeFundState) -> dict[str, Any]:
     )
     logger.debug("portfolio_execute output: %s", out)
     return out
+
+
+def audit(state: HedgeFundState) -> dict[str, Any]:
+    """Audit + persistent memory write of run outcome."""
+    from memory.policy_memory import PolicyMemoryStore
+
+    store = PolicyMemoryStore()
+    event = {
+        "kind": "run_end",
+        "ticker": state.get("ticker"),
+        "run_mode": state.get("run_mode"),
+        "is_vetoed": bool(state.get("is_vetoed")),
+        "veto_reason": state.get("veto_reason"),
+        "execution_status": (state.get("execution_result") or {}).get("status"),
+        "policy_decision": state.get("policy_decision") or {},
+        "risk_guard": state.get("risk_guard") or {},
+    }
+    store.append_event(event)
+    return {
+        "reasoning_logs": [
+            _reasoning_entry(
+                node="audit",
+                thought="Audit recorded run outcome to persistent memory.",
+                decision={
+                    "is_vetoed": event["is_vetoed"],
+                    "execution_status": event["execution_status"],
+                },
+            )
+        ]
+    }
 
 
 def validate_ticker(ticker: str) -> bool:
@@ -852,20 +1135,42 @@ def build_workflow() -> StateGraph:
     :class:`HedgeFundState` keys (LangGraph requirement).
     """
     workflow: StateGraph = StateGraph(HedgeFundState)
+    workflow.add_node(
+        "policy_orchestrator", _instrument_node("policy_orchestrator", policy_orchestrator)
+    )
     workflow.add_node("desk_market_scan", _instrument_node("market_scan", market_scan))
-    workflow.add_node("price_pattern", _instrument_node("price_pattern", price_pattern))
-    workflow.add_node("sentiment", _instrument_node("sentiment", sentiment))
-    workflow.add_node("stat_arb", _instrument_node("stat_arb", stat_arb))
-    workflow.add_node("quant", _instrument_node("quant", quant))
-    workflow.add_node("desk_valuation", _instrument_node("valuation", valuation))
-    workflow.add_node("desk_liquidity", _instrument_node("liquidity", liquidity))
+    # Tier-0 AIMM8 perception layer.
+    workflow.add_node("monetary_sentinel", _instrument_node("monetary_sentinel", monetary_sentinel))
+    workflow.add_node(
+        "news_narrative_miner",
+        _instrument_node("news_narrative_miner", news_narrative_miner),
+    )
+    workflow.add_node(
+        "pattern_recognition_bot",
+        _instrument_node("pattern_recognition_bot", pattern_recognition_bot),
+    )
+    workflow.add_node(
+        "statistical_alpha_engine",
+        _instrument_node("statistical_alpha_engine", statistical_alpha_engine),
+    )
+    workflow.add_node(
+        "technical_ta_engine",
+        _instrument_node("technical_ta_engine", technical_ta_engine),
+    )
+    workflow.add_node(
+        "retail_hype_tracker", _instrument_node("retail_hype_tracker", retail_hype_tracker)
+    )
+    workflow.add_node("pro_bias_analyst", _instrument_node("pro_bias_analyst", pro_bias_analyst))
+    workflow.add_node(
+        "whale_behavior_analyst", _instrument_node("whale_behavior_analyst", whale_behavior_analyst)
+    )
+    workflow.add_node(
+        "liquidity_order_flow", _instrument_node("liquidity_order_flow", liquidity_order_flow)
+    )
     workflow.add_node("desk_risk", _instrument_node("risk", risk))
-    workflow.add_node("bull_case", _instrument_node("bull_case", bull_case))
-    workflow.add_node("bear_case", _instrument_node("bear_case", bear_case))
-    use_llm = os.getenv("AI_MARKET_MAKER_USE_LLM") in ("1", "true", "yes")
-    arbitrator_fn = signal_arbitrator_llm if use_llm else signal_arbitrator
+    workflow.add_node("desk_debate", _instrument_node("desk_debate", desk_debate))
+    arbitrator_fn = signal_arbitrator_llm if use_llm_arbitrator() else signal_arbitrator
     workflow.add_node("signal_arbitrator", _instrument_node("signal_arbitrator", arbitrator_fn))
-    workflow.add_node("trade_intent", _instrument_node("trade_intent", trade_intent))
     workflow.add_node(
         "portfolio_proposal",
         _instrument_node("portfolio_proposal", portfolio_proposal),
@@ -875,36 +1180,45 @@ def build_workflow() -> StateGraph:
         "portfolio_execute",
         _instrument_node("portfolio_execute", portfolio_execute),
     )
+    workflow.add_node("audit", _instrument_node("audit", audit))
 
-    workflow.set_entry_point("desk_market_scan")
-    tier1_nodes = [
-        "price_pattern",
-        "sentiment",
-        "stat_arb",
-        "quant",
-        "desk_valuation",
-        "desk_liquidity",
+    workflow.set_entry_point("policy_orchestrator")
+    tier0_nodes = [
+        "monetary_sentinel",
+        "news_narrative_miner",
+        "pattern_recognition_bot",
+        "statistical_alpha_engine",
+        "technical_ta_engine",
+        "retail_hype_tracker",
+        "pro_bias_analyst",
+        "whale_behavior_analyst",
+        "liquidity_order_flow",
     ]
-    for node_id in tier1_nodes:
+    workflow.add_edge("policy_orchestrator", "desk_market_scan")
+    for node_id in tier0_nodes:
         workflow.add_edge("desk_market_scan", node_id)
         workflow.add_edge(node_id, "desk_risk")
-    workflow.add_edge("desk_risk", "bull_case")
-    workflow.add_edge("desk_risk", "bear_case")
-    workflow.add_edge("bull_case", "signal_arbitrator")
-    workflow.add_edge("bear_case", "signal_arbitrator")
-    workflow.add_edge("signal_arbitrator", "trade_intent")
-    workflow.add_edge("trade_intent", "portfolio_proposal")
+    workflow.add_edge("desk_risk", "desk_debate")
+    workflow.add_edge("desk_debate", "signal_arbitrator")
+    workflow.add_edge("signal_arbitrator", "portfolio_proposal")
     workflow.add_edge("portfolio_proposal", "desk_risk_guard")
     path_map = route_after_risk_guard_mapping()
     workflow.add_conditional_edges("desk_risk_guard", route_after_risk_guard, path_map)
-    workflow.add_edge("portfolio_execute", END)
+    workflow.add_edge("portfolio_execute", "audit")
+    workflow.add_edge("audit", END)
 
     return workflow
 
 
 def main():
     parser = argparse.ArgumentParser(description="AI Market Maker")
-    parser.add_argument("--ticker", type=str, default="BTC/USDT", help="Trading pair")
+    _def_ticker = load_app_settings().market.default_ticker
+    parser.add_argument(
+        "--ticker",
+        type=str,
+        default=_def_ticker,
+        help="Primary trading pair (default: config/app.default.json market.default_ticker).",
+    )
     parser.add_argument(
         "--mode",
         type=str,

@@ -11,7 +11,8 @@ dist/
 venv/
 
 # Environment variables
-.env
+.env*
+!.env.example
 
 # IDEs
 .vscode/
@@ -26,3 +27,10 @@ web/out/
 *.log
 .DS_Store
 .runs/
+.pytest_cache/
+.ruff_cache/
+.benchmarks/
+.ci_install_test/
+
+# Local OHLCV CSV cache (see backtest.ohlcv_csv_cache)
+data/ohlcv/

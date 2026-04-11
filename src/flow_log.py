@@ -9,6 +9,7 @@ via FlowEventRepo.emit().
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -39,6 +40,17 @@ class FlowEventRepo:
 
     def _append_to_file(self, event: FlowEvent) -> None:
         try:
+            max_mb_raw = (os.getenv("AIMM_FLOW_LOG_MAX_MB") or "50").strip() or "50"
+            try:
+                max_bytes = max(1, int(float(max_mb_raw) * 1024 * 1024))
+            except ValueError:
+                max_bytes = 50 * 1024 * 1024
+            if self.log_path and self.log_path.exists():
+                try:
+                    if self.log_path.stat().st_size >= max_bytes:
+                        return
+                except OSError:
+                    pass
             with open(self.log_path, "a") as f:
                 f.write(json.dumps(event.to_dict(), default=str) + "\n")
         except OSError:

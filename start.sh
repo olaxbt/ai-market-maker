@@ -6,9 +6,45 @@ cd "$ROOT_DIR"
 
 FLOW_API_PORT="${FLOW_API_PORT:-8001}"
 WEB_PORT="${WEB_PORT:-3000}"
-TICKER="${TICKER:-BTC/USDT}"
 MODE="${MODE:-paper}"
 RUN_STRATEGY="${RUN_STRATEGY:-1}"
+
+# Basic dependency checks (fail fast with a useful message).
+need_cmd() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "ERROR: missing required command: $1" >&2
+    return 1
+  fi
+}
+need_cmd uv
+need_cmd curl
+need_cmd npm
+
+# Default ticker comes from versioned config (config/app.default.json).
+if [[ -z "${TICKER:-}" ]]; then
+  TICKER="$(
+    uv run python -c 'from config.app_settings import load_app_settings; print(load_app_settings().market.default_ticker)'
+  )"
+fi
+
+# Warn if live mode is requested without the explicit allow gate.
+if [[ "${MODE}" == "live" ]]; then
+  if [[ "${AI_MARKET_MAKER_ALLOW_LIVE:-}" != "1" && "${AI_MARKET_MAKER_ALLOW_LIVE:-}" != "true" && "${AI_MARKET_MAKER_ALLOW_LIVE:-}" != "yes" ]]; then
+    echo "WARNING: MODE=live but AI_MARKET_MAKER_ALLOW_LIVE is not set to 1/true/yes." >&2
+    echo "  The Python runner is expected to refuse live execution without this." >&2
+  fi
+fi
+
+# Paper mode defaults (UI + Supervisor expect a consistent starting balance).
+export AIMM_PAPER_START_USDT="${AIMM_PAPER_START_USDT:-10000}"
+
+# UI payload trimming (prevents huge WS payloads and UI lag on long runs).
+export AIMM_UI_TAIL_EVENTS="${AIMM_UI_TAIL_EVENTS:-1200}"
+export AIMM_UI_TAIL_TRACES="${AIMM_UI_TAIL_TRACES:-350}"
+export AIMM_UI_TAIL_MESSAGES="${AIMM_UI_TAIL_MESSAGES:-600}"
+
+# Safety cap for on-disk flow event logs (prevents .runs from growing without bound).
+export AIMM_FLOW_LOG_MAX_MB="${AIMM_FLOW_LOG_MAX_MB:-50}"
 
 # Seconds between full graph runs (default 180 from config.cadence — reduce token burn).
 if [[ -z "${STRATEGY_INTERVAL_SEC:-}" ]]; then
