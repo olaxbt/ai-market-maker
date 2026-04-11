@@ -24,7 +24,14 @@ def test_win_rate():
 
 
 def test_compute_basic_metrics_smoke():
-    m = compute_basic_metrics(equity_curve=[100, 110, 105, 115], trade_pnls=[1, -1, 0.5])
+    m = compute_basic_metrics(
+        equity_curve=[100, 110, 105, 115],
+        trade_pnls=[1, -1, 0.5],
+        interval_sec=86_400,
+    )
     assert m.max_drawdown > 0
     assert isinstance(m.sharpe, float)
+    assert isinstance(m.sortino, float)
     assert 0 <= m.win_rate <= 1
+    assert m.periods_per_year >= 300
+    assert m.profit_factor is not None

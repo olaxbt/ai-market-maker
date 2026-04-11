@@ -41,6 +41,11 @@ def test_warn_if_aggressive_cadence_emits_stderr_when_llm_and_fast_tick(capsys):
     assert "30" in err
 
 
+def test_warn_if_aggressive_cadence_treats_y_as_llm_on(capsys):
+    warn_if_aggressive_cadence(30, env={"AI_MARKET_MAKER_USE_LLM": "y"})
+    assert "AI_MARKET_MAKER_USE_LLM=1" in capsys.readouterr().err
+
+
 def test_warn_if_aggressive_cadence_silent_when_slow_or_no_llm(capsys):
     warn_if_aggressive_cadence(180, env={"AI_MARKET_MAKER_USE_LLM": "1"})
     assert capsys.readouterr().err == ""
