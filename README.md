@@ -49,7 +49,7 @@ The workflow mimics a small hedge fund:
 
 <img width="784" height="1138" alt="workflow_diagram" src="https://github.com/user-attachments/assets/fcf5d491-7562-4acc-8499-3d93d24d395b" />
 
-See `docs/langgraph-workflow.md` for detailed graph state and routing.
+See **[docs/langgraph-workflow.md](docs/langgraph-workflow.md)** for the complete graph state, nodes, edges and routing logic.
 
 ---
 
