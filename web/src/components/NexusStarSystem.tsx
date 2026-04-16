@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from "framer-motion";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { TopologyEdge, TopologyNode } from "@/types/nexus-payload";
 
@@ -349,16 +349,74 @@ function RotatingSphereCanvas({
 
 const CENTER_PCT: Pt = { x: 50, y: 50 };
 
-function CentralStar() {
+function clamp01(x: number): number {
+  return Math.max(0, Math.min(1, x));
+}
+
+function CentralStar({ energy, variant }: { energy: number; variant: "hub" | "loading" }) {
+  if (variant === "loading") {
+    return (
+      <div className="relative flex items-center justify-center">
+        <motion.div
+          animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
+          transition={{ duration: 4, repeat: Infinity }}
+          className="absolute h-28 w-28 rounded-full bg-cyan-500/20 blur-3xl sm:h-32 sm:w-32"
+        />
+        <div className="relative z-20 h-10 w-10 rounded-full bg-white shadow-[0_0_50px_20px_rgba(34,211,238,0.8)] sm:h-12 sm:w-12">
+          <div className="absolute inset-0 rounded-full bg-cyan-400 opacity-20 animate-ping" />
+        </div>
+      </div>
+    );
+  }
+
+  const e = clamp01(energy);
+  const glow = 0.22 + e * 0.55;
+  const pulseDur = 6 - e * 3.2; // energetic = faster
   return (
     <div className="relative flex items-center justify-center">
       <motion.div
-        animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
-        transition={{ duration: 4, repeat: Infinity }}
-        className="absolute h-28 w-28 rounded-full bg-cyan-500/20 blur-3xl sm:h-32 sm:w-32"
+        animate={{
+          scale: [1, 1.22, 1],
+          opacity: [0.28 + e * 0.12, 0.62 + e * 0.2, 0.28 + e * 0.12],
+        }}
+        transition={{ duration: pulseDur, repeat: Infinity, ease: "easeInOut" }}
+        className="absolute h-32 w-32 rounded-full bg-cyan-500/20 blur-3xl sm:h-40 sm:w-40"
       />
-      <div className="relative z-20 h-10 w-10 rounded-full bg-white shadow-[0_0_50px_20px_rgba(34,211,238,0.8)] sm:h-12 sm:w-12">
-        <div className="absolute inset-0 rounded-full bg-cyan-400 opacity-20 animate-ping" />
+
+      {/* Rotating aura ring */}
+      <motion.div
+        className="absolute z-10 h-40 w-40 rounded-full nexus-core-aura sm:h-48 sm:w-48"
+        animate={{ rotate: 360 }}
+        transition={{ duration: 22 - e * 10, repeat: Infinity, ease: "linear" }}
+        aria-hidden
+      />
+
+      {/* Thin orbital wireframe ring */}
+      <motion.div
+        className="absolute z-10 h-44 w-44 rounded-full border border-cyan-200/10 sm:h-52 sm:w-52"
+        animate={{ rotate: -360 }}
+        transition={{ duration: 36 - e * 14, repeat: Infinity, ease: "linear" }}
+        style={{
+          boxShadow: `0 0 ${24 + e * 22}px rgba(34,211,238,${0.08 + e * 0.12})`,
+        }}
+        aria-hidden
+      />
+
+      <div
+        className="relative z-20 h-11 w-11 rounded-full bg-white sm:h-14 sm:w-14"
+        style={{
+          boxShadow: `0 0 50px 20px rgba(34,211,238,${0.55 + e * 0.35})`,
+        }}
+      >
+        <div
+          className="absolute inset-0 rounded-full bg-cyan-300/30 nexus-core-star-nucleus"
+          style={{ opacity: 0.18 + e * 0.18 }}
+        />
+        <div
+          className="absolute -inset-2 rounded-full border border-cyan-200/10"
+          style={{ boxShadow: `0 0 22px rgba(34,211,238,${glow})` }}
+          aria-hidden
+        />
       </div>
     </div>
   );
@@ -449,6 +507,27 @@ export function NexusStarSystem({
   const burstStartedAtRef = useRef<number | null>(null);
   /** Avoid hydration mismatch: server vs client time/locale differ for `toLocaleTimeString()`. */
   const [clock, setClock] = useState("--:--:--");
+  const [energy, setEnergy] = useState(0.22);
+  const tiltX = useMotionValue(0);
+  const tiltY = useMotionValue(0);
+  const tiltXS = useSpring(tiltX, { stiffness: 120, damping: 24, mass: 0.35 });
+  const tiltYS = useSpring(tiltY, { stiffness: 120, damping: 24, mass: 0.35 });
+  const energyMV = useMotionValue(energy);
+  useEffect(() => {
+    energyMV.set(energy);
+  }, [energy, energyMV]);
+
+  const rotateX = useTransform([tiltYS, energyMV], (v: number[]) => {
+    const y = v[0] ?? 0;
+    const e = v[1] ?? 0;
+    return (-y * (2.2 + e * 1.2)).toFixed(2);
+  });
+  const rotateY = useTransform([tiltXS, energyMV], (v: number[]) => {
+    const x = v[0] ?? 0;
+    const e = v[1] ?? 0;
+    return (x * (2.6 + e * 1.3)).toFixed(2);
+  });
+  const scale = useTransform(energyMV, (e) => 1 + e * 0.01);
 
   const placed = useMemo(() => orbitPositions(nodes, edges), [nodes, edges]);
 
@@ -485,6 +564,33 @@ export function NexusStarSystem({
     setBox({ w: Math.floor(r.width), h: Math.floor(r.height) });
     return () => ro.disconnect();
   }, []);
+
+  // Subtle micro-parallax tilt based on pointer position.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    // Disable parallax on the frameless loader.
+    if (frameless) return;
+    const onMove = (e: MouseEvent) => {
+      const r = el.getBoundingClientRect();
+      const px = (e.clientX - r.left) / Math.max(1, r.width);
+      const py = (e.clientY - r.top) / Math.max(1, r.height);
+      const nx = (px - 0.5) * 2;
+      const ny = (py - 0.5) * 2;
+      tiltX.set(nx);
+      tiltY.set(ny);
+    };
+    const onLeave = () => {
+      tiltX.set(0);
+      tiltY.set(0);
+    };
+    el.addEventListener("mousemove", onMove, { passive: true });
+    el.addEventListener("mouseleave", onLeave, { passive: true });
+    return () => {
+      el.removeEventListener("mousemove", onMove);
+      el.removeEventListener("mouseleave", onLeave);
+    };
+  }, [frameless, tiltX, tiltY]);
 
   useEffect(() => {
     if (!playIntro && hubPhase !== "done") {
@@ -538,6 +644,41 @@ export function NexusStarSystem({
     return () => clearTimeout(t);
   }, [signalCount, activePos]);
 
+  // Spike energy on signal burst then decay to baseline.
+  useEffect(() => {
+    setEnergy(1);
+    const t = window.setTimeout(() => setEnergy(0.22), 2200);
+    return () => window.clearTimeout(t);
+  }, [signalCount]);
+
+  // If no active agent, emit slow ambient particles around the hub.
+  useEffect(() => {
+    if (hubPhase !== "done") return;
+    let cancelled = false;
+    const id = window.setInterval(() => {
+      if (cancelled) return;
+      const burst = 2;
+      const next: Array<{ id: string; end: Pt }> = [];
+      for (let i = 0; i < burst; i++) {
+        next.push({
+          id: `idle-${Date.now()}-${i}`,
+          end: {
+            x: 50 + (Math.random() - 0.5) * 12,
+            y: 50 + (Math.random() - 0.5) * 12,
+          },
+        });
+      }
+      setParticles((prev) => [...prev, ...next]);
+      window.setTimeout(() => {
+        setParticles((prev) => prev.filter((p) => !next.some((n) => n.id === p.id)));
+      }, 1800);
+    }, 5200);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [hubPhase]);
+
   return (
     <div
       ref={containerRef}
@@ -547,6 +688,17 @@ export function NexusStarSystem({
           : "relative h-full min-h-[min(480px,70vh)] w-full overflow-hidden rounded-3xl border border-[color:var(--nexus-hub-frame)] bg-[var(--nexus-bg)] shadow-inner"
       }
     >
+      {/* Micro-parallax / depth wrapper */}
+      <motion.div
+        className="absolute inset-0"
+        style={{
+          transformStyle: "preserve-3d",
+          rotateX,
+          rotateY,
+          scale,
+          willChange: "transform",
+        }}
+      >
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_40%,rgba(34,211,238,0.08),transparent_55%)]" />
       {hubPhase === "done" && (
         <div className="absolute inset-0 bg-[linear-gradient(rgba(34,211,238,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(34,211,238,0.035)_1px,transparent_1px)] bg-[length:24px_24px]" />
@@ -562,8 +714,26 @@ export function NexusStarSystem({
         />
       )}
       {box.w > 0 && box.h > 0 && hubPhase === "done" && (
-        <AmbientRingsCanvas width={box.w} height={box.h} />
+        <div className="absolute inset-0 nexus-ambient-rings" aria-hidden>
+          <AmbientRingsCanvas width={box.w} height={box.h} />
+        </div>
       )}
+
+      {/* Always-on scanning sweep (subtle) */}
+      {!frameless && hubPhase === "done" ? (
+        <motion.div
+          className="pointer-events-none absolute inset-0 z-[6] nexus-scan-sweep"
+          aria-hidden
+          animate={{ backgroundPositionX: ["-140%", "140%"] }}
+          transition={{
+            duration: 10 - energy * 3.5,
+            repeat: Infinity,
+            ease: "linear",
+            repeatDelay: 0.6,
+          }}
+          style={{ opacity: 0.12 + energy * 0.12 }}
+        />
+      ) : null}
 
       {hubPhase === "done" && (
         <svg
@@ -598,7 +768,7 @@ export function NexusStarSystem({
       )}
 
       <div className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
-        <CentralStar />
+        <CentralStar energy={energy} variant={frameless ? "loading" : "hub"} />
       </div>
 
       {hubPhase === "done" &&
@@ -625,6 +795,7 @@ export function NexusStarSystem({
           MESH_SYNC: STABLE // ENTROPY: 0.031
         </div>
       )}
+      </motion.div>
     </div>
   );
 }

@@ -38,7 +38,6 @@ type StrategyRow = {
     n_bars: number;
     interval_sec: number;
     max_steps: number;
-    seed: number;
     fee_bps: number;
     initial_cash: number;
   };
@@ -68,7 +67,8 @@ type BacktestKpiRow = {
   totalReturnPct: number;
   sharpe: number;
   maxDrawdownPct: number;
-  winRatePct: number;
+  winRatePct: number | null;
+  profitFactor: number | null;
   trades: number;
   steps: number;
 };
@@ -80,6 +80,9 @@ function shortBacktestRunLabel(id: string): string {
 }
 
 function BacktestKpiGrid({ kpis, compact }: { kpis: BacktestKpiRow; compact?: boolean }) {
+  const ddLabel =
+    kpis.maxDrawdownPct > 0 && kpis.maxDrawdownPct < 0.01 ? "<0.01%" : `${kpis.maxDrawdownPct.toFixed(2)}%`;
+  const winRateLabel = kpis.winRatePct == null ? "—" : `${kpis.winRatePct.toFixed(1)}%`;
   const items: { label: string; value: string; tone: string }[] = [
     {
       label: "Total return",
@@ -87,8 +90,12 @@ function BacktestKpiGrid({ kpis, compact }: { kpis: BacktestKpiRow; compact?: bo
       tone: kpis.totalReturnPct >= 0 ? "text-[var(--nexus-success)]" : "text-[var(--nexus-danger)]",
     },
     { label: "Sharpe (ann.)", value: kpis.sharpe.toFixed(3), tone: "text-[var(--nexus-text)]" },
-    { label: "Max drawdown", value: `${kpis.maxDrawdownPct.toFixed(2)}%`, tone: "text-[var(--nexus-danger)]/90" },
-    { label: "Win rate", value: `${kpis.winRatePct.toFixed(1)}%`, tone: "text-[var(--nexus-muted)]" },
+    { label: "Max drawdown", value: ddLabel, tone: "text-[var(--nexus-danger)]/90" },
+    {
+      label: "Win rate",
+      value: winRateLabel,
+      tone: kpis.winRatePct == null ? "text-[var(--nexus-muted)]" : "text-[var(--nexus-muted)]",
+    },
     { label: "Fills", value: String(kpis.trades), tone: "text-[var(--nexus-text)]" },
     { label: "Steps", value: String(kpis.steps), tone: "text-[var(--nexus-muted)]" },
   ];
@@ -125,9 +132,12 @@ function BacktestKpiGrid({ kpis, compact }: { kpis: BacktestKpiRow; compact?: bo
 export function BacktestLabPanel({
   embedded = false,
   initialRunId = null,
+  embeddedView = "backtest",
 }: {
   embedded?: boolean;
   initialRunId?: string | null;
+  /** When embedded, preserve the host view when updating the URL. */
+  embeddedView?: "backtest" | "research";
 }) {
   const LIVE_RUN_STORAGE_KEY = "nexus_backtest_live_run_id";
   const router = useRouter();
@@ -158,9 +168,11 @@ export function BacktestLabPanel({
   const [intervalAmount, setIntervalAmount] = useState("");
   const [intervalUnit, setIntervalUnit] = useState<BarIntervalUnit>("min");
   const [maxSteps, setMaxSteps] = useState("");
-  const [seed, setSeed] = useState("");
   const [feeBps, setFeeBps] = useState("");
   const [initialCash, setInitialCash] = useState("");
+  const [sinceIso, setSinceIso] = useState("");
+  const [untilIso, setUntilIso] = useState("");
+  const [windowMode, setWindowMode] = useState<"latest" | "range">("range");
 
   const [historyLoading, setHistoryLoading] = useState(false);
 
@@ -207,13 +219,16 @@ export function BacktestLabPanel({
     setIntervalAmount(iu.amount);
     setIntervalUnit(iu.unit);
     setMaxSteps(String(selected.defaults.max_steps));
-    setSeed(String(selected.defaults.seed));
     setFeeBps(String(selected.defaults.fee_bps));
     setInitialCash(String(selected.defaults.initial_cash));
   }, [presetId, selected]);
 
   const buildBody = useCallback(() => {
-    const body: Record<string, unknown> = { preset_id: presetId, ticker };
+    const body: Record<string, unknown> = {
+      preset_id: presetId,
+      ticker,
+      exchange_id: "binance",
+    };
     if (!selected) return body;
     const nb = parseInt(nBars, 10);
     const amt = parseFloat(intervalAmount);
@@ -222,12 +237,17 @@ export function BacktestLabPanel({
     if (!Number.isNaN(amt) && amt > 0) body.interval_sec = amountUnitToIntervalSec(amt, intervalUnit);
     if (!Number.isNaN(ms)) body.max_steps = ms;
     if (advancedOpen) {
-      const sd = parseInt(seed, 10);
       const fee = parseFloat(feeBps);
       const cash = parseFloat(initialCash);
-      if (!Number.isNaN(sd)) body.seed = sd;
       if (!Number.isNaN(fee)) body.fee_bps = fee;
       if (!Number.isNaN(cash)) body.initial_cash = cash;
+    }
+
+    const s = sinceIso.trim();
+    const u = untilIso.trim();
+    if (windowMode === "range" && s && u) {
+      body.since_iso = s;
+      body.until_iso = u;
     }
     return body;
   }, [
@@ -238,9 +258,11 @@ export function BacktestLabPanel({
     intervalAmount,
     intervalUnit,
     maxSteps,
-    seed,
     feeBps,
     initialCash,
+    sinceIso,
+    untilIso,
+    windowMode,
     selected,
   ]);
 
@@ -270,6 +292,81 @@ export function BacktestLabPanel({
     }
   }, []);
 
+  const loadHistoricalRun = useCallback(
+    async (runId: string): Promise<boolean> => {
+      if (!runId) return false;
+      lastUrlRunRef.current = runId;
+      router.replace(`/?view=${embedded ? embeddedView : "backtest"}&run=${encodeURIComponent(runId)}`, {
+        scroll: false,
+      });
+      setHistoryLoading(true);
+      setError(null);
+      setRunPayload(null);
+      setSummaryPayload(null);
+      setEquitySeries(null);
+      setTradesData(null);
+      setTracePayload(null);
+      setJobState(null);
+      try {
+        const base = getFlowApiOrigin();
+        const sRes = await fetch(`${base}/backtests/${encodeURIComponent(runId)}/summary`);
+        const raw = await sRes.json().catch(() => ({}));
+        if (!sRes.ok) {
+          setError(typeof raw.detail === "string" ? raw.detail : `HTTP ${sRes.status}`);
+          return false;
+        }
+        setSummaryPayload(raw as SummaryPayload);
+        setSelectedHistoryId(runId);
+        await fetchSeries(runId);
+        await fetchTracePayload(runId, false);
+        return true;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Request failed");
+        return false;
+      } finally {
+        setHistoryLoading(false);
+      }
+    },
+    [embedded, embeddedView, fetchSeries, fetchTracePayload, router],
+  );
+
+  const tryLoadHistoricalRunNoUrl = useCallback(
+    async (runId: string): Promise<boolean> => {
+      if (!runId) return false;
+      setHistoryLoading(true);
+      setError(null);
+      setRunPayload(null);
+      setSummaryPayload(null);
+      setEquitySeries(null);
+      setTradesData(null);
+      setTracePayload(null);
+      setJobState(null);
+      try {
+        const base = getFlowApiOrigin();
+        const sRes = await fetch(`${base}/backtests/${encodeURIComponent(runId)}/summary`);
+        const raw = await sRes.json().catch(() => ({}));
+        if (!sRes.ok) {
+          return false;
+        }
+        // Now that we know this run is actually persisted, update the URL + full series.
+        lastUrlRunRef.current = runId;
+        router.replace(`/?view=${embedded ? embeddedView : "backtest"}&run=${encodeURIComponent(runId)}`, {
+          scroll: false,
+        });
+        setSummaryPayload(raw as SummaryPayload);
+        setSelectedHistoryId(runId);
+        await fetchSeries(runId);
+        await fetchTracePayload(runId, false);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        setHistoryLoading(false);
+      }
+    },
+    [embedded, embeddedView, fetchSeries, fetchTracePayload, router],
+  );
+
   const jobRunning = !!pollingJobId && (jobState?.status === "running" || jobState?.status === "queued");
 
   useEffect(() => {
@@ -280,8 +377,27 @@ export function BacktestLabPanel({
     const tick = async () => {
       try {
         const res = await fetch(`${base}/backtests/jobs/${encodeURIComponent(pollingJobId)}`);
-        const j = (await res.json()) as BacktestJob;
+        const j = (await res.json().catch(() => ({}))) as BacktestJob & { detail?: string };
         if (cancelled) return;
+        if (!res.ok) {
+          // Common when the server restarts: in-memory BACKTEST_JOBS is cleared.
+          // In that case, only switch to a saved run if artifacts exist under `.runs/backtests/<id>/`.
+          if (res.status === 404) {
+            setPollingJobId(null);
+            setLoading(false);
+            if (typeof window !== "undefined") window.localStorage.removeItem(LIVE_RUN_STORAGE_KEY);
+            const ok = await tryLoadHistoricalRunNoUrl(pollingJobId);
+            if (!ok) {
+              // Don't force &run= into the URL for an events-only / crashed run.
+              setLiveRunId(null);
+              setJobState(null);
+              setError("Backtest job not found (server restarted). No saved artifacts were found for that run.");
+            }
+            return;
+          }
+          setError(typeof j.detail === "string" ? j.detail : `Job poll failed (HTTP ${res.status})`);
+          return;
+        }
         setJobState(j);
         if (j.status === "completed" && j.result) {
           setPollingJobId(null);
@@ -291,7 +407,9 @@ export function BacktestLabPanel({
           setRunPayload(j.result);
           if (j.result.run_id) {
             lastUrlRunRef.current = j.result.run_id;
-            router.replace(`/?view=backtest&run=${encodeURIComponent(j.result.run_id)}`, { scroll: false });
+            router.replace(`/?view=${embedded ? embeddedView : "backtest"}&run=${encodeURIComponent(j.result.run_id)}`, {
+              scroll: false,
+            });
             setSelectedHistoryId(j.result.run_id);
             await fetchSeries(j.result.run_id);
             await fetchTracePayload(j.result.run_id, false);
@@ -321,7 +439,16 @@ export function BacktestLabPanel({
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [pollingJobId, fetchSeries, fetchTracePayload, router]);
+  }, [
+    pollingJobId,
+    embedded,
+    embeddedView,
+    fetchSeries,
+    fetchTracePayload,
+    loadHistoricalRun,
+    tryLoadHistoricalRunNoUrl,
+    router,
+  ]);
 
   useEffect(() => {
     if (!liveRunId || !loading) return;
@@ -374,42 +501,6 @@ export function BacktestLabPanel({
     }
   }, [buildBody]);
 
-  const loadHistoricalRun = useCallback(
-    async (runId: string): Promise<boolean> => {
-      if (!runId) return false;
-      lastUrlRunRef.current = runId;
-      router.replace(`/?view=backtest&run=${encodeURIComponent(runId)}`, { scroll: false });
-      setHistoryLoading(true);
-      setError(null);
-      setRunPayload(null);
-      setSummaryPayload(null);
-      setEquitySeries(null);
-      setTradesData(null);
-      setTracePayload(null);
-      setJobState(null);
-      try {
-        const base = getFlowApiOrigin();
-        const sRes = await fetch(`${base}/backtests/${encodeURIComponent(runId)}/summary`);
-        const raw = await sRes.json().catch(() => ({}));
-        if (!sRes.ok) {
-          setError(typeof raw.detail === "string" ? raw.detail : `HTTP ${sRes.status}`);
-          return false;
-        }
-        setSummaryPayload(raw as SummaryPayload);
-        setSelectedHistoryId(runId);
-        await fetchSeries(runId);
-        await fetchTracePayload(runId, false);
-        return true;
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Request failed");
-        return false;
-      } finally {
-        setHistoryLoading(false);
-      }
-    },
-    [fetchSeries, fetchTracePayload, router],
-  );
-
   const clearToNewRun = useCallback(() => {
     setHistoryLoading(false);
     setRunPayload(null);
@@ -420,8 +511,8 @@ export function BacktestLabPanel({
     setSelectedHistoryId("");
     setError(null);
     lastUrlRunRef.current = null;
-    router.replace("/?view=backtest", { scroll: false });
-  }, [router]);
+    router.replace(`/?view=${embedded ? embeddedView : "backtest"}`, { scroll: false });
+  }, [embedded, embeddedView, router]);
 
   useEffect(() => {
     const id = initialRunId?.trim() || null;
@@ -439,25 +530,36 @@ export function BacktestLabPanel({
 
   const kpis = useMemo(() => {
     if (!metrics) return null;
-    const initial = evaluation?.initial_cash ?? metrics.initial_cash;
-    const final = evaluation?.final_equity ?? metrics.final_equity;
+    const eq0 = equitySeries?.points?.[0]?.equity;
+    const eqN = equitySeries?.points?.[equitySeries.points.length - 1]?.equity;
+    const initial = evaluation?.initial_cash ?? (metrics as { initial_cash?: number }).initial_cash ?? (typeof eq0 === "number" ? eq0 : NaN);
+    const final = evaluation?.final_equity ?? (metrics as { final_equity?: number }).final_equity ?? (typeof eqN === "number" ? eqN : NaN);
     const retPct =
       evaluation?.total_return_pct ??
-      (initial > 0 ? ((final - initial) / initial) * 100 : 0);
+      (Number.isFinite(initial) && initial > 0 && Number.isFinite(final) ? ((final - initial) / initial) * 100 : 0);
     const trades = evaluation?.trade_count ?? runPayload?.trade_count ?? summaryPayload?.trade_count ?? 0;
-    const steps = metrics.steps;
+    const steps = (metrics as { steps?: number }).steps ?? runPayload?.steps ?? summaryPayload?.steps ?? 0;
+    const profitFactor = (metrics as { profit_factor?: number | null }).profit_factor ?? null;
+    const rawWinRate = (metrics as { win_rate?: number }).win_rate;
+    // If we don't have closed-trade PnLs, backend reports win_rate=0.0.
+    // In that case, show "—" instead of a misleading 0.0%.
+    const winRatePct =
+      typeof rawWinRate === "number" && !(rawWinRate === 0 && profitFactor == null && trades > 0)
+        ? rawWinRate * 100
+        : null;
     return {
       totalReturnPct: retPct,
       sharpe: metrics.sharpe,
       maxDrawdownPct: metrics.max_drawdown * 100,
-      winRatePct: metrics.win_rate * 100,
+      winRatePct,
+      profitFactor,
       trades,
       steps,
       finalEquity: final,
       initialCash: initial,
       intervalSec: metrics.interval_sec,
     };
-  }, [metrics, evaluation, runPayload, summaryPayload]);
+  }, [metrics, evaluation, runPayload, summaryPayload, equitySeries]);
 
   useEffect(() => {
     if (!embedded) return;
@@ -534,9 +636,20 @@ export function BacktestLabPanel({
         </div>
 
         <div className={compactForm ? "mt-3" : "mt-5"}>
-          <p className={`font-mono uppercase tracking-[0.2em] text-[var(--nexus-muted)] ${compactForm ? "text-[9px]" : "text-[10px]"}`}>
-            Simulation
-          </p>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <p className={`font-mono uppercase tracking-[0.2em] text-[var(--nexus-muted)] ${compactForm ? "text-[9px]" : "text-[10px]"}`}>
+              Backtest
+            </p>
+            {windowMode === "range" ? (
+              <span className="inline-flex items-center rounded-full bg-[rgba(34,211,238,0.10)] px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-[#22d3ee] ring-1 ring-[rgba(34,211,238,0.35)]">
+                Reproducible
+              </span>
+            ) : (
+              <span className="inline-flex items-center rounded-full bg-white/[0.04] px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-muted)] ring-1 ring-white/10">
+                Latest window
+              </span>
+            )}
+          </div>
           <div className={`mt-2 grid sm:grid-cols-2 lg:grid-cols-3 ${compactForm ? "gap-2" : "mt-3 gap-4"}`}>
             <div>
               <label className={lb}>Number of bars</label>
@@ -547,7 +660,57 @@ export function BacktestLabPanel({
                 disabled={formBusy}
               />
               {!compactForm ? (
-                <p className="mt-0.5 text-[10px] text-[var(--nexus-muted)]">How many synthetic candles to generate</p>
+                <p className="mt-0.5 text-[10px] text-[var(--nexus-muted)]">How many real OHLCV bars to fetch</p>
+              ) : null}
+            </div>
+            <div className="sm:col-span-2 lg:col-span-2">
+              <label className={lb}>Data window</label>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setWindowMode("range")}
+                  disabled={formBusy}
+                  className={`rounded-lg px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest ring-1 transition ${
+                    windowMode === "range"
+                      ? "bg-[rgba(34,211,238,0.14)] text-[#22d3ee] ring-[rgba(34,211,238,0.35)]"
+                      : "bg-white/[0.03] text-[var(--nexus-muted)] ring-white/10 hover:bg-white/[0.05]"
+                  }`}
+                >
+                  Date range (UTC)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWindowMode("latest")}
+                  disabled={formBusy}
+                  className={`rounded-lg px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest ring-1 transition ${
+                    windowMode === "latest"
+                      ? "bg-[rgba(245,158,11,0.14)] text-[#fbbf24] ring-[rgba(245,158,11,0.35)]"
+                      : "bg-white/[0.03] text-[var(--nexus-muted)] ring-white/10 hover:bg-white/[0.05]"
+                  }`}
+                >
+                  Latest N candles
+                </button>
+              </div>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                <input
+                  className={inp}
+                  value={sinceIso}
+                  onChange={(e) => setSinceIso(e.target.value)}
+                  disabled={formBusy || windowMode !== "range"}
+                  placeholder="since_iso (e.g. 2024-01-01)"
+                />
+                <input
+                  className={inp}
+                  value={untilIso}
+                  onChange={(e) => setUntilIso(e.target.value)}
+                  disabled={formBusy || windowMode !== "range"}
+                  placeholder="until_iso (e.g. 2024-03-01)"
+                />
+              </div>
+              {!compactForm ? (
+                <p className="mt-0.5 text-[10px] text-[var(--nexus-muted)]">
+                  Date range pins the dataset (reproducible). Latest N is a moving window.
+                </p>
               ) : null}
             </div>
             <div className="sm:col-span-2 lg:col-span-1">
@@ -603,20 +766,19 @@ export function BacktestLabPanel({
           onClick={() => setAdvancedOpen((o) => !o)}
           className={`font-mono uppercase tracking-widest text-[var(--nexus-glow)] hover:underline ${compactForm ? "mt-2 text-[9px]" : "mt-4 text-[10px]"}`}
         >
-          {advancedOpen ? "Hide advanced (seed, fees, capital)" : "Advanced: seed, fees, initial capital"}
+          {advancedOpen ? "Hide advanced (fees, capital)" : "Advanced: fees, initial capital"}
         </button>
 
         {advancedOpen ? (
           <div className={`grid sm:grid-cols-2 lg:grid-cols-3 ${compactForm ? "mt-2 gap-2" : "mt-4 gap-4"}`}>
             {(
               [
-                ["seed", seed, setSeed, "RNG seed (reproducible paths)"],
                 ["fee_bps", feeBps, setFeeBps, "Trading fee in basis points"],
                 ["initial_cash", initialCash, setInitialCash, "Starting quote balance"],
               ] as const
             ).map(([key, val, setVal, hint]) => (
               <div key={key}>
-                <label className={lb}>{key === "seed" ? "Seed" : key === "fee_bps" ? "Fee (bps)" : "Initial cash"}</label>
+                <label className={lb}>{key === "fee_bps" ? "Fee (bps)" : "Initial cash"}</label>
                 <input
                   className={inp}
                   value={val}
@@ -637,8 +799,8 @@ export function BacktestLabPanel({
               onClick={() => void runPreset()}
               className={
                 compactForm
-                  ? "rounded-md border border-[var(--nexus-glow)]/50 bg-[var(--nexus-glow)]/15 px-4 py-2 font-mono text-[10px] font-medium uppercase tracking-wider text-[var(--nexus-glow)] transition hover:bg-[var(--nexus-glow)]/25 disabled:opacity-50"
-                  : "rounded-lg border border-[var(--nexus-glow)]/50 bg-[var(--nexus-glow)]/15 px-5 py-2.5 font-mono text-[11px] font-medium uppercase tracking-widest text-[var(--nexus-glow)] shadow-[0_0_20px_rgba(0,212,170,0.12)] transition hover:bg-[var(--nexus-glow)]/25 disabled:opacity-50"
+                  ? "rounded-md border border-[color:var(--nexus-glow)]/50 bg-[var(--nexus-glow)]/15 px-4 py-2 font-mono text-[10px] font-medium uppercase tracking-wider text-[var(--nexus-glow)] transition hover:bg-[var(--nexus-glow)]/25 disabled:opacity-50"
+                  : "rounded-lg border border-[color:var(--nexus-glow)]/50 bg-[var(--nexus-glow)]/15 px-5 py-2.5 font-mono text-[11px] font-medium uppercase tracking-widest text-[var(--nexus-glow)] shadow-[0_0_20px_rgba(0,212,170,0.12)] transition hover:bg-[var(--nexus-glow)]/25 disabled:opacity-50"
               }
             >
               {streamingThoughts ? "Running replay…" : "Run backtest"}
@@ -664,8 +826,8 @@ export function BacktestLabPanel({
         </div>
 
         {jobRunning && jobState ? (
-          <div
-            className={`space-y-1.5 rounded-lg border border-[var(--nexus-glow)]/25 bg-[var(--nexus-glow)]/5 ${compactForm ? "mt-2 p-2" : "mt-4 space-y-2 p-3"}`}
+        <div
+            className={`space-y-1.5 rounded-lg border border-[color:var(--nexus-glow)]/25 bg-[var(--nexus-glow)]/5 ${compactForm ? "mt-2 p-2" : "mt-4 space-y-2 p-3"}`}
           >
             <div className="flex justify-between font-mono text-[10px] text-[var(--nexus-muted)]">
               <span>Bar replay progress</span>
@@ -785,11 +947,11 @@ export function BacktestLabPanel({
           <div className={card}>
             <h3 className={h3}>Run details</h3>
             <dl className={`space-y-1.5 font-mono ${compact ? "mt-1.5 text-[10px]" : "mt-3 space-y-2 text-[11px]"}`}>
-              <div className="flex justify-between gap-4 border-b border-[var(--nexus-rule-soft)] pb-2">
+              <div className="flex justify-between gap-4 border-b border-[color:var(--nexus-rule-soft)] pb-2">
                 <dt className="text-[var(--nexus-muted)]">Run ID</dt>
                 <dd className="max-w-[60%] break-all text-right text-[var(--nexus-glow)]">{activeRunId || "—"}</dd>
               </div>
-              <div className="flex justify-between gap-4 border-b border-[var(--nexus-rule-soft)] pb-2">
+              <div className="flex justify-between gap-4 border-b border-[color:var(--nexus-rule-soft)] pb-2">
                 <dt className="text-[var(--nexus-muted)]">Final equity</dt>
                 <dd className="tabular-nums">
                   {typeof kpis.finalEquity === "number"
@@ -797,7 +959,7 @@ export function BacktestLabPanel({
                     : "—"}
                 </dd>
               </div>
-              <div className="flex justify-between gap-4 border-b border-[var(--nexus-rule-soft)] pb-2">
+              <div className="flex justify-between gap-4 border-b border-[color:var(--nexus-rule-soft)] pb-2">
                 <dt className="text-[var(--nexus-muted)]">Bar interval</dt>
                 <dd className="text-right">
                   {formatIntervalHuman(kpis.intervalSec)}{" "}
@@ -805,7 +967,7 @@ export function BacktestLabPanel({
                 </dd>
               </div>
               {runPayload?.strategy?.title ? (
-                <div className="flex justify-between gap-4 border-b border-[var(--nexus-rule-soft)] pb-2">
+                <div className="flex justify-between gap-4 border-b border-[color:var(--nexus-rule-soft)] pb-2">
                   <dt className="text-[var(--nexus-muted)]">Strategy</dt>
                   <dd className="text-right">{runPayload.strategy.title}</dd>
                 </div>
@@ -825,9 +987,9 @@ export function BacktestLabPanel({
                 disabled={!activeRunId}
                 onClick={() => {
                   if (!activeRunId) return;
-                  router.replace(`/?view=supervisor&run=${encodeURIComponent(activeRunId)}`, {
-                    scroll: false,
-                  });
+                    // In Research mode, keep the user in the split workspace.
+                    const nextView = embedded && embeddedView === "research" ? "research" : "supervisor";
+                    router.replace(`/?view=${nextView}&run=${encodeURIComponent(activeRunId)}`, { scroll: false });
                 }}
                 className={`rounded border border-[rgba(0,212,170,0.35)] bg-[rgba(0,212,170,0.10)] font-mono uppercase tracking-wider text-[var(--nexus-glow)] hover:bg-[rgba(0,212,170,0.14)] disabled:opacity-40 ${
                   compact ? "px-2 py-1 text-[9px]" : "px-3 py-1.5 text-[10px]"
@@ -882,57 +1044,36 @@ export function BacktestLabPanel({
 
   return (
     <div className={rootClass}>
-      {!embedded ? (
-        <header className="border-b border-[var(--nexus-rule-strong)] bg-[var(--nexus-panel)]/95 px-4 py-4">
-          <div className="mx-auto flex max-w-6xl flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--nexus-glow)]">
-                Multi-agent workflow
-              </p>
-              <h1 className="text-lg font-semibold tracking-tight">Backtest lab</h1>
-              <p className="mt-2 max-w-2xl text-[12px] leading-relaxed text-[var(--nexus-muted)]">
-                Replays the full LangGraph once per synthetic bar. Traces use the same FlowEvent contract
-                as live runs: perception desks, evidence board + arbitration, risk guard, and execution — with
-                structured reasoning visible in the timeline.
-              </p>
-            </div>
-          </div>
-        </header>
-      ) : (
-        <EmbeddedBacktestChrome
-          tab={embeddedTab}
-          onTabChange={(t) => {
-            setEmbeddedTab(t);
-            if (t === "new") clearToNewRun();
-          }}
-          runList={runList}
-          selectedHistoryId={selectedHistoryId}
-          historyLoading={historyLoading}
-          activeRunId={activeRunId}
-          shortRunLabel={shortBacktestRunLabel}
-          onSelectRun={(id) => void loadHistoricalRun(id)}
-          onClearRun={clearToNewRun}
-        />
-      )}
+      {embedded ? (
+        <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden">
+          <EmbeddedBacktestChrome
+            tab={embeddedTab}
+            onTabChange={(t) => {
+              setEmbeddedTab(t);
+              if (t === "new") clearToNewRun();
+            }}
+            runList={runList}
+            selectedHistoryId={selectedHistoryId}
+            historyLoading={historyLoading}
+            activeRunId={activeRunId}
+            shortRunLabel={shortBacktestRunLabel}
+            onSelectRun={(id) => void loadHistoricalRun(id)}
+            onClearRun={clearToNewRun}
+          />
 
-      <div
-        className={
-          embedded
-            ? "flex min-h-0 flex-1 flex-col overflow-hidden"
-            : "mx-auto max-w-6xl space-y-6 px-4 py-8"
-        }
-      >
-        {embedded ? (
-          <>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             {error ? (
-              <div className="shrink-0 border-b border-red-900/45 bg-red-950/35 px-3 py-1.5 font-mono text-[10px] text-red-100" role="alert">
+              <div
+                className="shrink-0 border-b border-red-900/45 bg-red-950/35 px-3 py-1.5 font-mono text-[10px] text-red-100"
+                role="alert"
+              >
                 {error}
               </div>
             ) : null}
             <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-              <div className="nexus-scroll flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto px-3 pb-3 pt-2">
+              <div className="nexus-scroll flex min-h-0 flex-1 flex-col gap-3 overflow-x-hidden overflow-y-auto px-3 pb-4 pt-3">
                 {jobRunning && embeddedTab === "saved" ? (
-                  <div className="shrink-0 rounded-lg border border-[var(--nexus-glow)]/25 bg-[var(--nexus-glow)]/5 px-2 py-2">
+                  <div className="shrink-0 rounded-lg border border-[color:var(--nexus-glow)]/25 bg-[var(--nexus-glow)]/5 px-2 py-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-muted)]">
                         Live backtest running
@@ -940,7 +1081,7 @@ export function BacktestLabPanel({
                       <button
                         type="button"
                         onClick={() => setEmbeddedTab("new")}
-                        className="rounded border border-[var(--nexus-glow)]/45 bg-[var(--nexus-glow)]/10 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-glow)] hover:bg-[var(--nexus-glow)]/15"
+                        className="rounded border border-[color:var(--nexus-glow)]/45 bg-[var(--nexus-glow)]/10 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-glow)] hover:bg-[var(--nexus-glow)]/15"
                       >
                         Resume
                       </button>
@@ -988,7 +1129,7 @@ export function BacktestLabPanel({
                     {renderSetupForm(true)}
 
                     {streamingThoughts || tracesToShow.length > 0 || messageLog.length > 0 ? (
-                      <section className="mt-3 border-t border-[var(--nexus-rule-soft)] pt-3">
+                      <section className="mt-3 border-t border-[color:var(--nexus-rule-soft)] pt-3">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <h2 className="font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-muted)]">
@@ -1015,11 +1156,38 @@ export function BacktestLabPanel({
                     ) : null}
                   </section>
                 ) : null}
-
               </div>
             </div>
-          </>
-        ) : (
+          </div>
+        </div>
+      ) : null}
+
+      {!embedded ? (
+        <header className="border-b border-[color:var(--nexus-rule-strong)] bg-[var(--nexus-panel)]/95 px-4 py-4">
+          <div className="mx-auto flex max-w-6xl flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-mono uppercase tracking-[0.2em] text-[var(--nexus-glow)]">
+                Multi-agent workflow
+              </p>
+              <h1 className="text-lg font-semibold tracking-tight">Backtest lab</h1>
+              <p className="mt-2 max-w-2xl text-[12px] leading-relaxed text-[var(--nexus-muted)]">
+                Replays the full LangGraph once per OHLCV bar. Traces use the same FlowEvent contract
+                as live runs: perception desks, evidence board + arbitration, risk guard, and execution — with
+                structured reasoning visible in the timeline.
+              </p>
+            </div>
+          </div>
+        </header>
+      ) : null}
+
+      <div
+        className={
+          embedded
+            ? "hidden"
+            : "mx-auto max-w-6xl space-y-6 px-4 py-8"
+        }
+      >
+        {!embedded ? (
           <>
             <section className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1076,9 +1244,8 @@ export function BacktestLabPanel({
                     disabled={!activeRunId}
                     onClick={() => {
                       if (!activeRunId) return;
-                      router.replace(`/?view=supervisor&run=${encodeURIComponent(activeRunId)}`, {
-                        scroll: false,
-                      });
+                      const nextView = embedded && embeddedView === "research" ? "research" : "supervisor";
+                      router.replace(`/?view=${nextView}&run=${encodeURIComponent(activeRunId)}`, { scroll: false });
                     }}
                     className="h-9 rounded-lg border border-[rgba(0,212,170,0.35)] bg-[rgba(0,212,170,0.10)] px-3 font-mono text-[10px] uppercase tracking-wider text-[var(--nexus-glow)] hover:bg-[rgba(0,212,170,0.14)] disabled:opacity-40"
                   >
@@ -1107,7 +1274,7 @@ export function BacktestLabPanel({
                   <div className="min-w-0">{kpis ? renderResultsDetail("standalone") : null}</div>
 
                   <section className="flex min-h-[320px] w-full flex-col overflow-hidden rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 shadow-[0_0_24px_rgba(0,212,170,0.04)]">
-                    <div className="shrink-0 space-y-2 border-b border-[var(--nexus-rule-soft)] px-3 py-2">
+                    <div className="shrink-0 space-y-2 border-b border-[color:var(--nexus-rule-soft)] px-3 py-2">
                       <div className="min-w-0 flex-1">
                         <h3 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
                           Bar timeline
@@ -1168,9 +1335,8 @@ export function BacktestLabPanel({
                         disabled={!activeRunId}
                         onClick={() => {
                           if (!activeRunId) return;
-                          router.replace(`/?view=supervisor&run=${encodeURIComponent(activeRunId)}`, {
-                            scroll: false,
-                          });
+                          const nextView = embedded && embeddedView === "research" ? "research" : "supervisor";
+                          router.replace(`/?view=${nextView}&run=${encodeURIComponent(activeRunId)}`, { scroll: false });
                         }}
                         className="h-9 rounded-lg border border-[rgba(0,212,170,0.35)] bg-[rgba(0,212,170,0.10)] px-3 font-mono text-[10px] uppercase tracking-wider text-[var(--nexus-glow)] hover:bg-[rgba(0,212,170,0.14)] disabled:opacity-40"
                       >
@@ -1192,7 +1358,7 @@ export function BacktestLabPanel({
               </section>
             ) : null}
           </>
-        )}
+        ) : null}
       </div>
     </div>
   );

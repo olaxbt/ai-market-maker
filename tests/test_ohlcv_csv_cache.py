@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from backtest.bars import trending_ohlcv_bars
 from backtest.ohlcv_csv_cache import (
     ensure_bars_cached,
     load_bars_csv_only,
@@ -16,8 +15,27 @@ from backtest.ohlcv_csv_cache import (
 )
 
 
+def _fake_bars(
+    n: int, *, start_ts_ms: int = 1_700_000_000_000, interval_sec: int = 86_400
+) -> list[list[float]]:
+    """Deterministic OHLCV bars for cache tests (no network)."""
+    step = int(interval_sec) * 1000
+    out: list[list[float]] = []
+    px = 100.0
+    for i in range(int(n)):
+        ts = float(start_ts_ms + i * step)
+        o = px
+        c = px * (1.0 + 0.001 * ((i % 7) - 3) / 3.0)
+        h = max(o, c) * 1.001
+        lo = min(o, c) * 0.999
+        v = 10.0 + i
+        out.append([ts, float(o), float(h), float(lo), float(c), float(v)])
+        px = c
+    return out
+
+
 def test_save_load_roundtrip(tmp_path: Path) -> None:
-    bars = trending_ohlcv_bars(10, seed=1, interval_sec=86_400)
+    bars = _fake_bars(10, interval_sec=86_400)
     p = tmp_path / "t.csv"
     save_ohlcv_csv(p, bars)
     got = load_ohlcv_csv(p)
@@ -27,7 +45,7 @@ def test_save_load_roundtrip(tmp_path: Path) -> None:
 
 
 def test_load_bars_csv_only_takes_last_n(tmp_path: Path) -> None:
-    bars = trending_ohlcv_bars(20, seed=2, interval_sec=86_400)
+    bars = _fake_bars(20, interval_sec=86_400)
     p = ohlcv_cache_path(tmp_path, "BTC/USDT", "1d")
     save_ohlcv_csv(p, bars)
     tail = load_bars_csv_only("BTC/USDT", 5, timeframe="1d", cache_dir=tmp_path)
@@ -36,7 +54,7 @@ def test_load_bars_csv_only_takes_last_n(tmp_path: Path) -> None:
 
 
 def test_load_bars_csv_only_too_short_raises(tmp_path: Path) -> None:
-    bars = trending_ohlcv_bars(3, seed=3, interval_sec=86_400)
+    bars = _fake_bars(3, interval_sec=86_400)
     p = ohlcv_cache_path(tmp_path, "ETH/USDT", "1d")
     save_ohlcv_csv(p, bars)
     with pytest.raises(ValueError, match="prefetch"):
@@ -46,7 +64,7 @@ def test_load_bars_csv_only_too_short_raises(tmp_path: Path) -> None:
 def test_ensure_bars_cached_uses_fetch_when_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    fake = trending_ohlcv_bars(8, seed=4, interval_sec=3600)
+    fake = _fake_bars(8, interval_sec=3600)
 
     def _fake_fetch(
         symbol: str,
@@ -79,7 +97,7 @@ def test_ensure_bars_cached_uses_fetch_when_missing(
 def test_ensure_bars_cached_hit_without_network(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    bars = trending_ohlcv_bars(12, seed=5, interval_sec=86_400)
+    bars = _fake_bars(12, interval_sec=86_400)
     p = ohlcv_cache_path(tmp_path, "SOL/USDT", "1d")
     save_ohlcv_csv(p, bars)
 

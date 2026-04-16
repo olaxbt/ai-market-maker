@@ -359,6 +359,7 @@ class BacktestEngine:
         requested_qty: float,
         *,
         price_reference: float | None = None,
+        allow_partial: bool = True,
     ) -> tuple[float, float, float]:
         """Realistic fill with slippage, partial fill, and fees.
 
@@ -370,9 +371,12 @@ class BacktestEngine:
         slip_frac = self.config.slippage_bps / 10000.0
         fill_price = base * (1 + slip_frac) if side == "buy" else base * (1 - slip_frac)
 
-        # Deterministic partial fills (no time-dependence → reproducible backtests).
-        fill_ratio = 0.93 + (self._rng.random() * 0.07)
-        fill_qty = requested_qty * fill_ratio
+        if allow_partial:
+            # Deterministic partial fills (no time-dependence → reproducible backtests).
+            fill_ratio = 0.93 + (self._rng.random() * 0.07)
+            fill_qty = requested_qty * fill_ratio
+        else:
+            fill_qty = requested_qty
 
         fee_usd = fill_price * fill_qty * (self.config.fee_bps / 10000.0)
         return fill_price, fill_qty, fee_usd
@@ -395,11 +399,15 @@ class BacktestEngine:
         if qty_req <= 1e-18:
             return False
         side = str(smart_dict.get("side") or "").lower()
+        intent = smart_dict.get("intent") if isinstance(smart_dict.get("intent"), dict) else {}
+        forced_by = str(intent.get("forced_by") or "")
+        allow_partial = forced_by != "backtest_engine"
         fill_price, fill_qty, fee_usd = self._simulate_fill(
             bar_close,
             side,
             qty_req,
             price_reference=price_reference,
+            allow_partial=allow_partial,
         )
         if side == "sell":
             held = float(sim.positions.get(symbol, 0.0) or 0.0)
@@ -976,11 +984,19 @@ class BacktestEngine:
                         if in_halt and side == "buy":
                             smart_dict = None
                             raise RuntimeError("halted")
+                        intent = (
+                            smart_dict.get("intent")
+                            if isinstance(smart_dict.get("intent"), dict)
+                            else {}
+                        )
+                        forced_by = str(intent.get("forced_by") or "")
+                        allow_partial = forced_by != "backtest_engine"
                         fill_price, fill_qty_total, fee_total = self._simulate_fill(
                             current_price,
                             side,
                             qty,
                             price_reference=forced_fill_ref if forced_order is not None else None,
+                            allow_partial=allow_partial,
                         )
 
                         cooldown = int(load_fund_policy().trade_cooldown_bars or 0)

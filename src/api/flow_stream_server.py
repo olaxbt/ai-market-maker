@@ -22,7 +22,9 @@ from .runtime_settings_routes import router as runtime_settings_router
 from .schema_validation import validate_nexus_payload
 
 # Same as `src/main.py`: repo-root `.env` applies to the Flow API when started via uvicorn.
-load_dotenv(override=True)
+# Be explicit about the repo root so reloaders / alternate CWDs still load the correct file.
+_REPO_ROOT_DOTENV = Path(__file__).resolve().parents[2] / ".env"
+load_dotenv(dotenv_path=_REPO_ROOT_DOTENV, override=True)
 
 RUNS_DIR = Path(".runs")
 LATEST_RUN_FILE = RUNS_DIR / "latest_run.txt"

@@ -158,7 +158,7 @@ export function AgentsConsoleView({
             <div className="text-[10px] uppercase tracking-widest text-[var(--nexus-muted)]">
               What’s happening
             </div>
-            <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {whatsHappening.map((row) => (
                 <div
                   key={row.id}

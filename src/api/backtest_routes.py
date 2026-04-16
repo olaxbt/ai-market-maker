@@ -14,7 +14,13 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from backtest.bars import load_ohlcv_json, synthetic_ohlcv_bars
+from backtest.bars import (
+    fetch_ccxt_ohlcv_bars,
+    fetch_ccxt_ohlcv_range,
+    interval_sec_to_ccxt_timeframe,
+    iso_utc_to_ms,
+    load_ohlcv_json,
+)
 from backtest.exchange_trade_format import normalize_trade_row_for_api
 from backtest.loop import MultiStepResult, run_multi_step_backtest
 from backtest.trade_book import read_jsonl_dict_records
@@ -100,13 +106,24 @@ class QuickBacktestRequest(BaseModel):
         le=86_400,
         description="Bar size in seconds (e.g. 300 = 5m).",
     )
-    seed: int = Field(1, ge=0)
     initial_cash: float = Field(10_000.0, gt=0)
     fee_bps: float = Field(10.0, ge=0, le=500)
     max_steps: int | None = Field(
         None,
         ge=1,
         description="Optional cap on bars processed (subject to server cap).",
+    )
+    exchange_id: str = Field(
+        "binance",
+        description="CCXT exchange id for real OHLCV (e.g. binance).",
+    )
+    since_iso: str | None = Field(
+        None,
+        description="ccxt_range: ISO date/datetime (UTC) for range start, e.g. 2023-01-01.",
+    )
+    until_iso: str | None = Field(
+        None,
+        description="ccxt_range: ISO date/datetime (UTC) for range end, e.g. 2024-01-01.",
     )
 
 
@@ -118,11 +135,28 @@ def _execute_quick_backtest(
     on_bar_complete: Callable[[int, int, dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     cap = _max_api_steps()
-    bars = synthetic_ohlcv_bars(
-        req.n_bars,
-        seed=req.seed,
-        interval_sec=req.interval_sec,
-    )
+    tf = interval_sec_to_ccxt_timeframe(int(req.interval_sec))
+    ex_id = (req.exchange_id or "binance").strip()
+    if req.since_iso or req.until_iso:
+        if not req.since_iso or not req.until_iso:
+            raise HTTPException(
+                status_code=400, detail="since_iso and until_iso must both be set (or both omitted)"
+            )
+        bars = fetch_ccxt_ohlcv_range(
+            req.ticker,
+            timeframe=tf,
+            since_ms=iso_utc_to_ms(req.since_iso),
+            until_ms=iso_utc_to_ms(req.until_iso),
+            exchange_id=ex_id,
+            max_rows=int(req.n_bars),
+        )
+    else:
+        bars = fetch_ccxt_ohlcv_bars(
+            req.ticker,
+            int(req.n_bars),
+            timeframe=tf,
+            exchange_id=ex_id,
+        )
     want = req.max_steps if req.max_steps is not None else req.n_bars
     effective = min(want, req.n_bars, cap)
     if effective < 1:
@@ -138,11 +172,10 @@ def _execute_quick_backtest(
         )
 
     logger.info(
-        "backtest quick ticker=%s bars=%s effective_steps=%s seed=%s",
+        "backtest quick ticker=%s bars=%s effective_steps=%s",
         req.ticker,
         req.n_bars,
         effective,
-        req.seed,
     )
     result = run_multi_step_backtest(
         ticker=req.ticker,
