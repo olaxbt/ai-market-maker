@@ -1,9 +1,8 @@
-"""OHLCV bar series for multi-step backtests (synthetic, exchange-backed, or file-backed)."""
+"""OHLCV bar series for multi-step backtests (exchange-backed or file-backed)."""
 
 from __future__ import annotations
 
 import json
-import random
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -11,7 +10,7 @@ from typing import Any
 import ccxt
 
 
-def _resolve_ccxt_symbol(exchange: ccxt.Exchange, symbol: str) -> str:
+def _resolve_ccxt_symbol(exchange: Any, symbol: str) -> str:
     """Resolve common Binance linear-swap aliases (``BASE/USDT:USDT``) when spot ``BASE/USDT`` is absent."""
     if symbol in exchange.symbols:
         return symbol
@@ -161,63 +160,6 @@ def align_bars_by_min_length(
     if n < 2:
         raise ValueError("each symbol needs at least 2 bars after alignment")
     return {sym: rows[-n:] for sym, rows in bars_by_symbol.items()}
-
-
-def synthetic_ohlcv_bars(
-    n: int,
-    *,
-    seed: int = 42,
-    start_ts_ms: int = 1_700_000_000_000,
-    interval_sec: int = 300,
-) -> list[list[float]]:
-    """
-    Build ``n`` CCXT-style OHLCV rows: ``[ts_ms, open, high, low, close, volume]``.
-
-    ``interval_sec`` defaults to 300 (5 minutes), matching a typical scan cadence.
-    """
-    rng = random.Random(seed)
-    step_ms = interval_sec * 1000
-    bars: list[list[float]] = []
-    price = 100.0
-    for i in range(n):
-        ret = rng.uniform(-0.003, 0.003)
-        o = price
-        price = max(1e-9, price * (1 + ret))
-        c = price
-        h = max(o, c) * (1 + abs(rng.uniform(0, 0.0005)))
-        lo = min(o, c) * (1 - abs(rng.uniform(0, 0.0005)))
-        v = rng.uniform(0.1, 5.0)
-        bars.append([float(start_ts_ms + i * step_ms), o, h, lo, c, v])
-    return bars
-
-
-def trending_ohlcv_bars(
-    n: int,
-    *,
-    seed: int = 42,
-    start_ts_ms: int = 1_700_000_000_000,
-    interval_sec: int = 86_400,
-    drift_per_bar: float = 0.006,
-    noise: float = 0.002,
-) -> list[list[float]]:
-    """``n`` daily-style bars with positive drift so TA / consensus skew constructive (backtests).
-
-    ``interval_sec`` defaults to 86400 (1d). ``drift_per_bar`` is approximate mean log return per bar.
-    """
-    rng = random.Random(seed)
-    step_ms = interval_sec * 1000
-    bars: list[list[float]] = []
-    price = 50_000.0
-    for i in range(n):
-        r = drift_per_bar + rng.uniform(-noise, noise)
-        o = price
-        price = max(1e-9, price * (1.0 + r))
-        c = price
-        h = max(o, c) * (1.0 + abs(rng.uniform(0, 0.001)))
-        lo = min(o, c) * (1.0 - abs(rng.uniform(0, 0.001)))
-        v = rng.uniform(10.0, 500.0)
-        bars.append([float(start_ts_ms + i * step_ms), o, h, lo, c, v])
-    return bars
 
 
 def load_ohlcv_json(path: Path) -> tuple[str, list[list[Any]]]:

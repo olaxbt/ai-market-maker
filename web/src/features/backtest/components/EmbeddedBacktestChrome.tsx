@@ -30,10 +30,10 @@ export function EmbeddedBacktestChrome({
   return (
     <div
       id="backtest-embedded-summary"
-      className="shrink-0 scroll-mt-1 border-b border-[var(--nexus-rule-soft)] bg-[var(--nexus-panel)]/50 px-3 py-2"
+      className="shrink-0 scroll-mt-1 border-b border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 px-3 py-2"
     >
-      <div className="flex w-full min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
-        <span className="shrink-0 font-mono text-[9px] font-semibold uppercase tracking-widest text-[var(--nexus-glow)]">
+      <div className="flex h-7 w-full min-w-0 items-center gap-2">
+        <span className="inline-flex h-7 shrink-0 items-center font-mono text-[9px] font-semibold uppercase tracking-widest leading-none text-[var(--nexus-glow)]">
           Backtest
         </span>
         {/* Keep stable slots so controls don't jump when switching tabs. */}
@@ -41,7 +41,7 @@ export function EmbeddedBacktestChrome({
           {tab === "saved" ? (
             runList.length > 0 ? (
               <select
-                className="h-7 w-full min-w-0 rounded border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)] px-2 font-mono text-[10px] text-[var(--nexus-text)]"
+                className="h-7 w-full min-w-0 rounded border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)] px-2 font-mono text-[10px] leading-none text-[var(--nexus-text)]"
                 value={selectedHistoryId}
                 disabled={historyLoading}
                 title={selectedHistoryId ? `Full id: ${selectedHistoryId}` : "Saved runs"}
@@ -60,7 +60,9 @@ export function EmbeddedBacktestChrome({
                 ))}
               </select>
             ) : (
-              <span className="font-mono text-[9px] text-[var(--nexus-muted)]">No saved runs</span>
+              <span className="inline-flex h-7 w-full items-center rounded border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)]/45 px-2 font-mono text-[9px] uppercase tracking-wider leading-none text-[var(--nexus-muted)]">
+                No saved runs
+              </span>
             )
           ) : (
             <span className="block h-7 w-full" aria-hidden="true" />
@@ -75,7 +77,7 @@ export function EmbeddedBacktestChrome({
               const latest = [...runList].slice(-1)[0];
               if (latest) onSelectRun(latest);
             }}
-            className="h-7 w-[4.25rem] shrink-0 rounded border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)] px-2 font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-muted)] hover:border-[var(--nexus-glow)]/35 hover:text-[var(--nexus-text)] disabled:opacity-40"
+            className="h-7 w-[4.25rem] shrink-0 rounded border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)] px-2 font-mono text-[9px] uppercase tracking-wider leading-none text-[var(--nexus-muted)] hover:border-[var(--nexus-glow)]/35 hover:text-[var(--nexus-text)] disabled:opacity-40"
           >
             Latest
           </button>
@@ -83,7 +85,7 @@ export function EmbeddedBacktestChrome({
           <span className="h-7 w-[4.25rem] shrink-0" aria-hidden="true" />
         )}
         <div
-          className="nexus-segmented-toggle ml-auto inline-flex shrink-0 items-center gap-1 rounded-xl p-1"
+          className="nexus-segmented-toggle ml-auto inline-flex h-7 shrink-0 items-center gap-1 rounded-xl p-1"
           role="tablist"
           aria-label="Backtest workspace"
         >
@@ -92,7 +94,7 @@ export function EmbeddedBacktestChrome({
             role="tab"
             aria-selected={tab === "saved"}
             onClick={() => onTabChange("saved")}
-            className={`nexus-segment-btn flex items-center rounded-lg px-2.5 py-1.5 font-mono text-[9px] uppercase tracking-[0.18em] transition-all ${
+            className={`nexus-segment-btn flex h-7 items-center rounded-lg px-2.5 font-mono text-[9px] uppercase tracking-[0.18em] leading-none transition-all ${
               tab === "saved" ? "is-active" : "text-[var(--nexus-muted)]"
             }`}
           >
@@ -103,7 +105,7 @@ export function EmbeddedBacktestChrome({
             role="tab"
             aria-selected={tab === "new"}
             onClick={() => onTabChange("new")}
-            className={`nexus-segment-btn flex items-center rounded-lg px-2.5 py-1.5 font-mono text-[9px] uppercase tracking-[0.18em] transition-all ${
+            className={`nexus-segment-btn flex h-7 items-center rounded-lg px-2.5 font-mono text-[9px] uppercase tracking-[0.18em] leading-none transition-all ${
               tab === "new" ? "is-active" : "text-[var(--nexus-muted)]"
             }`}
           >

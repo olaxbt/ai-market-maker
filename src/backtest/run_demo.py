@@ -1,12 +1,8 @@
-"""Multi-step backtest CLI: synthetic OHLCV or **online** exchange candles (public fetch).
+"""Multi-step backtest CLI: **online** exchange candles (public fetch) or cached CSV (offline).
 
 **CSV cache:** ``--ohlcv-cache-dir DIR`` (or ``config/app.default.json`` ``market.ohlcv_cache_dir``) stores one ``.csv`` per
 symbol/timeframe; combine with ``--online`` to fill on first run and reuse later. ``--csv-only``
 runs fully offline from that folder (populate via ``python -m backtest.prefetch_ohlcv``).
-
-Synthetic (default)::
-
-    AI_MARKET_MAKER_USE_LLM=0 NEXUS_DISABLE=1 uv run python -m backtest.run_demo --steps 20
 
 Online (Binance public ``fetch_ohlcv``, no API keys)::
 
@@ -31,10 +27,6 @@ Single-symbol (legacy)::
 Long horizon (monthly candles ≈ years of history; fewer LLM calls than daily)::
 
     uv run python -m backtest.run_demo --online --timeframe 1M --steps 36 --llm
-
-Synthetic **monthly-sized** bars (no network; ``interval_sec`` ≈ 30d → maps to ``1M`` when you mirror exchange tf)::
-
-    uv run python -m backtest.run_demo --interval-sec 2592000 --steps 24
 
 Expand history until at least one simulated fill (cap ``--max-fetch``)::
 
@@ -86,8 +78,6 @@ from backtest.bars import (
     fetch_ccxt_ohlcv_bars,
     interval_sec_to_ccxt_timeframe,
     nominal_interval_sec_for_timeframe,
-    synthetic_ohlcv_bars,
-    trending_ohlcv_bars,
 )
 from backtest.loop import run_multi_step_backtest
 from backtest.ohlcv_csv_cache import ensure_bars_cached, load_bars_csv_only
@@ -103,7 +93,9 @@ def _infer_interval_sec_from_bars(bars: list[list[float]]) -> int:
 
 def build_run_demo_parser() -> argparse.ArgumentParser:
     _def_ticker = load_app_settings().market.default_ticker
-    parser = argparse.ArgumentParser(description="Multi-step backtest (synthetic or online OHLCV).")
+    parser = argparse.ArgumentParser(
+        description="Multi-step backtest (real OHLCV via exchange or cached CSV)."
+    )
     parser.add_argument(
         "--ticker",
         default=_def_ticker,
@@ -127,16 +119,13 @@ def build_run_demo_parser() -> argparse.ArgumentParser:
         "--steps",
         type=int,
         default=20,
-        help="Synthetic: number of bars to generate. Online: candles to fetch (then may expand).",
+        help="Candles to fetch (then may expand).",
     )
     parser.add_argument(
         "--interval-sec",
         type=int,
         default=86_400,
-        help="Synthetic bar spacing; also selects default CCXT timeframe when --online and no --timeframe.",
-    )
-    parser.add_argument(
-        "--flat", action="store_true", help="Synthetic mean-zero walk (not trending)."
+        help="Selects default CCXT timeframe when --online and no --timeframe.",
     )
     parser.add_argument(
         "--online", action="store_true", help="Fetch OHLCV from exchange (public data)."
@@ -300,7 +289,7 @@ def execute_run_demo(args: argparse.Namespace, parser: argparse.ArgumentParser) 
         bars_map: dict[str, list[list[float]]] = {}
         refresh_csv = bool(getattr(args, "refresh_ohlcv_cache", False))
         csv_only = bool(getattr(args, "csv_only", False))
-        for idx, sym in enumerate(sym_list):
+        for _idx, sym in enumerate(sym_list):
             if csv_only:
                 assert ohlcv_cache is not None
                 print(f"[csv] loading {limit_m} x {tf} {sym} from {ohlcv_cache} …", file=sys.stderr)
@@ -333,13 +322,11 @@ def execute_run_demo(args: argparse.Namespace, parser: argparse.ArgumentParser) 
                         exchange_id=args.exchange,
                     )
             elif args.flat:
-                bars_map[sym] = synthetic_ohlcv_bars(
-                    limit_m, seed=40 + idx, interval_sec=args.interval_sec
+                raise ValueError(
+                    "--flat is no longer supported (synthetic bars removed). Use --online or --csv-only."
                 )
             else:
-                bars_map[sym] = trending_ohlcv_bars(
-                    limit_m, seed=40 + idx, interval_sec=args.interval_sec
-                )
+                raise ValueError("synthetic bars removed. Use --online or --csv-only.")
         aligned = align_bars_by_min_length(bars_map)
         interval_m = _infer_interval_sec_from_bars(aligned[primary])
         if (args.online or csv_only) and args.timeframe:
@@ -386,11 +373,11 @@ def execute_run_demo(args: argparse.Namespace, parser: argparse.ArgumentParser) 
                 )
             interval_sec = _infer_interval_sec_from_bars(bars)
         elif args.flat:
-            bars = synthetic_ohlcv_bars(limit, interval_sec=args.interval_sec)
-            interval_sec = args.interval_sec
+            raise ValueError(
+                "--flat is no longer supported (synthetic bars removed). Use --online or --csv-only."
+            )
         else:
-            bars = trending_ohlcv_bars(limit, interval_sec=args.interval_sec)
-            interval_sec = args.interval_sec
+            raise ValueError("synthetic bars removed. Use --online or --csv-only.")
         # When --online, bar timestamps define spacing; optional explicit tf aligns synthetic-like labeling.
         if (args.online or _csv_only) and args.timeframe:
             interval_sec = max(interval_sec, nominal_interval_sec_for_timeframe(args.timeframe))

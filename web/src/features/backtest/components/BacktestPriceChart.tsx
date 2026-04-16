@@ -40,20 +40,45 @@ export function BacktestPriceChart({
     if (!trades?.length || !bars.length) return [];
     const tsByStep = new Map<number, number>();
     for (const b of bars) tsByStep.set(b.step, b.ts_ms);
-    return trades
-      .filter((t) => (t.side === "buy" || t.side === "sell") && typeof t.step === "number")
-      .map((t) => {
-        const ts = t.ts_ms ?? tsByStep.get(t.step);
-        if (typeof ts !== "number") return null;
-        return {
-          time: toUtcTimestamp(ts),
-          position: t.side === "buy" ? ("belowBar" as const) : ("aboveBar" as const),
-          color: t.side === "buy" ? "rgba(0, 212, 170, 0.95)" : "rgba(242, 92, 84, 0.95)",
-          shape: t.side === "buy" ? ("arrowUp" as const) : ("arrowDown" as const),
-          text: `${t.side.toUpperCase()} ${Number(t.price).toLocaleString(undefined, { maximumFractionDigits: 2 })}`,
-        };
-      })
-      .filter((m): m is NonNullable<typeof m> => Boolean(m));
+    // Aggregate fills per bar step so the chart doesn't stack 2-5 arrows on the same candle.
+    // (Multiple fills per step are valid; we just render one marker with count + avg price.)
+    const key = (step: number, side: string) => `${step}:${side}`;
+    const agg = new Map<
+      string,
+      { step: number; side: "buy" | "sell"; ts: number; qty: number; notional: number; fills: number }
+    >();
+    for (const t of trades) {
+      const side = t.side === "buy" || t.side === "sell" ? t.side : null;
+      if (!side || typeof t.step !== "number") continue;
+      const ts = t.ts_ms ?? tsByStep.get(t.step);
+      if (typeof ts !== "number") continue;
+      const k = key(t.step, side);
+      const qty = Number(t.qty);
+      const price = Number(t.price);
+      const prev = agg.get(k);
+      const next = prev ?? { step: t.step, side, ts, qty: 0, notional: 0, fills: 0 };
+      next.ts = ts;
+      if (Number.isFinite(qty)) next.qty += qty;
+      if (Number.isFinite(qty) && Number.isFinite(price)) next.notional += qty * price;
+      next.fills += 1;
+      agg.set(k, next);
+    }
+    const rows = Array.from(agg.values()).sort((a, b) => a.ts - b.ts);
+    return rows.map((r) => {
+      const avg = r.qty !== 0 ? r.notional / r.qty : NaN;
+      const avgLabel = Number.isFinite(avg)
+        ? avg.toLocaleString(undefined, { maximumFractionDigits: 2 })
+        : "—";
+      const qtyLabel = r.qty.toLocaleString(undefined, { maximumFractionDigits: 6 });
+      const fillSuffix = r.fills > 1 ? ` (${r.fills})` : "";
+      return {
+        time: toUtcTimestamp(r.ts),
+        position: r.side === "buy" ? ("belowBar" as const) : ("aboveBar" as const),
+        color: r.side === "buy" ? "rgba(0, 212, 170, 0.95)" : "rgba(242, 92, 84, 0.95)",
+        shape: r.side === "buy" ? ("arrowUp" as const) : ("arrowDown" as const),
+        text: `${r.side.toUpperCase()} ${qtyLabel} @ ${avgLabel}${fillSuffix}`,
+      };
+    });
   }, [trades, bars]);
 
   useEffect(() => {

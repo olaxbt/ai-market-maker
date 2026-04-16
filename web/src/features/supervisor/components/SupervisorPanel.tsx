@@ -35,7 +35,13 @@ function normalizeChatText(text: string): string {
   return (text || "").replace(/\n{3,}/g, "\n\n");
 }
 
-export function SupervisorPanel({ initialRunId }: { initialRunId?: string | null }) {
+export function SupervisorPanel({
+  initialRunId,
+  embedded = false,
+}: {
+  initialRunId?: string | null;
+  embedded?: boolean;
+}) {
   const [target, setTarget] = useState<"live" | "backtest">("live");
   const [runId, setRunId] = useState(initialRunId?.trim() || "latest");
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -71,6 +77,18 @@ export function SupervisorPanel({ initialRunId }: { initialRunId?: string | null
     // Don't restore transient flags (loading/busy/error); those should reflect current view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cacheKey]);
+
+  useEffect(() => {
+    const id = initialRunId?.trim() || "";
+    if (!id) return;
+    // If a backtest run id is provided via URL (Research / Backtest lab), bind Supervisor to it.
+    const looksBacktest = /^bt[-_]/i.test(id);
+    if (looksBacktest) setTarget("backtest");
+    setRunId(id);
+    // When switching runs via URL, clear ephemeral error; keep messages cached per cacheKey.
+    setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialRunId]);
 
   // Keep cache hot without re-fetching.
   useEffect(() => {
@@ -254,11 +272,19 @@ export function SupervisorPanel({ initialRunId }: { initialRunId?: string | null
   }, [messages.length]);
 
   // Shared pane height so Chat and Summary align.
-  // Uses viewport height while staying reasonable on huge screens.
-  const paneHeightClass = "h-[min(calc(100vh-320px),740px)] min-h-[420px]";
+  // In embedded layout (split view), let the parent control height.
+  const paneHeightClass = embedded
+    ? "min-h-0"
+    : "h-[min(calc(100vh-320px),740px)] min-h-[420px]";
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-4 px-4 pb-6 pt-10">
+    <div
+      className={
+        embedded
+          ? "min-h-0 w-full px-2 pb-2 pt-2"
+          : "mx-auto w-full max-w-6xl space-y-4 px-4 pb-6 pt-10"
+      }
+    >
       <div className="rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
@@ -347,7 +373,9 @@ export function SupervisorPanel({ initialRunId }: { initialRunId?: string | null
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,460px)]">
-        <section className={`flex min-h-0 flex-col rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/60 p-4 ${paneHeightClass}`}>
+        <section
+          className={`flex min-h-0 flex-col rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/60 p-4 ${paneHeightClass}`}
+        >
           <div className="flex items-center justify-between gap-3">
             <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">Chat</p>
             <span className="font-mono text-[10px] text-[var(--nexus-muted)]">run={effectiveRunId}</span>
@@ -367,14 +395,14 @@ export function SupervisorPanel({ initialRunId }: { initialRunId?: string | null
                 </ul>
               </div>
             ) : (
-              <div className="space-y-2.5">
+              <div className="space-y-3.5">
                 {messages.map((m) => (
-                  <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"} mb-2`}>
                     <div
-                      className={`min-w-0 max-w-[min(34rem,88%)] rounded-2xl px-3.5 py-2.5 font-mono text-[12px] leading-relaxed shadow-sm ${
+                      className={`min-w-0 max-w-[min(34rem,92%)] rounded-2xl px-4 py-3 font-mono text-[12px] leading-relaxed shadow-sm ${
                         m.role === "user"
-                          ? "bg-gradient-to-b from-[rgba(0,212,170,0.22)] via-[rgba(0,212,170,0.12)] to-[rgba(59,130,246,0.06)] text-[var(--nexus-text)] ring-1 ring-[rgba(0,212,170,0.45)] shadow-[0_0_18px_rgba(0,212,170,0.08)]"
-                          : "bg-[var(--nexus-surface)]/70 text-[var(--nexus-text)] ring-1 ring-[rgba(138,149,166,0.26)] shadow-[0_0_16px_rgba(0,0,0,0.22)]"
+                          ? "bg-gradient-to-b from-[rgba(0,212,170,0.20)] via-[rgba(0,212,170,0.10)] to-[rgba(59,130,246,0.05)] text-[var(--nexus-text)] ring-1 ring-[rgba(0,212,170,0.38)] shadow-[0_0_18px_rgba(0,212,170,0.06)]"
+                          : "bg-[var(--nexus-surface)]/70 text-[var(--nexus-text)] ring-1 ring-[rgba(138,149,166,0.20)] shadow-[0_0_16px_rgba(0,0,0,0.20)]"
                       }`}
                     >
                       <div className="mb-1 flex items-center justify-between gap-3">
@@ -390,9 +418,7 @@ export function SupervisorPanel({ initialRunId }: { initialRunId?: string | null
                         </span>
                       </div>
                       <div
-                        className={`whitespace-pre-wrap break-words ${
-                          m.role === "assistant" ? "border-l-2 border-[rgba(0,212,170,0.18)] pl-3" : ""
-                        }`}
+                        className={`whitespace-pre-wrap break-words ${m.role === "assistant" ? "pl-0.5" : ""}`}
                       >
                         {m.text ? (
                           <MarkdownMessage text={normalizeChatText(m.text)} />
@@ -434,7 +460,9 @@ export function SupervisorPanel({ initialRunId }: { initialRunId?: string | null
           </div>
         </section>
 
-        <aside className={`flex min-h-0 flex-col rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/60 p-4 ${paneHeightClass}`}>
+        <aside
+          className={`flex min-h-0 flex-col rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/60 p-4 ${paneHeightClass}`}
+        >
           <div className="flex items-center justify-between gap-3">
             <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">Executive summary</p>
             <button

@@ -1,9 +1,9 @@
 "use client";
 
-import { Activity, FlaskConical, LayoutGrid, MessageSquareText, Orbit } from "lucide-react";
+import { Activity, LayoutGrid, Orbit, PanelsTopLeft } from "lucide-react";
 import type { Metadata } from "@/types/nexus-payload";
 
-export type NexusViewMode = "nexus" | "grid" | "backtest" | "supervisor" | "monitor";
+export type NexusViewMode = "nexus" | "grid" | "backtest" | "supervisor" | "monitor" | "research";
 
 interface NexusConsoleHeaderProps {
   metadata: Metadata | null | undefined;
@@ -74,6 +74,8 @@ export function NexusConsoleHeader({
       ? "BACKTEST LAB"
       : viewMode === "supervisor"
         ? "SUPERVISOR CONSOLE"
+        : viewMode === "research"
+          ? "RESEARCH WORKSPACE"
         : viewMode === "grid"
           ? "AGENTS CONSOLE"
           : viewMode === "monitor"
@@ -91,6 +93,8 @@ export function NexusConsoleHeader({
               ? "Replay saved runs, run new backtests, and inspect per-bar agent traces."
               : viewMode === "supervisor"
                 ? "Ask questions and get an executive snapshot for a saved run."
+                : viewMode === "research"
+                  ? "Compact backtest + supervisor side-by-side (shared run context)."
                 : viewMode === "grid"
                   ? "Browse desks and agents. Inspect traces and edit prompts (where applicable)."
                   : viewMode === "monitor"
@@ -112,9 +116,6 @@ export function NexusConsoleHeader({
               <span className="text-[var(--nexus-text)]">{metadata.run_id}</span>
             </span>
           )}
-          <span className="px-2 py-1 rounded border border-[var(--nexus-glow)]/40 bg-[var(--nexus-glow)]/10 text-[var(--nexus-glow)]">
-            {metadata?.status ?? "ACTIVE"}
-          </span>
         </div>
       </div>
 
@@ -147,23 +148,13 @@ export function NexusConsoleHeader({
             </button>
             <button
               type="button"
-              onClick={() => onViewModeChange("backtest")}
+              onClick={() => onViewModeChange("research")}
               className={`nexus-segment-btn group flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] tracking-widest uppercase transition-all ${
-                viewMode === "backtest" ? "is-active" : ""
+                viewMode === "research" ? "is-active" : ""
               }`}
             >
-              <FlaskConical className="h-3.5 w-3.5 opacity-80 group-hover:opacity-100" />
-              <span className="leading-none">Backtest</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onViewModeChange("supervisor")}
-              className={`nexus-segment-btn group flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] tracking-widest uppercase transition-all ${
-                viewMode === "supervisor" ? "is-active" : ""
-              }`}
-            >
-              <MessageSquareText className="h-3.5 w-3.5 opacity-80 group-hover:opacity-100" />
-              <span className="leading-none">Supervisor</span>
+              <PanelsTopLeft className="h-3.5 w-3.5 opacity-80 group-hover:opacity-100" />
+              <span className="leading-none">Research</span>
             </button>
             <button
               type="button"

@@ -136,16 +136,42 @@ def _build_snapshot(run_dir: Path, *, trades_limit: int = 5000) -> dict[str, Any
     summary_path = run_dir / "summary.json"
     trades_path = run_dir / "trades.jsonl"
     iterations_path = run_dir / "iterations.jsonl"
+    equity_path = run_dir / "equity.jsonl"
     if not summary_path.exists():
         raise HTTPException(status_code=404, detail=f"missing summary.json under {run_dir}")
 
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     bench = summary.get("benchmark") if isinstance(summary.get("benchmark"), dict) else {}
+    metrics = summary.get("metrics") if isinstance(summary.get("metrics"), dict) else {}
+    evaluation = summary.get("evaluation") if isinstance(summary.get("evaluation"), dict) else {}
 
     trades = (
         read_jsonl_dict_records(trades_path, limit=trades_limit) if trades_path.exists() else []
     )
     iters = read_jsonl_dict_records(iterations_path, limit=2000) if iterations_path.exists() else []
+    equity = read_jsonl_dict_records(equity_path, limit=25000) if equity_path.exists() else []
+
+    eq0 = equity[0] if equity else {}
+    eqn = equity[-1] if equity else {}
+    eq0_val = eq0.get("equity") if isinstance(eq0, dict) else None
+    eqn_val = eqn.get("equity") if isinstance(eqn, dict) else None
+    cash0_val = eq0.get("cash") if isinstance(eq0, dict) else None
+    cashn_val = eqn.get("cash") if isinstance(eqn, dict) else None
+
+    # Basic equity series stats for "agentic" answers without extra tool calls.
+    eq_min = None
+    eq_max = None
+    eq_points = 0
+    for p in equity:
+        if not isinstance(p, dict):
+            continue
+        v = p.get("equity")
+        if not isinstance(v, (int, float)):
+            continue
+        vv = float(v)
+        eq_points += 1
+        eq_min = vv if eq_min is None else min(eq_min, vv)
+        eq_max = vv if eq_max is None else max(eq_max, vv)
 
     fee_total = 0.0
     side_ct: Counter[str] = Counter()
@@ -198,11 +224,57 @@ def _build_snapshot(run_dir: Path, *, trades_limit: int = 5000) -> dict[str, Any
         "steps": summary.get("steps"),
         "trade_count": summary.get("trade_count"),
         "llm_arbitrator": llm_any,
+        "performance": {
+            # Prefer evaluation block if present (more explicit), else fall back to benchmark fields.
+            "initial_cash": (
+                evaluation.get("initial_cash")
+                if evaluation and evaluation.get("initial_cash") is not None
+                else (float(cash0_val) if isinstance(cash0_val, (int, float)) else None)
+            ),
+            "final_equity": (
+                evaluation.get("final_equity")
+                if evaluation and evaluation.get("final_equity") is not None
+                else (float(eqn_val) if isinstance(eqn_val, (int, float)) else None)
+            ),
+            "total_return_pct": evaluation.get("total_return_pct")
+            if evaluation and evaluation.get("total_return_pct") is not None
+            else bench.get("strategy_total_return_pct"),
+        },
+        "equity": {
+            "points": eq_points,
+            "initial_equity": (float(eq0_val) if isinstance(eq0_val, (int, float)) else None),
+            "final_equity": (float(eqn_val) if isinstance(eqn_val, (int, float)) else None),
+            "min_equity": (round(float(eq_min), 6) if isinstance(eq_min, (int, float)) else None),
+            "max_equity": (round(float(eq_max), 6) if isinstance(eq_max, (int, float)) else None),
+            "initial_cash": (float(cash0_val) if isinstance(cash0_val, (int, float)) else None),
+            "final_cash": (float(cashn_val) if isinstance(cashn_val, (int, float)) else None),
+        },
+        "risk": {
+            # These come from `summary.json` metrics (engine-computed).
+            "sharpe": metrics.get("sharpe"),
+            "sortino": metrics.get("sortino"),
+            # Stored as fraction (0.034 => 3.4%). Keep both for convenience.
+            "max_drawdown_frac": metrics.get("max_drawdown"),
+            "max_drawdown_pct": (
+                float(metrics.get("max_drawdown")) * 100.0
+                if isinstance(metrics.get("max_drawdown"), (int, float))
+                else None
+            ),
+            "win_rate": metrics.get("win_rate"),
+            "profit_factor": metrics.get("profit_factor"),
+            "periods_per_year": metrics.get("periods_per_year"),
+        },
         "returns": {
+            # Note: despite older key names, this benchmark is "buy-and-hold of the backtested asset",
+            # not necessarily BTC.
             "strategy_total_return_pct": bench.get("strategy_total_return_pct"),
-            "btc_buy_hold_equity_return_pct": bench.get("benchmark_buy_hold_equity_return_pct"),
+            "buy_hold_equity_return_pct": bench.get("benchmark_buy_hold_equity_return_pct"),
+            "buy_hold_asset_return_pct": bench.get("benchmark_asset_return_pct"),
             "equal_weight_equity_return_pct": bench.get("benchmark_equal_weight_equity_return_pct"),
             "equal_weight_symbols": bench.get("benchmark_equal_weight_symbols"),
+            "excess_return_vs_buy_hold_equity_pct": bench.get(
+                "excess_return_vs_buy_hold_equity_pct"
+            ),
         },
         "fees": {
             "fees_usd_total": round(float(fee_total), 2),

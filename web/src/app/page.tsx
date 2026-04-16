@@ -29,6 +29,7 @@ function NexusPageInner() {
     else if (v === "supervisor") setViewMode("supervisor");
     else if (v === "grid") setViewMode("grid");
     else if (v === "monitor") setViewMode("monitor");
+    else if (v === "research") setViewMode("research");
     else setViewMode("nexus");
   }, [searchParams]);
 
@@ -37,6 +38,8 @@ function NexusPageInner() {
       setViewMode(mode);
       if (mode === "backtest") {
         router.replace("/?view=backtest", { scroll: false });
+      } else if (mode === "research") {
+        router.replace("/?view=research", { scroll: false });
       } else if (mode === "supervisor") {
         router.replace("/?view=supervisor", { scroll: false });
       } else if (mode === "grid") {
@@ -110,6 +113,8 @@ function NexusPageInner() {
         ? "Agents: pick a card; detail, traces, and prompts open in the side panel (same page)."
         : viewMode === "backtest"
           ? "Backtest: async bar replay, per-step progress, and the same FlowEvent agent traces as live runs."
+          : viewMode === "research"
+            ? "Research: compact backtest + supervisor (shared run id)."
           : viewMode === "monitor"
             ? "Monitor: balances, positions, and the latest system decision."
             : "Supervisor: ask questions and get an executive snapshot for a backtest run.";
@@ -188,14 +193,29 @@ function NexusPageInner() {
 
         {viewMode === "backtest" ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <BacktestLabPanel embedded initialRunId={backtestRunParam} />
+            <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col overflow-hidden px-4 py-3">
+              <BacktestLabPanel embedded initialRunId={backtestRunParam} />
+            </div>
+          </div>
+        ) : viewMode === "research" ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden px-4 py-3">
+              <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] gap-3">
+                <section className="min-h-0 overflow-hidden rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/45">
+                  <BacktestLabPanel embedded embeddedView="research" initialRunId={backtestRunParam} />
+                </section>
+                <section className="min-h-0 overflow-hidden rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/45 p-3">
+                  <SupervisorPanel embedded initialRunId={backtestRunParam} />
+                </section>
+              </div>
+            </div>
           </div>
         ) : viewMode === "supervisor" ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-auto">
             <SupervisorPanel initialRunId={backtestRunParam} />
           </div>
         ) : viewMode === "monitor" ? (
-          <LiveMonitorPanel payload={payload ?? null} />
+          <LiveMonitorPanel payload={payload ?? null} fallbackRunId={backtestRunParam} />
         ) : viewMode === "grid" ? (
           <AgentsConsoleView
             nodes={topology.nodes}
@@ -229,7 +249,7 @@ function NexusPageInner() {
       </div>
 
       <footer className="border-t border-[var(--nexus-rule-soft)] bg-[var(--nexus-panel)]/80 px-4 py-2 text-[10px] text-[var(--nexus-muted)] font-mono">
-        {viewMode === "backtest" ? (
+        {viewMode === "backtest" || viewMode === "research" ? (
           "Backtest · preset async job · expand bars for CoT + log · equity / fills / KPIs"
         ) : (
           "metadata + topology + traces (node_id, parent_id) · streaming chain-of-thought and decision provenance"

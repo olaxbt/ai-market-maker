@@ -54,6 +54,16 @@ def build_binance_my_trades_row(
     sim_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """One row shaped like Binance spot ``myTrades`` (+ optional ``_sim``)."""
+
+    def _fmt_num(x: float) -> str:
+        xf = float(x)
+        if xf == 0.0:
+            return "0"
+        # Avoid serializing tiny-but-nonzero fills as "0" due to fixed decimals.
+        if abs(xf) < 1e-8:
+            return f"{xf:.12g}"
+        return f"{xf:.8f}".rstrip("0").rstrip(".")
+
     sym = ccxt_symbol_to_binance(symbol_ccxt)
     side_l = str(side).lower()
     is_buyer = side_l == "buy"
@@ -66,10 +76,10 @@ def build_binance_my_trades_row(
         "id": tid,
         "orderId": oid,
         "orderListId": -1,
-        "price": f"{p:.8f}".rstrip("0").rstrip("."),
-        "qty": f"{q:.8f}".rstrip("0").rstrip("."),
-        "quoteQty": f"{quote:.8f}".rstrip("0").rstrip("."),
-        "commission": f"{float(commission):.8f}".rstrip("0").rstrip("."),
+        "price": _fmt_num(p),
+        "qty": _fmt_num(q),
+        "quoteQty": _fmt_num(quote),
+        "commission": _fmt_num(float(commission)),
         "commissionAsset": commission_asset,
         "time": int(time_ms),
         "isBuyer": bool(is_buyer),

@@ -2,8 +2,9 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { RotateCcw, SlidersHorizontal } from "lucide-react";
+import { Maximize2, RotateCcw, SlidersHorizontal } from "lucide-react";
 import { AgentTraceCard } from "@/components/AgentTraceCard";
+import PromptEditor, { type PromptEditorValue } from "./PromptEditor";
 import type { AgentPromptSettings, NexusTrace, TopologyNode } from "@/types/nexus-payload";
 import { agentAvatarStaticSrc } from "@/lib/agentAvatars";
 
@@ -40,6 +41,7 @@ export function AgentDetailPanel({
   const [savedSnapshot, setSavedSnapshot] = useState<PromptSnapshot | null>(null);
   const [saveAck, setSaveAck] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [promptEditorOpen, setPromptEditorOpen] = useState(false);
   const cotEnabled = !!promptDefaults?.cot_enabled;
   const appliesToRuntime =
     !!promptDefaults &&
@@ -93,7 +95,7 @@ export function AgentDetailPanel({
     setSaveAck(false);
   };
   const [saveError, setSaveError] = useState<string | null>(null);
-  const savePrompts = async () => {
+  const savePrompts = async (override?: { system: string; task: string }) => {
     setSaveError(null);
     if (!appliesToRuntime) {
       setSaveError(
@@ -101,13 +103,15 @@ export function AgentDetailPanel({
       );
       return;
     }
+    const nextSystem = override?.system ?? systemPrompt;
+    const nextTask = override?.task ?? taskPrompt;
     try {
       const res = await fetch(`/api/agent-prompts/${encodeURIComponent(nodeId)}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          system_prompt: systemPrompt,
-          task_prompt: taskPrompt,
+          system_prompt: nextSystem,
+          task_prompt: nextTask,
           model: promptDefaults?.model ?? null,
           temperature: promptDefaults?.temperature ?? null,
           max_tokens: promptDefaults?.max_tokens ?? null,
@@ -119,7 +123,9 @@ export function AgentDetailPanel({
         const msg = await res.text();
         throw new Error(msg || `Failed to save (${res.status})`);
       }
-      setSavedSnapshot({ system: systemPrompt, task: taskPrompt });
+      setSystemPrompt(nextSystem);
+      setTaskPrompt(nextTask);
+      setSavedSnapshot({ system: nextSystem, task: nextTask });
       setSaveAck(true);
       setTimeout(() => setSaveAck(false), 1600);
     } catch (e) {
@@ -267,6 +273,18 @@ export function AgentDetailPanel({
                 </div>
               </div>
               <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                {showAdvanced ? (
+                  <button
+                    type="button"
+                    disabled={!promptDefaults}
+                    onClick={() => setPromptEditorOpen(true)}
+                    className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--nexus-glow)]/40 bg-[var(--nexus-glow)]/10 px-2.5 font-mono text-[9px] uppercase tracking-wide text-[var(--nexus-glow)] transition-colors hover:border-[var(--nexus-glow)]/65 disabled:opacity-40"
+                    title={promptDefaults ? "Open full-screen editor" : "No agent_prompts row available"}
+                  >
+                    <Maximize2 className="h-3 w-3" aria-hidden />
+                    Full editor
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => setShowAdvanced((v) => !v)}
@@ -291,7 +309,7 @@ export function AgentDetailPanel({
                     <>
                       <button
                         type="button"
-                        onClick={savePrompts}
+                        onClick={() => void savePrompts()}
                         className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--nexus-glow)]/45 bg-[var(--nexus-glow)]/10 px-2.5 font-mono text-[9px] uppercase tracking-wide text-[var(--nexus-glow)] transition-colors hover:border-[var(--nexus-glow)]/70"
                       >
                         Save
@@ -393,6 +411,23 @@ export function AgentDetailPanel({
           </section>
         </div>
       </div>
+
+      {promptEditorOpen && promptDefaults ? (
+        <PromptEditor
+          agentId={node?.label ?? nodeId}
+          initialValue={{ system: systemPrompt, task: taskPrompt }}
+          readOnly={!appliesToRuntime}
+          subtitle={
+            appliesToRuntime
+              ? "Edits are applied at runtime (hot reload)."
+              : "This agent is deterministic right now; prompt edits won’t affect runtime."
+          }
+          onSave={async (_agentId: string, val: PromptEditorValue) => {
+            await savePrompts(val);
+          }}
+          onClose={() => setPromptEditorOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
