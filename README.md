@@ -224,7 +224,7 @@ ai-market-maker/
 
 ## OpenClaw Integration
 
-This project includes complete OpenClaw support:
+This project includes complete OpenClaw support with dedicated tooling for agentic trading workflows.
 
 ### Skill Package
 ```
@@ -251,6 +251,8 @@ claw skill install ./openclaw
 - Installation verification script
 - Pre-configured for OpenClaw environments
 - Full compatibility with Claw skill system
+- Multi-language documentation support (English, Korean)
+- Complete examples for different usage scenarios
 
 ---
 

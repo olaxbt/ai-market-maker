@@ -163,10 +163,18 @@ git checkout -b feature/improvement
 # 5. Submit Pull Request
 ```
 
+## Documentation
+
+### Available Guides
+- **Quick Start**: `README.md`
+- **OpenClaw Usage**: `openclaw/examples/claw_usage.md`
+- **Korean Guide**: `openclaw/examples/korean_guide.md`
+- **Technical Docs**: `docs/` directory
+
 ## Support
 
 - **GitHub Issues**: https://github.com/olaxbt/ai-market-maker/issues
-- **Documentation**: `docs/` directory
+- **Documentation**: `docs/` directory and `openclaw/examples/`
 
 ---
 

@@ -25,17 +25,17 @@ python3 openclaw/scripts/claw_runner.py --paper --ticker BTC/USDT
 python3 openclaw/scripts/claw_runner.py --backtest --symbols BTC/USDT,ETH/USDT --steps 100
 ```
 
-## 📊 功能模式
+## Operational Modes
 
-### 1. 紙上交易模式 (Paper Trading)
+### 1. Paper Trading Mode
 ```bash
-# 基本用法
+# Basic usage
 python3 openclaw/scripts/claw_runner.py --paper --ticker BTC/USDT
 
-# 多幣種監控
+# Multiple symbol monitoring
 python3 openclaw/scripts/claw_runner.py --paper --ticker "BTC/USDT,ETH/USDT,SOL/USDT"
 
-# 自定義間隔 (秒)
+# Custom interval (seconds)
 export STRATEGY_INTERVAL_SEC=300
 python3 openclaw/scripts/claw_runner.py --paper
 ```
