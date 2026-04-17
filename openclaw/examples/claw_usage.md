@@ -1,29 +1,27 @@
-# AI Market Maker - OpenClaw 使用指南
+# AI Market Maker - OpenClaw Usage Guide
 
-## 🦀 韓國 Claw 社區推薦版本
+## Quick Start
 
-### 快速開始
-
-#### 方法 1: 直接從 GitHub 安裝
+### Method 1: Install from GitHub
 ```bash
-# 在 OpenClaw 中運行
-claw install https://github.com/OlaXBT-DavisNexus/ai-market-maker
+# From OpenClaw
+claw install https://github.com/olaxbt/ai-market-maker
 
-# 或克隆後本地安裝
-git clone https://github.com/OlaXBT-DavisNexus/ai-market-maker.git
+# Or clone and install locally
+git clone https://github.com/olaxbt/ai-market-maker.git
 cd ai-market-maker
 claw skill install ./openclaw
 ```
 
-#### 方法 2: 手動運行
+### Method 2: Manual Execution
 ```bash
-# 驗證安裝
+# Verify installation
 ./openclaw/scripts/verify_installation.sh
 
-# 紙上交易模式
+# Paper trading mode
 python3 openclaw/scripts/claw_runner.py --paper --ticker BTC/USDT
 
-# 回測模式
+# Backtesting mode
 python3 openclaw/scripts/claw_runner.py --backtest --symbols BTC/USDT,ETH/USDT --steps 100
 ```
 
@@ -232,30 +230,18 @@ git push origin feature/openclaw-improvement
 - 新增功能需要文檔
 - 保持向後兼容性
 
-## 📞 支持與社區
+## Support
 
-### 官方資源
-- GitHub: https://github.com/OlaXBT-DavisNexus/ai-market-maker
-- 文檔: https://github.com/OlaXBT-DavisNexus/ai-market-maker/docs
-- 問題追蹤: https://github.com/OlaXBT-DavisNexus/ai-market-maker/issues
-
-### 韓國社區
-- Telegram 群組: [韓國 Claw 社區]
-- Discord: [OpenClaw 韓國頻道]
-- 建造者論壇: [ClawHub 討論區]
-
-### 聯繫開發團隊
-- Email: olaxbt-davis@olaxbt.xyz
-- Twitter: @OLAXBT_Official
-- GitHub: @OlaXBT-DavisNexus
+### Official Resources
+- GitHub: https://github.com/olaxbt/ai-market-maker
+- Documentation: https://github.com/olaxbt/ai-market-maker/docs
+- Issue Tracker: https://github.com/olaxbt/ai-market-maker/issues
 
 ---
 
-**🚀 準備好體驗機構級的交易策略了嗎？**
+**Ready to start trading?**
 
 ```bash
-# 最後一步：開始交易！
+# Final step: Start trading!
 python3 openclaw/scripts/claw_runner.py --paper --ticker BTC/USDT
 ```
-
-**韓國 Claw 社區 🦀 祝您交易順利！**

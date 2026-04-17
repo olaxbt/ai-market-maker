@@ -1,11 +1,10 @@
 #!/bin/bash
-# OpenClaw installation verification script for AI Market Maker
-# Korean Claw Community Approved 🎯
+# Installation verification script for AI Market Maker
 
 set -e
 
-echo "🔍 AI Market Maker - OpenClaw Installation Verification"
-echo "="======================================================="
+echo "🔍 AI Market Maker - Installation Verification"
+echo "============================================="
 
 # Colors
 RED='\033[0;31m'
@@ -99,12 +98,10 @@ else
 fi
 
 echo ""
-echo "="======================================================="
-echo "🎯 Verification complete!"
+echo "============================================="
+echo "✅ Verification complete!"
 echo ""
 echo "Next steps:"
 echo "1. Run paper trading: python3 openclaw/scripts/claw_runner.py --paper"
 echo "2. Run backtest: python3 openclaw/scripts/claw_runner.py --backtest"
 echo "3. For OpenClaw: claw skill install ./openclaw"
-echo ""
-echo "Korean Claw Community 🦀 - Happy trading!"

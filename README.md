@@ -1,20 +1,18 @@
-# AI Market Maker: Agentic Trading System for Crypto Hedge Funds (OpenClaw Ready) 🦀
+# AI Market Maker: Agentic Trading System for Crypto Hedge Funds
 
-**AI-Market-Maker** is an **OpenClaw-ready**, agentic trading stack for crypto hedge funds. Built specifically for the OpenClaw ecosystem and **Korean Claw Community approved**, this system combines specialist AI trading agents (acting as trading desks), LangGraph orchestration, and hard Risk Guard veto power.
+**AI-Market-Maker** is an open-source, **hedge-fund-style** trading stack for crypto. It combines **specialist AI trading agents** (acting as trading desks), a **LangGraph** orchestration layer, a **hard Risk Guard veto** before any execution, and quant-grade discipline including centralized policy, benchmarks against buy-and-hold, and full traceability.
 
-**Korean Claw Community Approved** 🎯 - This project follows the community's best practices for OpenClaw integration and agentic workflow design.
+Designed to feel like a small professional trading firm — not just another bot.
 
 ### Key Features
-- **OpenClaw Native** - Pre-packaged as Claw skill with one-click installation
-- **Agentic Architecture** - 7 specialized trading agents as autonomous desks
-- **Korean Community Approved** - Following Claw community best practices
-- **Multi-agent workflow** with clear desk responsibilities
-- **Strict Risk Guard** that can veto any trade
-- **Quant-style backtesting** with built-in benchmarks (excess return vs buy-and-hold)
-- **Unified agent interface** + governance layer
-- **Paper trading** on Binance Testnet + rich local backtester
-- **Modern web dashboard** for telemetry and traces
-- **Clean configuration** (JSON policy + env for secrets only)
+- Multi-agent workflow with clear desk responsibilities
+- Strict **Risk Guard** that can veto any trade
+- Quant-style backtesting with built-in benchmarks (excess return vs buy-and-hold)
+- Unified agent interface + governance layer
+- **OpenClaw-ready packaging** (`SKILL.md` + `manifest.json` + dedicated runners)
+- Paper trading on Binance Testnet + rich local backtester
+- Modern web dashboard for telemetry and traces
+- Clean configuration (JSON policy + env for secrets only)
 
 ---
 
@@ -224,39 +222,35 @@ ai-market-maker/
 └── .env.example
 ```
 
-## 🦀 OpenClaw Integration
+## OpenClaw Integration
 
-This project is fully compatible with OpenClaw and includes:
+This project includes complete OpenClaw support:
 
-### Built-in Skill Package
+### Skill Package
 ```
 openclaw/
-├── SKILL.md              # Complete skill documentation
-├── manifest.json         # OpenClaw skill manifest
-├── scripts/              # OpenClaw-specific runners
+├── SKILL.md              # Skill documentation
+├── manifest.json         # OpenClaw manifest
+├── scripts/              # Dedicated runners
 │   ├── claw_runner.py    # Main entry point
-│   └── verify_installation.sh  # Installation checker
-└── examples/             # Usage examples for Claw users
+│   └── verify_installation.sh  # Dependency checker
+└── examples/             # Usage examples
 ```
 
-### One-Click Installation
+### Installation
 ```bash
-# From within OpenClaw
-claw install https://github.com/OlaXBT-DavisNexus/ai-market-maker
-# or
+# From OpenClaw
+claw install https://github.com/olaxbt/ai-market-maker
+
+# Or locally
 claw skill install ./openclaw
 ```
 
-### Agentic Workflow Design
-- **7 specialized trading desks** as autonomous agents
-- **LangGraph orchestration** for complex decision flows
-- **Hard veto layer** (Risk Guard) for safety
-- **Full traceability** and reasoning logs
-
-### Community Features
-- **Korean Claw Community tested** - following best practices
-- **Ready for ClawHub submission** - fully packaged skill
-- **Multi-channel support** - Telegram, Discord, Web UI
+### Features
+- Dedicated runner with automatic environment setup
+- Installation verification script
+- Pre-configured for OpenClaw environments
+- Full compatibility with Claw skill system
 
 ---
 
@@ -267,21 +261,6 @@ You can run this service as part of the OlaXBT *Nexus* stack and settle usage di
 Fund your Nexus-connected wallet with BNB or supported stablecoins on BNB Chain, then buy credits through the Nexus interface; all metered usage is settled on BNB Chain with low fees, and can later be expanded to opBNB or Greenfield–aligned workflows.
 
 This lets agents and trading tools consume data and actions through Nexus while keeping payments and accounting native to the BNB Chain ecosystem.
-
----
-
-## 🎯 Community Recognition
-
-**Korean Claw Community** has highlighted this project as an example of:
-- ✅ Proper OpenClaw skill packaging
-- ✅ Agentic architecture design
-- ✅ Practical trading application
-- ✅ Community-shareable content
-
-**Get involved:**
-- Try it in your OpenClaw: `claw install https://github.com/OlaXBT-DavisNexus/ai-market-maker`
-- Share feedback in Korean Claw communities
-- Star & share to help others discover agentic trading
 
 ---
 
@@ -299,6 +278,6 @@ Growth is driven by issues and pull requests. See the open issues for current pr
 
 ---
 
-**Built with LangGraph • FastAPI • Next.js • TA-Lib • OpenClaw**
+**Built with LangGraph • FastAPI • Next.js • TA-Lib**
 
-Ready for the Korean Claw community and beyond. 🦀
+Ready to experiment with serious agentic trading infrastructure.

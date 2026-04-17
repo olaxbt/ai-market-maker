@@ -174,9 +174,8 @@ def main():
     print("=" * 50)
     
     if args.version:
-        print("Version: 1.0.0 (OpenClaw Enhanced)")
-        print("Built for: Korean Claw Community")
-        print("Repository: https://github.com/OlaXBT-DavisNexus/ai-market-maker")
+        print("Version: 1.0.0")
+        print("Repository: https://github.com/olaxbt/ai-market-maker")
         return 0
     
     # Always setup environment

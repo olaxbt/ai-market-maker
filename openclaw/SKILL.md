@@ -1,37 +1,39 @@
-# AI Market Maker Skill - OpenClaw Edition 🦀
+# AI Market Maker Skill
 
 ## Purpose
 
-This skill provides a complete, **OpenClaw-ready** agentic trading system for crypto hedge funds. Built specifically for the **Korean Claw Community**, it includes multi-agent LangGraph workflows, hard Risk Guard veto, and full OpenClaw integration.
+This skill provides tooling and documentation to run, inspect, and extend the multi-agent LangGraph trading workflow in OpenClaw environments.
 
-## 🚀 Quick Start for OpenClaw Users
+It includes a hard Risk Guard veto before any execution, structured tracing for transparency, and dedicated OpenClaw integration tools.
 
-### One-Click Installation
+## Quick Start
+
+### Installation
 ```bash
-# From OpenClaw terminal
-claw install https://github.com/OlaXBT-DavisNexus/ai-market-maker
+# From OpenClaw
+claw install https://github.com/olaxbt/ai-market-maker
 
-# Or clone and install locally
-git clone https://github.com/OlaXBT-DavisNexus/ai-market-maker.git
+# Or locally
+git clone https://github.com/olaxbt/ai-market-maker.git
 cd ai-market-maker
 claw skill install ./openclaw
 ```
 
-### Verify Installation
+### Verification
 ```bash
-# Run verification script
+# Check dependencies
 ./openclaw/scripts/verify_installation.sh
 
-# Or use Python runner
+# Or
 python3 openclaw/scripts/claw_runner.py --verify
 ```
 
-### Start Trading
+### Usage
 ```bash
-# Paper trading mode
+# Paper trading
 python3 openclaw/scripts/claw_runner.py --paper --ticker BTC/USDT
 
-# Backtesting mode
+# Backtesting
 python3 openclaw/scripts/claw_runner.py --backtest --symbols BTC/USDT --steps 100
 ```
 
@@ -55,16 +57,16 @@ claw run ai-market-maker --backtest --symbols "BTC/USDT,ETH/USDT" --steps 150
 claw run ai-market-maker --verify
 ```
 
-## 🐛 Common Issues & Fixes (OpenClaw Edition)
+## Common Issues & Fixes
 
 ### 1. TA-Lib Installation
 **Problem:** `ModuleNotFoundError: No module named 'talib'`
 **Solution:**
 ```bash
-# OpenClaw environments often lack sudo - use Conda
+# Recommended for environments without sudo
 conda install -y ta-lib -c conda-forge
 
-# Or install from source (no sudo required)
+# Alternative: source compilation
 wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
 tar -xzf ta-lib-0.4.0-src.tar.gz
 cd ta-lib/
@@ -82,7 +84,7 @@ pip install ta-lib
 # Install in development mode
 pip install -e .
 
-# Or manually add to Python path
+# Or set Python path
 export PYTHONPATH=/path/to/ai-market-maker/src:$PYTHONPATH
 ```
 
@@ -90,22 +92,17 @@ export PYTHONPATH=/path/to/ai-market-maker/src:$PYTHONPATH
 **Problem:** `429 Too Many Requests`
 **Solution:**
 - Demo key included (rate-limited)
-- Set your own Nexus API key in `.env` for production
-- Implement request caching in your strategy
+- Set your own Nexus API key in `.env` for production use
+- Implement request caching
 
-### 4. OpenClaw Environment Detection
-**Problem:** Environment variables not set correctly
+### 4. Environment Configuration
+**Problem:** Environment variables not set
 **Solution:**
 ```bash
-# The claw_runner.py automatically detects and configures:
-# - Python path
-# - Nexus API keys
-# - Strategy settings
-# - Error handling
-
-# Manual override if needed
-export NEXUS_API_KEY=your_key_here
-export AIMM_DESK_STRATEGY_PRESET=trend_guard
+# Automatic configuration via claw_runner.py
+# Manual override:
+export NEXUS_API_KEY=your_key
+export AIMM_DESK_STRATEGY_PRESET=default
 ```
 
 ## 📊 Flow API (for external tools)
@@ -124,53 +121,40 @@ The repo exposes a lightweight, mostly read-only HTTP API:
 - If `AIMM_API_KEY` is set → All non-local requests require `x-api-key` header.
 - In production, always put the Flow API behind a reverse proxy and configure `AIMM_CORS_ORIGINS` appropriately.
 
-## 🎯 Korean Claw Community Guidelines
-
-### Best Practices for Sharing
-1. **Always verify installation** before sharing
-2. **Include environment details** in bug reports
-3. **Use community tags**: `#OpenClaw #AgenticTrading #KoreanClawCommunity`
-4. **Share success stories** and learning experiences
-
-### Community Support Channels
-- GitHub Issues: https://github.com/OlaXBT-DavisNexus/ai-market-maker/issues
-- Korean Claw Telegram/Discord groups
-- ClawHub discussion forums
-
-## 🔑 Key Files for OpenClaw Integration
+## Key Files for OpenClaw Integration
 
 | Area | Location | Purpose |
 |------|----------|---------|
-| OpenClaw Runner | `openclaw/scripts/claw_runner.py` | Main entry point for Claw |
+| OpenClaw Runner | `openclaw/scripts/claw_runner.py` | Main entry point |
 | Installation Verifier | `openclaw/scripts/verify_installation.sh` | Dependency checker |
 | Skill Manifest | `openclaw/manifest.json` | OpenClaw skill definition |
-| Usage Examples | `openclaw/examples/claw_usage.md` | Korean/English guides |
+| Usage Examples | `openclaw/examples/claw_usage.md` | Usage guides |
 | Main Workflow | `src/main.py` | Core trading logic |
 | Agent System | `src/agents/` | 7 trading desks |
 | Web Dashboard | `web/` | Next.js monitoring UI |
 
-## 📈 Performance Tips for OpenClaw
+## Performance Tips
 
 1. **Enable Caching**: Reduce API calls with local OHLCV cache
 2. **Adjust Intervals**: Increase `STRATEGY_INTERVAL_SEC` for lower resource usage
 3. **Use Paper Mode**: Test strategies without real funds
-4. **Monitor Resources**: Check memory/CPU usage in resource-constrained environments
+4. **Monitor Resources**: Check memory/CPU usage
 
-## 🤝 Contributing to OpenClaw Edition
+## Contributing
 
-We welcome contributions from the Korean Claw Community!
+We welcome contributions! Please read the main `CONTRIBUTING.md` first.
 
 ### Priority Areas:
-1. **Better error messages** in Korean/English
-2. **Simplified installation** for new users
-3. **Performance optimizations** for resource-limited environments
-4. **Community documentation** and tutorials
+1. **Error handling improvements**
+2. **Installation simplification**
+3. **Performance optimizations**
+4. **Documentation enhancements**
 
 ### How to Contribute:
 ```bash
 # 1. Fork the repository
 # 2. Create a feature branch
-git checkout -b feature/openclaw-improvement
+git checkout -b feature/improvement
 
 # 3. Make your changes
 # 4. Test with verification script
@@ -179,17 +163,12 @@ git checkout -b feature/openclaw-improvement
 # 5. Submit Pull Request
 ```
 
-## 📞 Support & Community
+## Support
 
-- **GitHub**: https://github.com/OlaXBT-DavisNexus/ai-market-maker
-- **Email**: olaxbt-davis@olaxbt.xyz
-- **Korean Community**: Telegram/Discord groups
-- **Documentation**: `openclaw/examples/claw_usage.md`
+- **GitHub Issues**: https://github.com/olaxbt/ai-market-maker/issues
+- **Documentation**: `docs/` directory
 
 ---
 
-**Korean Claw Community Approved** 🎯 - This skill follows community best practices for OpenClaw integration and agentic trading systems.
-
-**Version**: 1.0.0 (OpenClaw Enhanced)
+**Version**: 1.0.0
 **Last Updated**: 2026-04-17
-**Community Tag**: `#KoreanClawCommunity #OpenClawReady #AgenticTrading`
