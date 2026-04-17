@@ -7,7 +7,7 @@ from dataclasses import replace
 import pytest
 
 from config.fund_policy import load_fund_policy
-from workflow.execution_intent import MIN_CONFIDENCE_DIRECTIONAL, derive_trade_intent
+from workflow.execution_intent import derive_trade_intent
 
 
 def _state_backtest():
