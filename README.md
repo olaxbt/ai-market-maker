@@ -9,7 +9,7 @@ Designed to feel like a small professional trading firm — not just another bot
 - Strict **Risk Guard** that can veto any trade
 - Quant-style backtesting with built-in benchmarks (excess return vs buy-and-hold)
 - Unified agent interface + governance layer
-- OpenClaw-ready packaging (`SKILL.md` + `manifest.json`)
+- **OpenClaw-ready packaging** (`SKILL.md` + `manifest.json` + dedicated runners)
 - Paper trading on Binance Testnet + rich local backtester
 - Modern web dashboard for telemetry and traces
 - Clean configuration (JSON policy + env for secrets only)
@@ -62,6 +62,15 @@ cd ai-market-maker
 
 # 2. Install dependencies
 pip install uv
+
+# 3. Install TA-Lib first (see installation options in Prerequisites section)
+# Example using Conda (recommended for OpenClaw environments):
+# wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+# bash Miniconda3-latest-Linux-x86_64.sh -b -p $HOME/miniconda
+# source $HOME/miniconda/bin/activate
+# conda install -y ta-lib -c conda-forge
+
+# 4. Install Python dependencies
 uv sync --extra dev
 uv run pre-commit install
 
@@ -87,10 +96,47 @@ uv run python src/main.py
 ### Prerequisites
 - Python 3.11+
 - [uv](https://github.com/astral-sh/uv)
-- TA-Lib (C library + Python wrapper)
+- **TA-Lib (C library + Python wrapper)** - see installation options below
 - Binance Testnet API keys (for paper trading)
 - OpenAI API key (optional, enables LLM nodes)
 - (Optional) Nexus Skills API access
+
+#### TA-Lib Installation Options
+
+**Option 1: Conda (Recommended)**
+```bash
+# Install Miniconda if not already installed
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+bash Miniconda3-latest-Linux-x86_64.sh -b -p $HOME/miniconda
+source $HOME/miniconda/bin/activate
+conda install -y ta-lib -c conda-forge
+```
+
+**Option 2: System Package Manager**
+```bash
+# Ubuntu/Debian
+sudo apt-get update
+sudo apt-get install -y ta-lib
+
+# macOS (Homebrew)
+brew install ta-lib
+
+# Then install Python wrapper
+pip install ta-lib
+```
+
+**Option 3: Source Compilation**
+```bash
+wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
+tar -xzf ta-lib-0.4.0-src.tar.gz
+cd ta-lib/
+./configure --prefix=/usr/local
+make
+sudo make install
+pip install ta-lib
+```
+
+**Note for OpenClaw Users:** If running in OpenClaw environment without sudo privileges, use Option 1 (Conda) as shown in the CI workflow.
 
 ### Configuration Philosophy
 - **Policy & universe** → `config/policy.default.json` and `config/app.default.json` (single source of truth)
@@ -175,6 +221,38 @@ ai-market-maker/
 ├── tests/                  # Test suite
 └── .env.example
 ```
+
+## OpenClaw Integration
+
+This project includes complete OpenClaw support with dedicated tooling for agentic trading workflows.
+
+### Skill Package
+```
+openclaw/
+├── SKILL.md              # Skill documentation
+├── manifest.json         # OpenClaw manifest
+├── scripts/              # Dedicated runners
+│   ├── claw_runner.py    # Main entry point
+│   └── verify_installation.sh  # Dependency checker
+└── examples/             # Usage examples
+```
+
+### Installation
+```bash
+# From OpenClaw
+claw install https://github.com/olaxbt/ai-market-maker
+
+# Or locally
+claw skill install ./openclaw
+```
+
+### Features
+- Dedicated runner with automatic environment setup
+- Installation verification script
+- Pre-configured for OpenClaw environments
+- Full compatibility with Claw skill system
+- Multi-language documentation support (English, Korean)
+- Complete examples for different usage scenarios
 
 ---
 

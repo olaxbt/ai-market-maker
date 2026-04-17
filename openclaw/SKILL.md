@@ -2,23 +2,110 @@
 
 ## Purpose
 
-This skill provides tooling and documentation to run, inspect, and extend the multi-agent LangGraph trading workflow.
+This skill provides tooling and documentation to run, inspect, and extend the multi-agent LangGraph trading workflow in OpenClaw environments.
 
-It includes a hard Risk Guard veto before any execution, structured tracing for transparency, and a simple HTTP API surface for external tools.
+It includes a hard Risk Guard veto before any execution, structured tracing for transparency, and dedicated OpenClaw integration tools.
 
-## When to Use
+## Quick Start
 
-- Running or debugging the main LangGraph pipeline (`src/main.py`)
-- Understanding how personas map to graph nodes (see `docs/personas/` and `src/api/payload_adapter.py`)
-- Integrating with the Flow API (`/runs/*`, `/pm/*`, `/backtests`)
+### Installation
+```bash
+# From OpenClaw
+claw install https://github.com/olaxbt/ai-market-maker
 
-## Important Boundaries
+# Or locally
+git clone https://github.com/olaxbt/ai-market-maker.git
+cd ai-market-maker
+claw skill install ./openclaw
+```
 
-- **Secrets**: Never pass sensitive data through LangChain serialization (`dumps`/`loads`). Keep `langchain-core` up to date.
-- **Live Trading**: Currently focused on testnet/paper. Real execution requires explicit `live` mode + safety flags (planned for P3/P4).
-- **Risk Guard**: This is a hard, code-level veto — not just an LLM suggestion.
+### Verification
+```bash
+# Check dependencies
+./openclaw/scripts/verify_installation.sh
 
-## Flow API (for external tools)
+# Or
+python3 openclaw/scripts/claw_runner.py --verify
+```
+
+### Usage
+```bash
+# Paper trading
+python3 openclaw/scripts/claw_runner.py --paper --ticker BTC/USDT
+
+# Backtesting
+python3 openclaw/scripts/claw_runner.py --backtest --symbols BTC/USDT --steps 100
+```
+
+## 🔧 OpenClaw-Specific Features
+
+### Automatic Environment Configuration
+- Python path setup for OpenClaw environments
+- Nexus API key management (demo key included)
+- TA-Lib dependency detection and guidance
+- Error recovery and logging optimized for Claw
+
+### Pre-configured Commands
+```bash
+# Paper trading with custom ticker
+claw run ai-market-maker --paper --ticker ETH/USDT
+
+# Backtesting with multiple symbols
+claw run ai-market-maker --backtest --symbols "BTC/USDT,ETH/USDT" --steps 150
+
+# Installation verification
+claw run ai-market-maker --verify
+```
+
+## Common Issues & Fixes
+
+### 1. TA-Lib Installation
+**Problem:** `ModuleNotFoundError: No module named 'talib'`
+**Solution:**
+```bash
+# Recommended for environments without sudo
+conda install -y ta-lib -c conda-forge
+
+# Alternative: source compilation
+wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
+tar -xzf ta-lib-0.4.0-src.tar.gz
+cd ta-lib/
+./configure --prefix=$HOME/.local
+make
+make install
+export LD_LIBRARY_PATH=$HOME/.local/lib:$LD_LIBRARY_PATH
+pip install ta-lib
+```
+
+### 2. Module Import Errors
+**Problem:** `ModuleNotFoundError: No module named 'agents.market_scanner'`
+**Solution:**
+```bash
+# Install in development mode
+pip install -e .
+
+# Or set Python path
+export PYTHONPATH=/path/to/ai-market-maker/src:$PYTHONPATH
+```
+
+### 3. Nexus API Rate Limits
+**Problem:** `429 Too Many Requests`
+**Solution:**
+- Demo key included (rate-limited)
+- Set your own Nexus API key in `.env` for production use
+- Implement request caching
+
+### 4. Environment Configuration
+**Problem:** Environment variables not set
+**Solution:**
+```bash
+# Automatic configuration via claw_runner.py
+# Manual override:
+export NEXUS_API_KEY=your_key
+export AIMM_DESK_STRATEGY_PRESET=default
+```
+
+## 📊 Flow API (for external tools)
 
 The repo exposes a lightweight, mostly read-only HTTP API:
 
@@ -34,18 +121,62 @@ The repo exposes a lightweight, mostly read-only HTTP API:
 - If `AIMM_API_KEY` is set → All non-local requests require `x-api-key` header.
 - In production, always put the Flow API behind a reverse proxy and configure `AIMM_CORS_ORIGINS` appropriately.
 
-## Key Files
+## Key Files for OpenClaw Integration
 
-| Area                  | Location                                      |
-|-----------------------|-----------------------------------------------|
-| Main workflow         | `src/main.py`                                 |
-| Core state schema     | `src/schemas/state.py`                        |
-| Flow events & logging | `src/schemas/flow_events.py`, `src/flow_log.py` |
-| Trace schemas         | `schema/agent_trace.json`                     |
-| Web dashboard         | `web/` (Next.js)                              |
+| Area | Location | Purpose |
+|------|----------|---------|
+| OpenClaw Runner | `openclaw/scripts/claw_runner.py` | Main entry point |
+| Installation Verifier | `openclaw/scripts/verify_installation.sh` | Dependency checker |
+| Skill Manifest | `openclaw/manifest.json` | OpenClaw skill definition |
+| Usage Examples | `openclaw/examples/claw_usage.md` | Usage guides |
+| Main Workflow | `src/main.py` | Core trading logic |
+| Agent System | `src/agents/` | 7 trading desks |
+| Web Dashboard | `web/` | Next.js monitoring UI |
 
-## Versioning & Stability
+## Performance Tips
 
-When changing tool schemas or breaking payload formats, bump the version in `manifest.json`.
+1. **Enable Caching**: Reduce API calls with local OHLCV cache
+2. **Adjust Intervals**: Increase `STRATEGY_INTERVAL_SEC` for lower resource usage
+3. **Use Paper Mode**: Test strategies without real funds
+4. **Monitor Resources**: Check memory/CPU usage
 
-Future tool names under the `nexus.*` namespace will remain stable for external integrations (OpenClaw / MCP).
+## Contributing
+
+We welcome contributions! Please read the main `CONTRIBUTING.md` first.
+
+### Priority Areas:
+1. **Error handling improvements**
+2. **Installation simplification**
+3. **Performance optimizations**
+4. **Documentation enhancements**
+
+### How to Contribute:
+```bash
+# 1. Fork the repository
+# 2. Create a feature branch
+git checkout -b feature/improvement
+
+# 3. Make your changes
+# 4. Test with verification script
+./openclaw/scripts/verify_installation.sh
+
+# 5. Submit Pull Request
+```
+
+## Documentation
+
+### Available Guides
+- **Quick Start**: `README.md`
+- **OpenClaw Usage**: `openclaw/examples/claw_usage.md`
+- **Korean Guide**: `openclaw/examples/korean_guide.md`
+- **Technical Docs**: `docs/` directory
+
+## Support
+
+- **GitHub Issues**: https://github.com/olaxbt/ai-market-maker/issues
+- **Documentation**: `docs/` directory and `openclaw/examples/`
+
+---
+
+**Version**: 1.0.0
+**Last Updated**: 2026-04-17
