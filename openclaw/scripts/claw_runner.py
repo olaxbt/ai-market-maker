@@ -81,10 +81,23 @@ def run_backtest(symbols="BTC/USDT,ETH/USDT,SOL/USDT", steps=100):
     try:
         from src.backtest.run_demo import main as backtest_main
 
-        sys.argv = ["run_demo.py", "--symbols", symbols, "--steps", str(steps), "--online", "--exchange", "binance", "--timeframe", "1d", "--initial-cash", "10000"]
-        
+        sys.argv = [
+            "run_demo.py",
+            "--symbols",
+            symbols,
+            "--steps",
+            str(steps),
+            "--online",
+            "--exchange",
+            "binance",
+            "--timeframe",
+            "1d",
+            "--initial-cash",
+            "10000",
+        ]
+
         # Add --ticker-only if only one symbol
-        if len(symbols.split(',')) == 1:
+        if len(symbols.split(",")) == 1:
             sys.argv.append("--ticker-only")
 
         return backtest_main()
@@ -182,7 +195,9 @@ def main():
     parser.add_argument("--ticker", default="BTC/USDT", help="Ticker symbol (default: BTC/USDT)")
     parser.add_argument("--backtest", action="store_true", help="Run backtest mode")
     parser.add_argument(
-        "--symbols", default="BTC/USDT,ETH/USDT,SOL/USDT", help="Symbols for backtest (default: BTC/USDT,ETH/USDT,SOL/USDT)"
+        "--symbols",
+        default="BTC/USDT,ETH/USDT,SOL/USDT",
+        help="Symbols for backtest (default: BTC/USDT,ETH/USDT,SOL/USDT)",
     )
     parser.add_argument("--steps", type=int, default=100, help="Backtest steps (default: 100)")
     parser.add_argument("--verify", action="store_true", help="Verify installation")
