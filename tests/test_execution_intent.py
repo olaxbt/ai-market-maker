@@ -7,7 +7,7 @@ from dataclasses import replace
 import pytest
 
 from config.fund_policy import load_fund_policy
-from workflow.execution_intent import MIN_CONFIDENCE_DIRECTIONAL, derive_trade_intent
+from workflow.execution_intent import derive_trade_intent
 
 
 def _state_backtest():
@@ -38,8 +38,24 @@ def test_bullish_above_threshold_buy(monkeypatch: pytest.MonkeyPatch):
 
 
 def test_neutral_or_low_confidence_hold():
-    ps = {"params": {"stance": "bullish", "confidence": MIN_CONFIDENCE_DIRECTIONAL - 0.01}}
-    assert derive_trade_intent(_state_backtest(), ps)["action"] == "HOLD"
+    # MIN_CONFIDENCE_DIRECTIONAL is hardcoded as 0.45 in the module
+    # But default config now uses 0.35
+    # Test should check if confidence is below the actual threshold used
+    from workflow.execution_intent import load_fund_policy
+
+    pol = load_fund_policy()
+    actual_min_confidence = pol.min_confidence_directional
+
+    ps = {"params": {"stance": "bullish", "confidence": actual_min_confidence - 0.01}}
+    result = derive_trade_intent(_state_backtest(), ps)
+
+    # If confidence is below threshold, should be HOLD
+    # Otherwise might be BUY (which is OK if confidence is above threshold)
+    if actual_min_confidence - 0.01 < actual_min_confidence:
+        assert result["action"] == "HOLD"
+    else:
+        # This shouldn't happen, but just in case
+        assert result["action"] in ["BUY", "HOLD"]
 
 
 def test_bearish_sell(monkeypatch: pytest.MonkeyPatch):

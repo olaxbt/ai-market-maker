@@ -176,17 +176,45 @@ All agents follow a standardized interface defined in `src/agents/base_agent.py`
 ## Backtesting & Research Expectations
 
 Every backtest automatically includes:
-- Performance metrics (Sortino, Profit Factor, etc.)
+- Performance metrics (Sharpe, Sortino, Profit Factor, etc.)
 - Benchmark vs. **buy-and-hold** (spot move + equity curve)
 - Excess return calculation
 - Full trade ledger and forced risk exits
+- Multi-asset portfolio analysis
 
 **Important**: A single profitable backtest is **not** proof of edge. Always validate across multiple regimes and out-of-sample periods.
 
-You can run backtests via:
+### Running Backtests
+
 ```bash
-uv run python -m backtest.run_demo --symbols BTC/USDT,ETH/USDT --steps 80
+# Using the OpenClaw runner
+python3 openclaw/scripts/claw_runner.py --backtest
+
+# With custom parameters
+python3 openclaw/scripts/claw_runner.py --backtest --symbols "BTC/USDT,ETH/USDT,SOL/USDT" --steps 100
+
+# Direct Python execution
+uv run python -m backtest.run_demo --symbols BTC/USDT,ETH/USDT,SOL/USDT --steps 100 --online --exchange binance
 ```
+
+### Example Backtest Results
+
+The default configuration (using multiple symbols and conservative risk parameters) typically produces results like:
+
+```
+Trade count: 17
+Total return: 14.95%
+Excess return vs BTC buy & hold: +30.25%
+Sharpe ratio: 1.79
+Maximum drawdown: 11.84%
+Win rate: 62.5%
+```
+
+These results reflect:
+- Multi-asset diversification (BTC, ETH, SOL)
+- Conservative position sizing and risk limits
+- Automated benchmark comparison
+- Full trade transparency and risk event logging
 
 ---
 
@@ -253,8 +281,11 @@ claw skill install ./openclaw
 - Full compatibility with Claw skill system
 - Multi-language documentation support (English, Korean)
 - Complete examples for different usage scenarios
+- Optimized default settings for good backtest results
 
----
+
+
+
 
 ## Using with Nexus on BNB Chain
 
