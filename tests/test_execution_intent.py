@@ -42,12 +42,13 @@ def test_neutral_or_low_confidence_hold():
     # But default config now uses 0.35
     # Test should check if confidence is below the actual threshold used
     from workflow.execution_intent import load_fund_policy
+
     pol = load_fund_policy()
     actual_min_confidence = pol.min_confidence_directional
-    
+
     ps = {"params": {"stance": "bullish", "confidence": actual_min_confidence - 0.01}}
     result = derive_trade_intent(_state_backtest(), ps)
-    
+
     # If confidence is below threshold, should be HOLD
     # Otherwise might be BUY (which is OK if confidence is above threshold)
     if actual_min_confidence - 0.01 < actual_min_confidence:
