@@ -1,18 +1,20 @@
-# AI Market Maker: Agentic Trading System for Crypto Hedge Funds
+# AI Market Maker: Agentic Trading System for Crypto Hedge Funds (OpenClaw Ready) 🦀
 
-**AI-Market-Maker** is an open-source, **hedge-fund-style** trading stack for crypto. It combines **specialist AI trading agents** (acting as trading desks), a **LangGraph** orchestration layer, a **hard Risk Guard veto** before any execution, and quant-grade discipline including centralized policy, benchmarks against buy-and-hold, and full traceability.
+**AI-Market-Maker** is an **OpenClaw-ready**, agentic trading stack for crypto hedge funds. Built specifically for the OpenClaw ecosystem and **Korean Claw Community approved**, this system combines specialist AI trading agents (acting as trading desks), LangGraph orchestration, and hard Risk Guard veto power.
 
-Designed to feel like a small professional trading firm — not just another bot.
+**Korean Claw Community Approved** 🎯 - This project follows the community's best practices for OpenClaw integration and agentic workflow design.
 
 ### Key Features
-- Multi-agent workflow with clear desk responsibilities
-- Strict **Risk Guard** that can veto any trade
-- Quant-style backtesting with built-in benchmarks (excess return vs buy-and-hold)
-- Unified agent interface + governance layer
-- OpenClaw-ready packaging (`SKILL.md` + `manifest.json`)
-- Paper trading on Binance Testnet + rich local backtester
-- Modern web dashboard for telemetry and traces
-- Clean configuration (JSON policy + env for secrets only)
+- **OpenClaw Native** - Pre-packaged as Claw skill with one-click installation
+- **Agentic Architecture** - 7 specialized trading agents as autonomous desks
+- **Korean Community Approved** - Following Claw community best practices
+- **Multi-agent workflow** with clear desk responsibilities
+- **Strict Risk Guard** that can veto any trade
+- **Quant-style backtesting** with built-in benchmarks (excess return vs buy-and-hold)
+- **Unified agent interface** + governance layer
+- **Paper trading** on Binance Testnet + rich local backtester
+- **Modern web dashboard** for telemetry and traces
+- **Clean configuration** (JSON policy + env for secrets only)
 
 ---
 
@@ -62,6 +64,15 @@ cd ai-market-maker
 
 # 2. Install dependencies
 pip install uv
+
+# 3. Install TA-Lib first (see installation options in Prerequisites section)
+# Example using Conda (recommended for OpenClaw environments):
+# wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+# bash Miniconda3-latest-Linux-x86_64.sh -b -p $HOME/miniconda
+# source $HOME/miniconda/bin/activate
+# conda install -y ta-lib -c conda-forge
+
+# 4. Install Python dependencies
 uv sync --extra dev
 uv run pre-commit install
 
@@ -87,10 +98,47 @@ uv run python src/main.py
 ### Prerequisites
 - Python 3.11+
 - [uv](https://github.com/astral-sh/uv)
-- TA-Lib (C library + Python wrapper)
+- **TA-Lib (C library + Python wrapper)** - see installation options below
 - Binance Testnet API keys (for paper trading)
 - OpenAI API key (optional, enables LLM nodes)
 - (Optional) Nexus Skills API access
+
+#### TA-Lib Installation Options
+
+**Option 1: Conda (Recommended)**
+```bash
+# Install Miniconda if not already installed
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+bash Miniconda3-latest-Linux-x86_64.sh -b -p $HOME/miniconda
+source $HOME/miniconda/bin/activate
+conda install -y ta-lib -c conda-forge
+```
+
+**Option 2: System Package Manager**
+```bash
+# Ubuntu/Debian
+sudo apt-get update
+sudo apt-get install -y ta-lib
+
+# macOS (Homebrew)
+brew install ta-lib
+
+# Then install Python wrapper
+pip install ta-lib
+```
+
+**Option 3: Source Compilation**
+```bash
+wget http://prdownloads.sourceforge.net/ta-lib/ta-lib-0.4.0-src.tar.gz
+tar -xzf ta-lib-0.4.0-src.tar.gz
+cd ta-lib/
+./configure --prefix=/usr/local
+make
+sudo make install
+pip install ta-lib
+```
+
+**Note for OpenClaw Users:** If running in OpenClaw environment without sudo privileges, use Option 1 (Conda) as shown in the CI workflow.
 
 ### Configuration Philosophy
 - **Policy & universe** → `config/policy.default.json` and `config/app.default.json` (single source of truth)
@@ -176,6 +224,40 @@ ai-market-maker/
 └── .env.example
 ```
 
+## 🦀 OpenClaw Integration
+
+This project is fully compatible with OpenClaw and includes:
+
+### Built-in Skill Package
+```
+openclaw/
+├── SKILL.md              # Complete skill documentation
+├── manifest.json         # OpenClaw skill manifest
+├── scripts/              # OpenClaw-specific runners
+│   ├── claw_runner.py    # Main entry point
+│   └── verify_installation.sh  # Installation checker
+└── examples/             # Usage examples for Claw users
+```
+
+### One-Click Installation
+```bash
+# From within OpenClaw
+claw install https://github.com/OlaXBT-DavisNexus/ai-market-maker
+# or
+claw skill install ./openclaw
+```
+
+### Agentic Workflow Design
+- **7 specialized trading desks** as autonomous agents
+- **LangGraph orchestration** for complex decision flows
+- **Hard veto layer** (Risk Guard) for safety
+- **Full traceability** and reasoning logs
+
+### Community Features
+- **Korean Claw Community tested** - following best practices
+- **Ready for ClawHub submission** - fully packaged skill
+- **Multi-channel support** - Telegram, Discord, Web UI
+
 ---
 
 ## Using with Nexus on BNB Chain
@@ -185,6 +267,21 @@ You can run this service as part of the OlaXBT *Nexus* stack and settle usage di
 Fund your Nexus-connected wallet with BNB or supported stablecoins on BNB Chain, then buy credits through the Nexus interface; all metered usage is settled on BNB Chain with low fees, and can later be expanded to opBNB or Greenfield–aligned workflows.
 
 This lets agents and trading tools consume data and actions through Nexus while keeping payments and accounting native to the BNB Chain ecosystem.
+
+---
+
+## 🎯 Community Recognition
+
+**Korean Claw Community** has highlighted this project as an example of:
+- ✅ Proper OpenClaw skill packaging
+- ✅ Agentic architecture design
+- ✅ Practical trading application
+- ✅ Community-shareable content
+
+**Get involved:**
+- Try it in your OpenClaw: `claw install https://github.com/OlaXBT-DavisNexus/ai-market-maker`
+- Share feedback in Korean Claw communities
+- Star & share to help others discover agentic trading
 
 ---
 
@@ -202,6 +299,6 @@ Growth is driven by issues and pull requests. See the open issues for current pr
 
 ---
 
-**Built with LangGraph • FastAPI • Next.js • TA-Lib**
+**Built with LangGraph • FastAPI • Next.js • TA-Lib • OpenClaw**
 
-Ready to experiment with serious agentic trading infrastructure.
+Ready for the Korean Claw community and beyond. 🦀
