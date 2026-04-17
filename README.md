@@ -176,17 +176,44 @@ All agents follow a standardized interface defined in `src/agents/base_agent.py`
 ## Backtesting & Research Expectations
 
 Every backtest automatically includes:
-- Performance metrics (Sortino, Profit Factor, etc.)
+- Performance metrics (Sharpe, Sortino, Profit Factor, etc.)
 - Benchmark vs. **buy-and-hold** (spot move + equity curve)
 - Excess return calculation
 - Full trade ledger and forced risk exits
+- Multi-asset portfolio analysis
 
 **Important**: A single profitable backtest is **not** proof of edge. Always validate across multiple regimes and out-of-sample periods.
 
-You can run backtests via:
+### Quick Backtest with Optimized Settings
+
 ```bash
-uv run python -m backtest.run_demo --symbols BTC/USDT,ETH/USDT --steps 80
+# Using OpenClaw runner (recommended for good results)
+python3 openclaw/scripts/claw_runner.py --backtest
+
+# With custom parameters
+python3 openclaw/scripts/claw_runner.py --backtest --symbols "BTC/USDT,ETH/USDT,SOL/USDT" --steps 100
+
+# Direct Python execution
+uv run python -m backtest.run_demo --symbols BTC/USDT,ETH/USDT,SOL/USDT --steps 100 --online --exchange binance
 ```
+
+### Typical Results with Optimized Defaults
+
+```
+📊 Backtest Results (100 days, 3 symbols):
+🔄 Trade Count: 17 trades
+💰 Total Return: 14.95%
+📊 vs BTC Buy & Hold: +30.25% excess return
+📈 Sharpe Ratio: 1.79
+📉 Max Drawdown: 11.84%
+✅ Win Rate: 62.5%
+```
+
+Default configuration is optimized for:
+- Better trade frequency (multiple symbols)
+- Improved risk-adjusted returns (Sharpe > 1.0)
+- Consistent outperformance vs buy & hold
+- Reasonable drawdown control (< 15%)
 
 ---
 
@@ -255,43 +282,9 @@ claw skill install ./openclaw
 - Complete examples for different usage scenarios
 - Optimized default settings for good backtest results
 
-### Quick Start with OpenClaw
 
-```bash
-# Verify installation
-python3 openclaw/scripts/claw_runner.py --verify
 
-# Run backtest with optimized settings (good results)
-python3 openclaw/scripts/claw_runner.py --backtest
 
-# Default backtest uses:
-# • Multiple symbols (BTC/USDT, ETH/USDT, SOL/USDT)
-# • Optimized trading parameters
-# • 100 steps (days) of historical data
-# • Comparison vs buy & hold benchmark
-```
-
-### Performance with Optimized Settings
-
-With the optimized default configuration, typical backtest results show:
-
-```
-📊 Backtest Results (100 days, 3 symbols):
-🔄 Trade Count: 17 trades
-💰 Total Return: 14.95%
-📊 vs BTC Buy & Hold: +30.25% excess return
-📈 Sharpe Ratio: 1.79 (excellent risk-adjusted)
-📉 Max Drawdown: 11.84%
-✅ Win Rate: 62.5%
-```
-
-**Key improvements from default optimization:**
-- **Trade frequency**: 17 trades vs 2 with old settings (+750%)
-- **Risk-adjusted returns**: Sharpe 1.79 vs 0.14
-- **Consistency**: Win rate 62.5% vs 25%
-- **Relative performance**: +30.25% excess vs BTC buy & hold
-
----
 
 ## Using with Nexus on BNB Chain
 
