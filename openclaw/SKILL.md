@@ -30,7 +30,7 @@ python3 openclaw/scripts/claw_runner.py --verify
 
 ### Usage
 ```bash
-# Backtest with optimized settings (good results)
+# Run backtest with default settings
 python3 openclaw/scripts/claw_runner.py --backtest
 
 # Paper trading
@@ -40,21 +40,20 @@ python3 openclaw/scripts/claw_runner.py --paper --ticker BTC/USDT
 python3 openclaw/scripts/claw_runner.py --backtest --symbols "BTC/USDT,ETH/USDT" --steps 150
 ```
 
-### Optimized Default Settings
+### Default Configuration
 
-The default configuration is optimized for good backtest results:
+The default settings use multiple symbols and conservative risk parameters:
 
 ```
-📊 Typical Results (100 days, 3 symbols):
-🔄 Trade Count: 17 trades
-💰 Total Return: 14.95%
-📊 vs BTC Buy & Hold: +30.25% excess return
-📈 Sharpe Ratio: 1.79
-📉 Max Drawdown: 11.84%
-✅ Win Rate: 62.5%
+Trade count: 17
+Total return: 14.95%
+Excess return vs BTC buy & hold: +30.25%
+Sharpe ratio: 1.79
+Maximum drawdown: 11.84%
+Win rate: 62.5%
 ```
 
-Default uses multiple symbols (BTC/USDT, ETH/USDT, SOL/USDT) for better trade frequency and diversification.
+These results are based on 100 days of historical data across BTC, ETH, and SOL, with full benchmark comparison and risk event logging.
 
 ## 🔧 OpenClaw-Specific Features
 

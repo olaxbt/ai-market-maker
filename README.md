@@ -184,10 +184,10 @@ Every backtest automatically includes:
 
 **Important**: A single profitable backtest is **not** proof of edge. Always validate across multiple regimes and out-of-sample periods.
 
-### Quick Backtest with Optimized Settings
+### Running Backtests
 
 ```bash
-# Using OpenClaw runner (recommended for good results)
+# Using the OpenClaw runner
 python3 openclaw/scripts/claw_runner.py --backtest
 
 # With custom parameters
@@ -197,23 +197,24 @@ python3 openclaw/scripts/claw_runner.py --backtest --symbols "BTC/USDT,ETH/USDT,
 uv run python -m backtest.run_demo --symbols BTC/USDT,ETH/USDT,SOL/USDT --steps 100 --online --exchange binance
 ```
 
-### Typical Results with Optimized Defaults
+### Example Backtest Results
+
+The default configuration (using multiple symbols and conservative risk parameters) typically produces results like:
 
 ```
-📊 Backtest Results (100 days, 3 symbols):
-🔄 Trade Count: 17 trades
-💰 Total Return: 14.95%
-📊 vs BTC Buy & Hold: +30.25% excess return
-📈 Sharpe Ratio: 1.79
-📉 Max Drawdown: 11.84%
-✅ Win Rate: 62.5%
+Trade count: 17
+Total return: 14.95%
+Excess return vs BTC buy & hold: +30.25%
+Sharpe ratio: 1.79
+Maximum drawdown: 11.84%
+Win rate: 62.5%
 ```
 
-Default configuration is optimized for:
-- Better trade frequency (multiple symbols)
-- Improved risk-adjusted returns (Sharpe > 1.0)
-- Consistent outperformance vs buy & hold
-- Reasonable drawdown control (< 15%)
+These results reflect:
+- Multi-asset diversification (BTC, ETH, SOL)
+- Conservative position sizing and risk limits
+- Automated benchmark comparison
+- Full trade transparency and risk event logging
 
 ---
 
