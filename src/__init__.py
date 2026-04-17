@@ -2,8 +2,9 @@
 AI Market Maker package initialization
 Ensures proper imports for OpenClaw environment
 """
-import sys
+
 import os
+import sys
 from pathlib import Path
 
 # Ensure src directory is in path
@@ -21,13 +22,6 @@ if not os.getenv("NEXUS_API_KEY"):
     print("⚠️  Using demo Nexus API key (rate-limited)")
 
 # Export main components for easier imports
-__all__ = [
-    "agents",
-    "backtest", 
-    "config",
-    "tools",
-    "workflow",
-    "main"
-]
+__all__ = ["agents", "backtest", "config", "tools", "workflow", "main"]
 
 print(f"✅ AI Market Maker initialized (Python {sys.version_info.major}.{sys.version_info.minor})")
