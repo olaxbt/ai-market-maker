@@ -22,6 +22,8 @@ venv/
 web/.next/
 web/node_modules/
 web/out/
+web/tsconfig.tsbuildinfo
+*.tsbuildinfo
 
 # Misc
 *.log
