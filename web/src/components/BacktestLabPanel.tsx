@@ -11,6 +11,10 @@ import { BacktestEquityChart } from "@/components/backtest/BacktestEquityChart";
 import { BacktestTradesTable } from "@/components/backtest/BacktestTradesTable";
 import { copyText } from "@/components/backtest/embeddedBacktestUtils";
 import { BacktestPriceChart } from "@/features/backtest/components/BacktestPriceChart";
+import { format, parseISO } from "date-fns";
+import { createPortal } from "react-dom";
+import ReactDatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
 import {
   amountUnitToIntervalSec,
   BAR_INTERVAL_UNIT_LABEL,
@@ -53,6 +57,75 @@ type BacktestJob = {
   error?: string;
   result?: BacktestRunResult;
 };
+
+function isIsoDate(iso: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso.trim());
+}
+
+function isoToDate(iso: string): Date | null {
+  const t = iso.trim();
+  if (!isIsoDate(t)) return null;
+  try {
+    const d = parseISO(t);
+    return Number.isFinite(d.getTime()) ? d : null;
+  } catch {
+    return null;
+  }
+}
+
+function dateToIso(d: Date): string {
+  return format(d, "yyyy-MM-dd");
+}
+
+function DatePickerField({
+  label,
+  value,
+  onChange,
+  disabled,
+  minIso,
+  className,
+  placeholder,
+}: {
+  label: string;
+  value: string;
+  onChange: (nextIso: string) => void;
+  disabled: boolean;
+  minIso?: string;
+  className: string;
+  /** Shown when visible label exists above the field (avoids duplicating the title in the input). */
+  placeholder?: string;
+}) {
+  const selected = useMemo(() => isoToDate(value), [value]);
+  const minDate = useMemo(() => (minIso ? isoToDate(minIso) : null), [minIso]);
+
+  return (
+    <div className="relative">
+      <label className="sr-only">{label}</label>
+      <ReactDatePicker
+        selected={selected}
+        onChange={(d: Date | null) => {
+          if (!d) {
+            onChange("");
+            return;
+          }
+          onChange(dateToIso(d));
+        }}
+        minDate={minDate ?? undefined}
+        disabled={disabled}
+        dateFormat="yyyy-MM-dd"
+        showMonthDropdown
+        showYearDropdown
+        dropdownMode="select"
+        placeholderText={placeholder ?? label}
+        popperPlacement="bottom-start"
+        popperContainer={({ children }) => createPortal(children, document.body)}
+        popperClassName="z-[1000]"
+        calendarClassName="nexus-datepicker"
+        className={`${className} text-left`}
+      />
+    </div>
+  );
+}
 
 function downloadJson(data: unknown, filename: string) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -640,80 +713,128 @@ export function BacktestLabPanel({
             <p className={`font-mono uppercase tracking-[0.2em] text-[var(--nexus-muted)] ${compactForm ? "text-[9px]" : "text-[10px]"}`}>
               Backtest
             </p>
-            {windowMode === "range" ? (
-              <span className="inline-flex items-center rounded-full bg-[rgba(34,211,238,0.10)] px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-[#22d3ee] ring-1 ring-[rgba(34,211,238,0.35)]">
-                Reproducible
-              </span>
-            ) : (
-              <span className="inline-flex items-center rounded-full bg-white/[0.04] px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-muted)] ring-1 ring-white/10">
-                Latest window
-              </span>
-            )}
           </div>
-          <div className={`mt-2 grid sm:grid-cols-2 lg:grid-cols-3 ${compactForm ? "gap-2" : "mt-3 gap-4"}`}>
-            <div>
-              <label className={lb}>Number of bars</label>
+          <div
+            className={`mt-2 grid grid-cols-1 sm:grid-cols-2 ${compactForm ? "gap-2" : "mt-3 gap-4 sm:items-start"}`}
+          >
+            <div className="min-w-0">
+              <label className={lb}>Candles</label>
               <input
-                className={inp}
+                className={`${inp} tabular-nums`}
+                inputMode="numeric"
                 value={nBars}
                 onChange={(e) => setNBars(e.target.value)}
                 disabled={formBusy}
+                aria-label="Number of candles"
               />
               {!compactForm ? (
-                <p className="mt-0.5 text-[10px] text-[var(--nexus-muted)]">How many real OHLCV bars to fetch</p>
+                <p className="mt-0.5 text-[10px] text-[var(--nexus-muted)]">How many OHLCV candles to fetch</p>
               ) : null}
             </div>
-            <div className="sm:col-span-2 lg:col-span-2">
+            <div
+              className={`min-w-0 rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)]/60 ${compactForm ? "p-2" : "p-3"}`}
+            >
               <label className={lb}>Data window</label>
               <div className="mt-1 flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setWindowMode("range")}
-                  disabled={formBusy}
-                  className={`rounded-lg px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest ring-1 transition ${
-                    windowMode === "range"
-                      ? "bg-[rgba(34,211,238,0.14)] text-[#22d3ee] ring-[rgba(34,211,238,0.35)]"
-                      : "bg-white/[0.03] text-[var(--nexus-muted)] ring-white/10 hover:bg-white/[0.05]"
-                  }`}
-                >
-                  Date range (UTC)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setWindowMode("latest")}
-                  disabled={formBusy}
-                  className={`rounded-lg px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest ring-1 transition ${
-                    windowMode === "latest"
-                      ? "bg-[rgba(245,158,11,0.14)] text-[#fbbf24] ring-[rgba(245,158,11,0.35)]"
-                      : "bg-white/[0.03] text-[var(--nexus-muted)] ring-white/10 hover:bg-white/[0.05]"
-                  }`}
-                >
-                  Latest N candles
-                </button>
+                <div className="flex flex-wrap gap-2" role="group" aria-label="Data window mode">
+                  <button
+                    type="button"
+                    onClick={() => setWindowMode("range")}
+                    disabled={formBusy}
+                    className={`rounded-lg px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest ring-1 transition focus:outline-none focus:ring-1 focus:ring-cyan-500/40 ${
+                      windowMode === "range"
+                        ? "bg-[rgba(34,211,238,0.14)] text-[#22d3ee] ring-[rgba(34,211,238,0.35)]"
+                        : "bg-white/[0.03] text-[var(--nexus-muted)] ring-white/10 hover:bg-white/[0.05] hover:text-[var(--nexus-text)]"
+                    }`}
+                  >
+                    Date range (UTC)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setWindowMode("latest");
+                      setSinceIso("");
+                      setUntilIso("");
+                    }}
+                    disabled={formBusy}
+                    className={`rounded-lg px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest ring-1 transition focus:outline-none focus:ring-1 focus:ring-cyan-500/40 ${
+                      windowMode === "latest"
+                        ? "bg-[rgba(34,211,238,0.10)] text-[#22d3ee] ring-[rgba(34,211,238,0.28)]"
+                        : "bg-white/[0.03] text-[var(--nexus-muted)] ring-white/10 hover:bg-white/[0.05] hover:text-[var(--nexus-text)]"
+                    }`}
+                  >
+                    Latest N candles
+                  </button>
+                </div>
+                <span className="hidden h-3 w-px shrink-0 bg-white/10 sm:block" aria-hidden />
+                {windowMode === "range" ? (
+                  <span
+                    className="font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-muted)]"
+                    title="Start and end dates are fixed for this run"
+                  >
+                    Pinned range
+                  </span>
+                ) : (
+                  <span
+                    className="font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-muted)]"
+                    title="Uses the latest N candles from the exchange"
+                  >
+                    Rolling window
+                  </span>
+                )}
               </div>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                <input
-                  className={inp}
-                  value={sinceIso}
-                  onChange={(e) => setSinceIso(e.target.value)}
-                  disabled={formBusy || windowMode !== "range"}
-                  placeholder="since_iso (e.g. 2024-01-01)"
-                />
-                <input
-                  className={inp}
-                  value={untilIso}
-                  onChange={(e) => setUntilIso(e.target.value)}
-                  disabled={formBusy || windowMode !== "range"}
-                  placeholder="until_iso (e.g. 2024-03-01)"
-                />
-              </div>
-              {!compactForm ? (
-                <p className="mt-0.5 text-[10px] text-[var(--nexus-muted)]">
-                  Date range pins the dataset (reproducible). Latest N is a moving window.
-                </p>
-              ) : null}
+              {windowMode === "range" ? (
+                <div className="mt-2 space-y-2">
+                  <div className="flex w-full max-w-full flex-col gap-2 sm:max-w-none sm:flex-row sm:flex-wrap sm:items-end sm:gap-x-3 sm:gap-y-2">
+                    <div className="min-w-0 sm:w-[min(100%,12rem)]">
+                      <label className={lb}>Start (UTC)</label>
+                      <DatePickerField
+                        label="Start (UTC)"
+                        value={sinceIso}
+                        onChange={(next) => {
+                          setSinceIso(next);
+                          if (untilIso && next && untilIso < next) setUntilIso(next);
+                        }}
+                        disabled={formBusy}
+                        className={inp}
+                        placeholder="YYYY-MM-DD"
+                      />
+                    </div>
+                    <span
+                      className="select-none py-0.5 text-center font-mono text-[10px] uppercase tracking-wider text-[var(--nexus-muted)] sm:shrink-0 sm:self-end sm:pb-2.5"
+                      aria-hidden
+                    >
+                      to
+                    </span>
+                    <div className="min-w-0 sm:w-[min(100%,12rem)]">
+                      <label className={lb}>End (UTC)</label>
+                      <DatePickerField
+                        label="End (UTC)"
+                        value={untilIso}
+                        onChange={setUntilIso}
+                        minIso={sinceIso || undefined}
+                        disabled={formBusy}
+                        className={inp}
+                        placeholder="YYYY-MM-DD"
+                      />
+                    </div>
+                  </div>
+                  {!compactForm ? (
+                    <p className="text-[10px] text-[var(--nexus-muted)]">
+                      Inclusive UTC dates; the bar interval below defines candle spacing inside this span.
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="mt-2 rounded-lg border border-dashed border-white/10 bg-white/[0.02] px-3 py-2.5">
+                  <p className="text-[12px] leading-snug text-[var(--nexus-text)]">
+                    No start/end dates — use <span className="font-mono text-[var(--nexus-muted)]">Candles</span> (left) and
+                    your bar interval. Fetches the latest N candles from the exchange.
+                  </p>
+                </div>
+              )}
             </div>
-            <div className="sm:col-span-2 lg:col-span-1">
+            <div>
               <label className={lb}>Time between bars</label>
               <div className="mt-1 flex flex-wrap gap-1.5">
                 <input
@@ -751,9 +872,16 @@ export function BacktestLabPanel({
                 <p className="mt-0.5 text-[10px] text-[var(--nexus-muted)]">Bar spacing (sent to the API as seconds).</p>
               ) : null}
             </div>
-            <div>
+            <div className="min-w-0">
               <label className={lb}>Max graph steps</label>
-              <input className={inp} value={maxSteps} onChange={(e) => setMaxSteps(e.target.value)} disabled={formBusy} />
+              <input
+                className={`${inp} tabular-nums`}
+                inputMode="numeric"
+                value={maxSteps}
+                onChange={(e) => setMaxSteps(e.target.value)}
+                disabled={formBusy}
+                aria-label="Max graph steps"
+              />
               {!compactForm ? (
                 <p className="mt-0.5 text-[10px] text-[var(--nexus-muted)]">Safety cap on LangGraph steps per bar</p>
               ) : null}

@@ -14,11 +14,13 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "date-fns": "^4.1.0",
     "framer-motion": "^11.0.0",
     "lightweight-charts": "^4.2.3",
     "lucide-react": "^0.460.0",
     "next": "^14.2.0",
     "react": "^18.2.0",
+    "react-datepicker": "^9.1.0",
     "react-dom": "^18.2.0",
     "react-markdown": "^10.1.0",
     "recharts": "^2.15.0",
