@@ -1,5 +1,24 @@
 # AI Market Maker: Agentic Trading System for Crypto Hedge Funds
 
+<p align="center">
+  <img src="./assets/aimm.jpg" alt="AI Market Maker banner" width="920" />
+</p>
+
+[![GitHub Stars](https://img.shields.io/github/stars/olaxbt/ai-market-maker?style=flat-square)](https://github.com/olaxbt/ai-market-maker/stargazers)
+[![GitHub Watchers](https://img.shields.io/github/watchers/olaxbt/ai-market-maker?style=flat-square)](https://github.com/olaxbt/ai-market-maker/watchers)
+[![GitHub Forks](https://img.shields.io/github/forks/olaxbt/ai-market-maker?style=flat-square)](https://github.com/olaxbt/ai-market-maker/network)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue?style=flat-square)](./LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](#)
+[![Next.js](https://img.shields.io/badge/Next.js-Dashboard-000000?style=flat-square&logo=nextdotjs&logoColor=white)](./web)
+
+[![X](https://img.shields.io/badge/X-Follow-000000?style=flat-square&logo=x&logoColor=white)](https://x.com/olaxbt)
+[![Telegram](https://img.shields.io/badge/Telegram-Join-26A5E4?style=flat-square&logo=telegram&logoColor=white)](https://t.me/OLAXBT_Community)
+[![Website](https://img.shields.io/badge/Website-olaxbt.xyz-111111?style=flat-square&logo=googlechrome&logoColor=white)](https://www.olaxbt.xyz/)
+
+[Overview](#-overview) | [Quick Start](#quick-start) | [Docs](#setup-details) | [Contributing](#contributing) | [License](#license)
+
+## Overview
+
 **AI-Market-Maker** is an open-source, **hedge-fund-style** trading stack for crypto. It combines **specialist AI trading agents** (acting as trading desks), a **LangGraph** orchestration layer, a **hard Risk Guard veto** before any execution, and quant-grade discipline including centralized policy, benchmarks against buy-and-hold, and full traceability.
 
 Designed to feel like a small professional trading firm — not just another bot.
