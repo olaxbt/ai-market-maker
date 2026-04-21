@@ -5,6 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
+from config.app_settings import load_app_settings
+
 from .engine import BacktestConfig, BacktestEngine
 
 
@@ -40,8 +42,13 @@ def run_multi_step_backtest(
     max_steps: int | None = None,
     progress_callback: Callable[[int, int, dict[str, Any]], None] | None = None,
     export_bundle: bool = True,
+    instrument: str | None = None,
+    leverage: float | None = None,
 ) -> MultiStepResult:
     """Run a deterministic multi-step backtest and persist artifacts under `.runs/`."""
+    app = load_app_settings()
+    inst = (instrument or app.paper.instrument or "spot").strip().lower()
+    lev = float(app.paper.leverage) if leverage is None else float(leverage)
     cfg = BacktestConfig(
         initial_cash_usd=float(initial_cash),
         initial_btc=float(initial_btc),
@@ -50,6 +57,8 @@ def run_multi_step_backtest(
         export_bundle=bool(export_bundle),
         interval_sec=int(interval_sec),
         progress_callback=progress_callback,
+        instrument=str(inst),
+        leverage=max(1.0, lev),
     )
     engine = BacktestEngine(cfg)
     if bars_by_symbol is not None:

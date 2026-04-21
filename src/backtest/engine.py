@@ -14,6 +14,7 @@ from config.fund_policy import FundPolicy, load_fund_policy
 from config.run_mode import RunMode
 from flow_log import FlowEventRepo, set_flow_repo
 from main import build_workflow
+from paper_account import PaperAccount, PerpPosition, apply_perp_fill
 from schemas.state import initial_hedge_fund_state
 
 from .bars import align_bars_by_min_length
@@ -155,6 +156,10 @@ class BacktestConfig:
     export_bundle: bool = True
     #: Minimum number of bars between trade fills (per-symbol). Helps prevent churn on noisy timeframes.
     min_bars_between_trades: int = 0
+    #: ``spot`` = pay full notional; ``perp`` = USDT-margined linear (initial margin = notional / leverage).
+    instrument: str = "spot"
+    #: Default leverage for perp fills (clamped by :class:`FundPolicy.max_leverage`).
+    leverage: float = 3.0
 
 
 @dataclass
@@ -212,18 +217,30 @@ class BacktestMultiSimState:
     cash_usd: float
     positions: Dict[str, float] = field(default_factory=dict)
     entry_avg: Dict[str, float] = field(default_factory=dict)
+    #: Per-symbol locked initial margin (perp only).
+    margin_locked: Dict[str, float] = field(default_factory=dict)
     trades: List[Dict[str, Any]] = field(default_factory=list)
     realized_trade_pnls: List[float] = field(default_factory=list)
     equity_curve: List[Dict[str, Any]] = field(default_factory=list)
     run_id: str = ""
     last_trade_step_by_symbol: Dict[str, int] = field(default_factory=dict)
+    instrument: str = "spot"
+    leverage: float = 1.0
 
     def equity(self, last_closes: Dict[str, float]) -> float:
-        m = 0.0
+        if str(self.instrument).lower() != "perp":
+            m = 0.0
+            for sym, q in self.positions.items():
+                px = float(last_closes.get(sym, 0.0))
+                m += float(q) * px
+            return self.cash_usd + m
+        u = 0.0
         for sym, q in self.positions.items():
             px = float(last_closes.get(sym, 0.0))
-            m += float(q) * px
-        return self.cash_usd + m
+            avg = float(self.entry_avg.get(sym, 0.0))
+            u += float(q) * (px - avg)
+        locked = sum(float(v) for v in self.margin_locked.values())
+        return float(self.cash_usd) + locked + u
 
     def gross_exposure(self, last_closes: Dict[str, float]) -> float:
         """Sum of absolute notional across symbols (USD)."""
@@ -411,11 +428,59 @@ class BacktestEngine:
         )
         if side == "sell":
             held = float(sim.positions.get(symbol, 0.0) or 0.0)
-            fill_qty = min(fill_qty, held, qty_req)
+            if str(getattr(self.config, "instrument", "spot")).lower() != "perp" or held > 1e-12:
+                fill_qty = min(fill_qty, held, qty_req) if held > 1e-12 else fill_qty
             fee_usd = fill_price * fill_qty * (self.config.fee_bps / 10000.0)
+        if side == "buy":
+            held_b = float(sim.positions.get(symbol, 0.0) or 0.0)
+            if (
+                str(getattr(self.config, "instrument", "spot")).lower() == "perp"
+                and held_b < -1e-12
+            ):
+                fill_qty = min(fill_qty, abs(held_b), qty_req)
+                fee_usd = fill_price * fill_qty * (self.config.fee_bps / 10000.0)
 
         applied = False
-        if side == "buy":
+        if str(getattr(self.config, "instrument", "spot")).lower() == "perp":
+            pa = PaperAccount(
+                cash_usdt=float(sim.cash_usd),
+                realized_pnl_usdt=0.0,
+                account_id=str(sim.run_id or "bt"),
+            )
+            for sym, q in sim.positions.items():
+                if abs(float(q)) > 1e-18:
+                    pa.perp_positions[sym] = PerpPosition(
+                        symbol=str(sym),
+                        qty_signed=float(q),
+                        avg_entry=float(sim.entry_avg.get(sym, 0.0)),
+                        leverage=max(1.0, float(sim.leverage)),
+                        margin_locked_usdt=float(sim.margin_locked.get(sym, 0.0)),
+                    )
+            fp = load_fund_policy()
+            lev = min(max(1.0, float(sim.leverage)), max(1.0, float(fp.max_leverage)))
+            try:
+                apply_perp_fill(
+                    account=pa,
+                    symbol=symbol,
+                    side=side,
+                    qty=float(fill_qty),
+                    price=float(fill_price),
+                    fee_bps=float(self.config.fee_bps),
+                    leverage=float(lev),
+                )
+            except Exception:
+                applied = False
+            else:
+                sim.cash_usd = float(pa.cash_usdt)
+                sim.positions = {}
+                sim.entry_avg = {}
+                sim.margin_locked = {}
+                for sym, p in pa.perp_positions.items():
+                    sim.positions[sym] = float(p.qty_signed)
+                    sim.entry_avg[sym] = float(p.avg_entry)
+                    sim.margin_locked[sym] = float(p.margin_locked_usdt)
+                applied = True
+        elif side == "buy":
             cost = fill_price * fill_qty + fee_usd
             # Allow borrowed buying power up to FundPolicy.max_leverage (simple margin model).
             # Equity is computed from current positions + cash; leverage constrains gross exposure.
@@ -466,6 +531,10 @@ class BacktestEngine:
                 "venue": smart_dict.get("venue"),
                 "mode": smart_dict.get("mode"),
                 "order_type": smart_dict.get("type"),
+                "instrument": str(getattr(self.config, "instrument", "spot")),
+                "leverage": float(sim.leverage)
+                if str(getattr(self.config, "instrument", "spot")).lower() == "perp"
+                else None,
             }
             sim_meta = {k: v for k, v in sim_meta.items() if v is not None}
             sim.record_trade(
@@ -503,6 +572,8 @@ class BacktestEngine:
         self.multi_sim = BacktestMultiSimState(
             cash_usd=self.config.initial_cash_usd,
             run_id=run_id,
+            instrument=str(getattr(self.config, "instrument", "spot")),
+            leverage=float(getattr(self.config, "leverage", 3.0)),
         )
         # Seed from the *data* (not run_id) so repeated runs are reproducible.
         seed = self._stable_seed(
@@ -801,6 +872,8 @@ class BacktestEngine:
             "run_id": run_id,
             "steps": total_steps,
             "trade_count": len(multi.trades),
+            "instrument": str(getattr(self.config, "instrument", "spot")),
+            "leverage": float(getattr(self.config, "leverage", 1.0)),
             "metrics": asdict(metrics),
             "benchmark": bench,
             "multi_asset": True,
