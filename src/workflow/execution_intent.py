@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from config.app_settings import load_app_settings
 from config.fund_policy import load_fund_policy
 from config.run_mode import RunMode
 
@@ -29,8 +30,27 @@ def derive_trade_intent(
     run_mode = str(state.get("run_mode") or "paper").lower()
     sm = state.get("shared_memory") or {}
     bt = sm.get("backtest") if isinstance(sm, dict) and isinstance(sm.get("backtest"), dict) else {}
-    cash = float(bt.get("cash", 0.0)) if run_mode == RunMode.BACKTEST.value else None
-    qty = float(bt.get("qty", 0.0)) if run_mode == RunMode.BACKTEST.value else None
+    if run_mode == RunMode.BACKTEST.value:
+        cash = float(bt.get("cash", 0.0))
+        qty = float(bt.get("qty", 0.0))
+    else:
+        # Paper/live: use the local paper account snapshot when available.
+        paper = (
+            sm.get("paper") if isinstance(sm, dict) and isinstance(sm.get("paper"), dict) else {}
+        )
+        cash = (
+            float(paper.get("cash_usdt"))
+            if isinstance(paper.get("cash_usdt"), (int, float))
+            else None
+        )
+        pos = (paper.get("positions") or {}) if isinstance(paper.get("positions"), dict) else {}
+        p = pos.get(ticker) if isinstance(pos.get(ticker), dict) else {}
+        if isinstance(p.get("qty_signed"), (int, float)):
+            qty = float(p.get("qty_signed"))
+        elif isinstance(p.get("qty"), (int, float)):
+            qty = float(p.get("qty"))
+        else:
+            qty = None
 
     md = state.get("market_data") or {}
     price = None
@@ -78,11 +98,17 @@ def derive_trade_intent(
                 )
 
     max_notional_usd = None
-    if run_mode == RunMode.BACKTEST.value and cash is not None:
-        # Align with :class:`config.fund_policy.FundPolicy` (not a separate 10% rule).
-        max_notional_usd = (
-            max(0.0, float(cash)) * fp.intent_notional_fraction * float(fp.max_leverage)
-        )
+    if cash is not None:
+        base = max(0.0, float(cash)) * fp.intent_notional_fraction
+        if run_mode == RunMode.BACKTEST.value:
+            max_notional_usd = base * float(fp.max_leverage)
+        elif run_mode == "paper":
+            ap = load_app_settings()
+            lev = min(float(ap.paper.leverage), float(fp.max_leverage))
+            if str(ap.paper.instrument).lower() == "perp":
+                max_notional_usd = base * lev
+            else:
+                max_notional_usd = base
 
     return {
         "ticker": ticker,
