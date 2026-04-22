@@ -32,10 +32,10 @@ jobs:
         run: uv pip install --system .[dev]
 
       - name: Ruff format check
-        run: ruff format --check .
+        run: python -m ruff format --check .
 
       - name: Ruff lint
-        run: ruff check .
+        run: python -m ruff check --diff .
 
       - name: Pytest
-        run: pytest -q
+        run: python -m pytest -q
