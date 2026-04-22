@@ -6,7 +6,14 @@ from typing import Any, Dict
 
 from config.agent_prompts import prompt_settings_by_actor
 from config.llm_env import use_llm_arbitrator
+from llm.json_parse import parse_json_object
 from llm.openai_client import run_tool_calling_chat
+from llm.structured_output import (
+    clamp_int,
+    llm_output_retries,
+    llm_strict_json_enabled,
+    strict_json_suffix,
+)
 from llm.tool_registry import nexus_tool_specs
 from schemas.state import HedgeFundState
 from tier1 import apply_strategy, effective_portfolio_desk_bridge, load_tier1_blueprint_from_env
@@ -41,35 +48,6 @@ def _reasoning_entry(
         "decision": decision,
         "extra": extra or {},
     }
-
-
-def _parse_llm_json_object(text: str) -> Dict[str, Any] | None:
-    """Best-effort JSON object from model text (handles ```json fences, preamble)."""
-    raw = (text or "").strip()
-    if not raw:
-        return None
-    if "```" in raw:
-        for block in raw.split("```"):
-            chunk = block.strip()
-            if chunk.lower().startswith("json"):
-                chunk = chunk[4:].lstrip()
-            if chunk.startswith("{"):
-                raw = chunk
-                break
-    try:
-        out = json.loads(raw)
-        return out if isinstance(out, dict) else None
-    except Exception:
-        pass
-    start = raw.find("{")
-    end = raw.rfind("}")
-    if start >= 0 and end > start:
-        try:
-            out = json.loads(raw[start : end + 1])
-            return out if isinstance(out, dict) else None
-        except Exception:
-            return None
-    return None
 
 
 def sanitize_llm_arbitrator_output(
@@ -113,6 +91,31 @@ def sanitize_llm_arbitrator_output(
             "reasons": reasons_out,
         },
         warnings,
+    )
+
+
+def _needs_retry(parse_ok: bool, warnings: list[str]) -> bool:
+    """Heuristic: retry when output isn't parseable or was heavily coerced."""
+    if not parse_ok:
+        return True
+    bad_prefixes = (
+        "invalid_payload",
+        "json_parse_failed",
+        "stance_coerced_invalid",
+        "confidence_coerced_non_numeric",
+        "reasons_coerced_non_list",
+    )
+    return any(any(w == bp or w.startswith(bp + ":") for bp in bad_prefixes) for w in warnings)
+
+
+def _strict_json_suffix() -> str:
+    return strict_json_suffix(
+        keys=("stance", "confidence", "reasons"),
+        extra_rules=(
+            "- stance MUST be one of: bullish | bearish | neutral.",
+            "- confidence MUST be a number in [0.0, 0.95].",
+            "- reasons MUST be an array of 3-8 short strings.",
+        ),
     )
 
 
@@ -297,40 +300,73 @@ def signal_arbitrator_llm(state: HedgeFundState) -> Dict[str, Any]:
     if ps is not None and isinstance(ps.tools, list) and ps.tools:
         allow = {str(x) for x in ps.tools if str(x).strip()}
         specs = [s for s in specs if s.name in allow or s.wire_name in allow]
-    try:
-        text, tool_events = run_tool_calling_chat(
-            system=system,
-            user=user,
-            tool_specs=specs,
-            model=(ps.model if ps is not None else None)
-            or os.getenv("OPENAI_MODEL")
-            or "gpt-4o-mini",
-            temperature=(ps.temperature if ps is not None else None),
-            max_tokens=(ps.max_tokens if ps is not None else None),
-        )
-    except Exception as exc:
-        # Backtests should continue even if the provider stalls or errors.
-        text = json.dumps(
-            {
-                "stance": "neutral",
-                "confidence": 0.5,
-                "reasons": [f"llm_error_fallback:{type(exc).__name__}"],
-            }
-        )
-        tool_events = [
-            {
-                "name": "llm_error_fallback",
-                "wire_name": "llm_error_fallback",
-                "args": {},
-                "result": {"error": f"{type(exc).__name__}: {exc}"},
-            }
-        ]
+    model_name = (
+        (ps.model if ps is not None else None) or os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
+    )
+    retries = clamp_int(llm_output_retries(), lo=0, hi=5)
+    strict_json = llm_strict_json_enabled()
+    last_text = ""
+    tool_events: list[dict[str, Any]] = []
+    parse_ok = False
+    parsed_raw: dict[str, Any] | None = None
+    canonical: dict[str, Any] = {
+        "stance": "neutral",
+        "confidence": 0.5,
+        "reasons": ["llm_uninitialized"],
+    }
+    val_warnings: list[str] = ["uninitialized"]
+    attempts = 0
+    retry_reasons: list[str] = []
 
-    parsed_raw = _parse_llm_json_object(text)
-    parse_ok = parsed_raw is not None
-    canonical, val_warnings = sanitize_llm_arbitrator_output(parsed_raw)
-    if not parse_ok:
-        val_warnings = ["json_parse_failed", *val_warnings]
+    for attempt in range(retries + 1):
+        attempts = attempt + 1
+        sys_prompt = system + (_strict_json_suffix() if strict_json else "")
+        if attempt > 0:
+            sys_prompt = (
+                sys_prompt
+                + "\n\nRETRY:\n"
+                + "Your previous output failed validation. Fix it and return ONLY the JSON object."
+            )
+        try:
+            text, tool_events = run_tool_calling_chat(
+                system=sys_prompt,
+                user=user,
+                tool_specs=specs,
+                model=model_name,
+                temperature=(ps.temperature if ps is not None else None),
+                max_tokens=(ps.max_tokens if ps is not None else None),
+            )
+            last_text = text or ""
+        except Exception as exc:
+            # Runs should continue even if the provider stalls or errors.
+            last_text = json.dumps(
+                {
+                    "stance": "neutral",
+                    "confidence": 0.5,
+                    "reasons": [f"llm_error_fallback:{type(exc).__name__}"],
+                }
+            )
+            tool_events = [
+                {
+                    "name": "llm_error_fallback",
+                    "wire_name": "llm_error_fallback",
+                    "args": {},
+                    "result": {"error": f"{type(exc).__name__}: {exc}"},
+                }
+            ]
+
+        parsed_raw = parse_json_object(last_text)
+        parse_ok = parsed_raw is not None
+        canonical, val_warnings = sanitize_llm_arbitrator_output(parsed_raw)
+        if not parse_ok:
+            val_warnings = ["json_parse_failed", *val_warnings]
+
+        if _needs_retry(parse_ok, val_warnings):
+            retry_reasons.append(
+                ",".join(val_warnings[:3]) if val_warnings else "unknown_validation_failure"
+            )
+            continue
+        break
 
     stance = str(canonical["stance"])
     confidence_f = float(canonical["confidence"])
@@ -345,6 +381,8 @@ def signal_arbitrator_llm(state: HedgeFundState) -> Dict[str, Any]:
         "debate_entries": len(transcript),
         "llm_json_parse_ok": parse_ok,
         "llm_validation_warnings": val_warnings,
+        "llm_attempts": attempts,
+        "llm_retry_reasons": retry_reasons[:5],
         "quant_desk_snapshot": quant_desk_bridge,
         "llm_reference_stance": reference_stance,
         "llm_reference_kind": reference_kind,
@@ -356,7 +394,7 @@ def signal_arbitrator_llm(state: HedgeFundState) -> Dict[str, Any]:
     proposed_signal = {
         "action": "PROPOSAL",
         "params": params_llm,
-        "meta": {"source": "signal_arbitrator_llm", "model": os.getenv("OPENAI_MODEL")},
+        "meta": {"source": "signal_arbitrator_llm", "model": model_name},
     }
 
     board = build_synthesis_board(state)

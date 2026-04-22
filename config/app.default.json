@@ -1,6 +1,34 @@
 {
   "paper": {
-    "start_usdt": 10000
+    "start_usdt": 10000,
+    "trading_enabled": true,
+    "fee_bps": 10.0,
+    "min_notional_usd": 25.0,
+    "max_notional_fraction": 0.25,
+    "instrument": "spot",
+    "leverage": 3.0
+  },
+  "ui": {
+    "tail_events": 1200,
+    "tail_traces": 350,
+    "tail_messages": 600
+  },
+  "flow": {
+    "log_max_mb": 50,
+    "detail": "standard"
+  },
+  "runs": {
+    "max_total_mb": 2000,
+    "keep_last": 500,
+    "index": {
+      "max_mb": 50,
+      "keep_last": 100000
+    },
+    "backtests": {
+      "retention_enabled": false,
+      "max_total_mb": 20000,
+      "keep_last": 200
+    }
   },
   "market": {
     "default_ticker": "BTC/USDT",
@@ -15,6 +43,10 @@
       "ADA/USDT"
     ],
     "ohlcv_cache_dir": "data/ohlcv"
+  },
+  "llm": {
+    "strict_json": true,
+    "output_retries": 2
   }
 }
 

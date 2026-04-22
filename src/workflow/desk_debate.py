@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from typing import Any
 
 from config.agent_prompts import prompt_settings_by_actor
@@ -33,14 +34,59 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return v in ("1", "true", "yes", "y", "on")
 
 
+def _normalize_debate_memo(text: str, *, max_chars: int) -> str:
+    """Force a consistent debate memo format for UI + downstream arbitration.
+
+    Keep only the first structured memo beginning at `Decision:` and
+    trims anything after a clear second memo delimiter.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return "[empty model reply]"
+
+    m = re.search(r"(?mi)^\s*Decision:\s*", raw)
+    if m:
+        raw = raw[m.start() :].lstrip()
+    else:
+        snippet = raw.replace("\n", " ").strip()
+        if len(snippet) > 260:
+            snippet = snippet[:260].rstrip() + "…"
+        raw = (
+            "Decision: HOLD (confidence=0.50)\n"
+            "Evidence:\n"
+            f"- Unstructured memo (format violation): {snippet}\n"
+            "Risks:\n"
+            "- Format violation reduces reliability.\n"
+            "Would change mind if:\n"
+            "- Desk resubmits in the required format.\n"
+        )
+
+    # Common drift patterns: a second memo starts, or markdown separators appear.
+    cut_markers = [
+        r"(?mi)^\s*\*\*Desk Memo:",
+        r"(?mi)^\s*Desk Memo:",
+        r"(?m)^\s*---\s*$",
+    ]
+    for pat in cut_markers:
+        mm = re.search(pat, raw)
+        if mm and mm.start() > 0:
+            raw = raw[: mm.start()].rstrip()
+            break
+
+    if len(raw) > max_chars:
+        raw = raw[:max_chars].rstrip() + "…"
+    return raw
+
+
 def _compact_context(state: HedgeFundState) -> str:
     tk = str(state.get("ticker") or "BTC/USDT")
     uni = state.get("universe")
     ulist = [str(x) for x in uni] if isinstance(uni, list) and uni else [tk]
     risk = state.get("risk") or {}
     ra = risk.get("analysis") if isinstance(risk.get("analysis"), dict) else {}
-    risk_compact = {
-        s: {"position_size": (ra.get(s) or {}).get("position_size")}
+    # `risk.analysis[*].position_size` is suggested sizing (not current holdings).
+    suggested_size = {
+        s: {"suggested_position_size": (ra.get(s) or {}).get("position_size")}
         for s in ulist
         if isinstance(ra.get(s), dict)
     }
@@ -50,7 +96,12 @@ def _compact_context(state: HedgeFundState) -> str:
             "ticker": tk,
             "universe": ulist,
             "sentiment_score": sent.get("sentiment_score") or sent.get("score"),
-            "risk_position_size_scalar": risk_compact,
+            "risk_suggested_position_size": suggested_size,
+            "notes": {
+                "risk_suggested_position_size": (
+                    "This is suggested sizing from the risk desk, not current holdings/positions."
+                )
+            },
             "legacy_reference": legacy_deterministic_stance_preview(state),
         },
         default=str,
@@ -85,8 +136,9 @@ def deterministic_debate_entries(state: HedgeFundState) -> list[dict[str, Any]]:
 
 
 def llm_desk_debate_entries(state: HedgeFundState) -> list[dict[str, Any]]:
-    # Release UX: if LLM is enabled, the debate should happen without requiring extra env flags.
     if not use_llm_arbitrator():
+        return []
+    if not _env_bool("AIMM_LLM_DESK_DEBATE", default=False):
         return []
     ctx = _compact_context(state)
     out: list[dict[str, Any]] = []
@@ -99,9 +151,23 @@ def llm_desk_debate_entries(state: HedgeFundState) -> list[dict[str, Any]]:
     sys_risk = (
         "You are Desk_Risk on a crypto fund.\n"
         "You must be concrete and decision-oriented. Use the provided JSON context; do not invent data.\n"
+        "When you cite a fact, reference the JSON field name(s) you used (e.g. `legacy_reference`, "
+        "`risk_position_size_scalar`, `sentiment_score`).\n"
         "If you need to verify a liquidity/depth claim and tools are available, you may call `nexus.fetch_market_depth` "
         "at most once.\n"
-        "Write a compact memo with sections: Thesis; Key risks; What would change your mind?; Action/posture."
+        "If a tool result is marked `is_mock=true` or `source=mock`, you MUST treat it as placeholder data and "
+        "avoid strong conclusions based on it.\n"
+        "Output format (strict, keep under 1400 chars):\n"
+        "Decision: <BUY|SELL|HOLD> (confidence=<0.00-1.00>)\n"
+        "Evidence:\n"
+        "- <bullet 1 grounded in JSON, include field name>\n"
+        "- <bullet 2 grounded in JSON, include field name>\n"
+        "- <optional bullet 3 grounded in JSON, include field name>\n"
+        "Risks:\n"
+        "- <1-2 bullets>\n"
+        "Would change mind if:\n"
+        "- <1-2 bullets>\n"
+        "Rules: no fluff, no repetition, no tables."
     )
     if ps is not None and (ps.system_prompt.strip() or ps.task_prompt.strip()):
         sys_risk = (
@@ -120,12 +186,30 @@ def llm_desk_debate_entries(state: HedgeFundState) -> list[dict[str, Any]]:
             max_tokens=(ps.max_tokens if ps is not None else None),
             max_tool_rounds=2,
         )
+        text_r = _normalize_debate_memo(text_r, max_chars=1400)
+        if not text_r.lstrip().startswith("Decision:"):
+            retry_sys = (
+                sys_risk
+                + "\n\nFORMAT ENFORCEMENT: Output ONLY the specified format. Do not add any other sections."
+            )
+            text_r2, ev_r2 = run_tool_calling_chat(
+                system=retry_sys,
+                user=ctx,
+                tool_specs=depth_specs,
+                model=(ps.model if ps is not None else None) or None,
+                temperature=0.2 if (ps is None or ps.temperature is None) else ps.temperature,
+                max_tokens=(ps.max_tokens if ps is not None else None),
+                max_tool_rounds=2,
+            )
+            text_r2 = _normalize_debate_memo(text_r2, max_chars=1400)
+            if text_r2.lstrip().startswith("Decision:"):
+                text_r, ev_r = text_r2, ev_r2
         tools_used = sorted({str(e.get("name")) for e in ev_r if e.get("name")})
         out.append(
             {
                 "speaker": "llm_desk_risk",
                 "role": "llm_tools_depth",
-                "text": (text_r or "").strip() or "[empty model reply]",
+                "text": text_r,
                 "tools_available": [s.name for s in depth_specs],
                 "tools_used": tools_used,
                 "tool_events_count": len(ev_r),
@@ -146,7 +230,16 @@ def llm_desk_debate_entries(state: HedgeFundState) -> list[dict[str, Any]]:
         "You are Desk_Tape on a crypto fund.\n"
         "Focus on setup quality, momentum, and timing — when to lean vs wait — using only the JSON context.\n"
         "You do NOT have tools; do not pretend to have verified depth.\n"
-        "Write a compact memo with sections: Thesis; Key risks; What would change your mind?; Action/posture."
+        "When you cite a fact, reference the JSON field name(s) you used.\n"
+        "Output format (strict, keep under 1200 chars):\n"
+        "Decision: <BUY|SELL|HOLD> (confidence=<0.00-1.00>)\n"
+        "Setup:\n"
+        "- <2-3 bullets grounded in JSON, include field name>\n"
+        "Timing:\n"
+        "- <1-2 bullets>\n"
+        "Invalidation:\n"
+        "- <1-2 bullets>\n"
+        "Rules: no fluff, no repetition, no tables."
     )
     if ps is not None and (ps.system_prompt.strip() or ps.task_prompt.strip()):
         sys_tape = (
@@ -165,11 +258,29 @@ def llm_desk_debate_entries(state: HedgeFundState) -> list[dict[str, Any]]:
             max_tokens=(ps.max_tokens if ps is not None else None),
             max_tool_rounds=1,
         )
+        text_t = _normalize_debate_memo(text_t, max_chars=1200)
+        if not text_t.lstrip().startswith("Decision:"):
+            retry_sys = (
+                sys_tape
+                + "\n\nFORMAT ENFORCEMENT: Output ONLY the specified format. Do not add any other sections."
+            )
+            text_t2, ev_t2 = run_tool_calling_chat(
+                system=retry_sys,
+                user=ctx,
+                tool_specs=[],
+                model=(ps.model if ps is not None else None) or None,
+                temperature=0.2 if (ps is None or ps.temperature is None) else ps.temperature,
+                max_tokens=(ps.max_tokens if ps is not None else None),
+                max_tool_rounds=1,
+            )
+            text_t2 = _normalize_debate_memo(text_t2, max_chars=1200)
+            if text_t2.lstrip().startswith("Decision:"):
+                text_t, ev_t = text_t2, ev_t2
         out.append(
             {
                 "speaker": "llm_desk_tape",
                 "role": "llm_narrative_only",
-                "text": (text_t or "").strip() or "[empty model reply]",
+                "text": text_t,
                 "tools_available": [],
                 "tools_used": [],
                 "tool_events_count": len(ev_t),
@@ -212,6 +323,12 @@ def desk_debate(state: HedgeFundState) -> dict[str, Any]:
         f"Desk debate: {len(entries)} entries "
         f"({sum(1 for e in entries if str(e.get('speaker', '')).startswith('llm_'))} LLM)."
     )
+    include_full = _env_bool("AIMM_FLOW_INCLUDE_FULL_DEBATE", default=False)
+    decision: dict[str, Any] = {"debate_preview": preview}
+    if include_full:
+        # Full transcript can be large; keep it opt-in for UI payload size.
+        decision["debate_transcript"] = entries
+
     return {
         "debate_transcript": entries,
         "reasoning_logs": [
@@ -219,8 +336,11 @@ def desk_debate(state: HedgeFundState) -> dict[str, Any]:
                 "node": "desk_debate",
                 "reasoning_chain": thought,
                 "thought_process": thought,
-                "decision": {"debate_preview": preview},
-                "extra": {"debate_entry_count": len(entries)},
+                "decision": decision,
+                "extra": {
+                    "debate_entry_count": len(entries),
+                    "include_full_transcript": include_full,
+                },
             }
         ],
     }

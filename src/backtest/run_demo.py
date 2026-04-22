@@ -142,6 +142,18 @@ def build_run_demo_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--initial-cash", type=float, default=10_000.0)
     parser.add_argument(
+        "--instrument",
+        default=None,
+        choices=("spot", "perp"),
+        help="Backtest book: spot (pay full notional) or perp (USDT margin = notional/leverage). Default: config paper.instrument.",
+    )
+    parser.add_argument(
+        "--leverage",
+        type=float,
+        default=None,
+        help="Perp leverage for mock margin (default: config paper.leverage).",
+    )
+    parser.add_argument(
         "--deploy-spot-pct",
         type=float,
         default=0.0,
@@ -338,6 +350,8 @@ def execute_run_demo(args: argparse.Namespace, parser: argparse.ArgumentParser) 
             interval_sec=interval_m,
             run_id=args.run_id,
             runs_dir=runs_dir_path,
+            instrument=args.instrument,
+            leverage=args.leverage,
         )
 
     while not sym_list:
@@ -402,6 +416,8 @@ def execute_run_demo(args: argparse.Namespace, parser: argparse.ArgumentParser) 
             if attempt == 1
             else f"{args.run_id or 'bt'}_e{attempt}_{int(time.time())}",
             runs_dir=runs_dir_path,
+            instrument=args.instrument,
+            leverage=args.leverage,
         )
 
         need = int(args.min_trades)
@@ -464,7 +480,11 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
     parser = build_run_demo_parser()
     args = parser.parse_args(argv)
     if args.llm:
-        os.environ["AI_MARKET_MAKER_USE_LLM"] = "1"
+        # Backtest LLM is intentionally **arbitrator-only** by default.
+        # Rationale: full-graph LLM calls are too slow/costly per-bar for a demo backtest.
+        os.environ["AI_MARKET_MAKER_USE_LLM"] = "1"  # enables LLM signal arbitrator
+        os.environ["AIMM_LLM_MODE"] = "0"  # disable portfolio LLM nodes
+        os.environ["AIMM_LLM_DESK_DEBATE"] = "0"  # disable extra LLM debate turns
     out = execute_run_demo(args, parser)
     print(json.dumps(out, indent=2), flush=True)
     return out

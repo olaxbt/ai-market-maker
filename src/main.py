@@ -27,6 +27,7 @@ from agents.statistical_alpha_engine import StatisticalAlphaEngineAgent
 from agents.technical_ta_engine import TechnicalTaEngineAgent
 from agents.whale_behavior_analyst import WhaleBehaviorAnalystAgent
 from config.app_settings import load_app_settings
+from config.fund_policy import load_fund_policy
 from config.llm_env import use_llm_arbitrator
 from config.llm_mode import llm_mode_enabled
 from config.run_mode import RunMode, load_run_mode
@@ -42,6 +43,8 @@ from nexus_data.feeds import (
     nexus_feeds_enabled,
     oi_ccxt_candidates,
 )
+from run_index import append_run_index
+from runs_retention import enforce_backtests_retention, enforce_runs_retention
 from schemas.flow_events import FlowEvent
 from schemas.state import HedgeFundState, initial_hedge_fund_state
 from schemas.tier0_contract import build_tier0_contract_json
@@ -57,9 +60,7 @@ from workflow.tier2_context import build_synthesis_board, compute_legacy_arbitra
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 logger = logging.getLogger(__name__)
-
-# Always let `.env` win over inherited shell env (including empty values).
-load_dotenv(override=True)
+load_dotenv()
 
 
 def _emit_flow(repo: FlowEventRepo | None, event: FlowEvent) -> None:
@@ -133,6 +134,41 @@ def _flow_bt_extra(state: HedgeFundState) -> dict[str, Any]:
 def _instrument_node(node_name: str, node_fn: NodeFn) -> NodeFn:
     """Wrap graph nodes with start/end + reasoning telemetry."""
 
+    def _compact_decision(decision: Any) -> Any:
+        """Reduce low-value bulk in flow logs (events.jsonl) while keeping auditability."""
+
+        try:
+            detail = load_app_settings().flow.detail
+        except Exception:
+            detail = "standard"
+        if detail == "full":
+            return decision
+        if not isinstance(decision, dict):
+            return decision
+
+        d = dict(decision)
+
+        # Common bulk: tool_events with large `result` payloads.
+        if isinstance(d.get("params"), dict) and isinstance(d["params"].get("tool_events"), list):
+            if detail in {"standard", "compact"}:
+                te_out = []
+                for ev in d["params"]["tool_events"]:
+                    if not isinstance(ev, dict):
+                        continue
+                    ev2 = {k: ev.get(k) for k in ("name", "wire_name", "args") if k in ev}
+                    if detail == "standard":
+                        # Keep a tiny hint that a result existed, without storing it.
+                        ev2["result_omitted"] = True
+                    te_out.append(ev2)
+                d["params"] = dict(d["params"])
+                d["params"]["tool_events"] = te_out
+
+        # Drop giant strategy context blobs in compact mode.
+        if detail == "compact" and "strategy_context" in d:
+            d.pop("strategy_context", None)
+
+        return d
+
     def wrapped(state: HedgeFundState) -> dict[str, Any]:
         repo = get_flow_repo()
         run_id = getattr(repo, "run_id", None) if repo else None
@@ -178,7 +214,7 @@ def _instrument_node(node_name: str, node_fn: NodeFn) -> NodeFn:
                     agent=str(entry.get("node", node_name)),
                     role="agent",
                     thought=str(entry.get("thought_process", "")),
-                    decision=entry.get("decision"),
+                    decision=_compact_decision(entry.get("decision")),
                     run_id=run_id,
                     node=node_name,
                     **flow_extra,
@@ -379,7 +415,44 @@ def policy_orchestrator(state: HedgeFundState) -> dict[str, Any]:
     out = _run_async(
         agent.process({"run_mode": state.get("run_mode"), "ticker": state.get("ticker")})
     )
+    # Initialize paper account snapshot early so downstream nodes (execution_intent) can
+    # include cash/position context in a consistent contract.
+    sm_out: dict[str, Any] = dict(state.get("shared_memory") or {})
+    try:
+        if str(state.get("run_mode") or "").lower() == "paper":
+            h = get_nexus_adapter().get_portfolio_health(account_id="default")
+            snap = h.get("paper_account") if isinstance(h, dict) else None
+            if isinstance(snap, dict):
+                pos_list = snap.get("positions") or []
+                pos_map: dict[str, dict[str, float]] = {}
+                if isinstance(pos_list, list):
+                    for row in pos_list:
+                        if not isinstance(row, dict):
+                            continue
+                        sym = str(row.get("symbol") or "")
+                        if not sym:
+                            continue
+                        if "qty_signed" in row:
+                            pos_map[sym] = {
+                                "qty_signed": float(row.get("qty_signed") or 0.0),
+                                "avg_entry": float(row.get("avg_entry") or 0.0),
+                                "margin_locked_usdt": float(row.get("margin_locked_usdt") or 0.0),
+                            }
+                        else:
+                            pos_map[sym] = {
+                                "qty": float(row.get("qty") or 0.0),
+                                "avg_entry": float(row.get("avg_entry") or 0.0),
+                            }
+                sm_out["paper"] = {
+                    "cash_usdt": float(snap.get("cash_usdt") or 0.0),
+                    "instrument": str(snap.get("instrument") or "spot"),
+                    "positions": pos_map,
+                    "updated_ts": int(snap.get("updated_ts") or 0),
+                }
+    except Exception:
+        pass
     return {
+        "shared_memory": sm_out,
         "policy_decision": out.get("policy_decision") if isinstance(out, dict) else {},
         "reasoning_logs": [
             _reasoning_entry(
@@ -393,13 +466,6 @@ def policy_orchestrator(state: HedgeFundState) -> dict[str, Any]:
             )
         ],
     }
-
-
-#
-# Legacy Tier-0 agents (PricePatternAgent, SentimentAgent, StatArbAgent, QuantAgent,
-# ValuationAgent, LiquidityManagementAgent) were removed in favor of AIMM8.
-# Their corresponding node functions have been deleted to avoid keeping unused code.
-#
 
 
 def monetary_sentinel(state: HedgeFundState) -> dict[str, Any]:
@@ -1009,24 +1075,159 @@ def portfolio_execute(state: HedgeFundState) -> dict[str, Any]:
     # This does not place a real order yet; it provides tool-calling parity for the UI.
     smart_orders: list[dict[str, Any]] = []
     adapter = get_nexus_adapter()
+    # Keep an updated paper account snapshot in state for downstream audit and intent context.
+    paper_snapshot: dict[str, Any] | None = None
+    try:
+        health = adapter.get_portfolio_health(account_id="default")
+        paper_snapshot = health.get("paper_account") if isinstance(health, dict) else None
+    except Exception:
+        paper_snapshot = None
+
+    def _last_price(sym: str) -> float | None:
+        md = state.get("market_data") or {}
+        try:
+            return float(((md.get(sym) or {}).get("ohlcv") or [])[-1][4])
+        except Exception:
+            return None
+
+    def _paper_positions_map(snap: dict[str, Any] | None) -> dict[str, dict[str, float]]:
+        if not isinstance(snap, dict):
+            return {}
+        pos_list = snap.get("positions") or []
+        out: dict[str, dict[str, float]] = {}
+        if isinstance(pos_list, list):
+            for row in pos_list:
+                if not isinstance(row, dict):
+                    continue
+                sym = str(row.get("symbol") or "")
+                if not sym:
+                    continue
+                if "qty_signed" in row:
+                    out[sym] = {
+                        "qty_signed": float(row.get("qty_signed") or 0.0),
+                        "avg_entry": float(row.get("avg_entry") or 0.0),
+                        "margin_locked_usdt": float(row.get("margin_locked_usdt") or 0.0),
+                    }
+                else:
+                    out[sym] = {
+                        "qty": float(row.get("qty") or 0.0),
+                        "avg_entry": float(row.get("avg_entry") or 0.0),
+                    }
+        return out
+
+    # Mirror the paper snapshot into shared_memory in the shape `execution_intent` expects.
+    sm_out: dict[str, Any] = dict(state.get("shared_memory") or {})
+    if isinstance(paper_snapshot, dict):
+        sm_out["paper"] = {
+            "cash_usdt": float(paper_snapshot.get("cash_usdt") or 0.0),
+            "instrument": str(paper_snapshot.get("instrument") or "spot"),
+            "positions": _paper_positions_map(paper_snapshot),
+            "updated_ts": int(paper_snapshot.get("updated_ts") or 0),
+        }
+
+    exec_notes: list[str] = []
+    clamped_orders: list[dict[str, Any]] = []
+
     if llm_mode_enabled() and isinstance(exec_blk, dict):
+        s = load_app_settings()
+        fp = load_fund_policy()
+        inst = str(s.paper.instrument or "spot").lower()
+        lev = min(max(1.0, float(s.paper.leverage)), max(1.0, float(fp.max_leverage)))
+        fee_rate = max(0.0, float(s.paper.fee_bps)) / 10_000.0
+        cash = float((sm_out.get("paper") or {}).get("cash_usdt") or 0.0)
+        pm = (sm_out.get("paper") or {}).get("positions") or {}
+
+        max_notional = max(0.0, cash * float(s.paper.max_notional_fraction))
+        if inst == "perp":
+            max_notional *= lev
+
+        intent = state.get("trade_intent") if isinstance(state.get("trade_intent"), dict) else {}
+        c = intent.get("constraints") if isinstance(intent.get("constraints"), dict) else {}
+        cap = c.get("max_notional_usd")
+        if isinstance(cap, (int, float)):
+            max_notional = min(max_notional, float(cap))
+
+        min_notional = float(s.paper.min_notional_usd)
+
         for row in exec_blk.get("smart_orders") or []:
             if not isinstance(row, dict):
+                exec_notes.append("skip:invalid_order_shape")
                 continue
             sym = str(row.get("symbol") or "")
             side = str(row.get("side") or "").lower()
-            qty = float(row.get("qty") or 0.0)
-            if sym and side in ("buy", "sell") and qty > 0:
-                smart_orders.append(
-                    adapter.place_smart_order(
-                        symbol=sym,
-                        side=side,
-                        qty=qty,
-                        order_type="market",
-                        post_only=True,
-                        max_slippage_bps=25.0,
-                    )
+            try:
+                qty = float(row.get("qty") or 0.0)
+            except (TypeError, ValueError):
+                qty = 0.0
+            px = _last_price(sym) if sym else None
+            if not sym or side not in ("buy", "sell") or qty <= 0 or px is None or px <= 0:
+                exec_notes.append("skip:invalid_symbol_side_qty_or_price")
+                continue
+
+            # Enforce notional caps.
+            desired_notional = float(qty) * float(px)
+            allowed_notional = max(0.0, float(max_notional))
+            if desired_notional > allowed_notional + 1e-9:
+                exec_notes.append("clamp:max_notional")
+                qty = allowed_notional / float(px) if allowed_notional > 0 else 0.0
+                desired_notional = qty * float(px)
+
+            # Enforce minimum notional.
+            if desired_notional + 1e-9 < min_notional:
+                exec_notes.append("skip:below_min_notional")
+                continue
+
+            # Spot: cannot sell more than held.
+            if inst != "perp" and side == "sell":
+                p_row = pm.get(sym) if isinstance(pm, dict) else {}
+                pos_spot = float(p_row.get("qty") or 0.0) if isinstance(p_row, dict) else 0.0
+                if pos_spot <= 1e-12:
+                    exec_notes.append("skip:spot_sell_no_position")
+                    continue
+                qty = min(qty, pos_spot)
+                desired_notional = qty * float(px)
+                if desired_notional + 1e-9 < min_notional:
+                    exec_notes.append("skip:below_min_notional_after_spot_cap")
+                    continue
+
+            if inst == "perp" and side in ("buy", "sell"):
+                # Max notional by cash for a fresh leg: cash >= notional/lev + fee(notional).
+                denom = (1.0 / max(1.0, float(lev))) + fee_rate
+                if denom > 0:
+                    max_notional_by_cash = max(0.0, float(cash) / denom)
+                    if desired_notional > max_notional_by_cash + 1e-9:
+                        exec_notes.append("clamp:perp_cash_margin_fee")
+                        qty = max_notional_by_cash / float(px) if max_notional_by_cash > 0 else 0.0
+                        desired_notional = qty * float(px)
+                        if desired_notional + 1e-9 < min_notional:
+                            exec_notes.append("skip:below_min_notional_after_perp_cash_cap")
+                            continue
+
+            if qty <= 0:
+                exec_notes.append("skip:qty_zero_after_clamps")
+                continue
+
+            clamped_orders.append(
+                {
+                    "symbol": sym,
+                    "side": side,
+                    "qty": float(qty),
+                    "price": float(px),
+                    "notional_usdt": float(desired_notional),
+                    "source": "llm_execute",
+                }
+            )
+            smart_orders.append(
+                adapter.place_smart_order(
+                    symbol=sym,
+                    side=side,
+                    qty=float(qty),
+                    order_type="market",
+                    price=float(px),
+                    post_only=True,
+                    max_slippage_bps=25.0,
                 )
+            )
     elif isinstance(portfolio_result, dict):
         trades = portfolio_result.get("trades") or {}
         for sym, trade in trades.items():
@@ -1041,28 +1242,170 @@ def portfolio_execute(state: HedgeFundState) -> dict[str, Any]:
                         side=side,
                         qty=qty,
                         order_type="market",
+                        price=_last_price(str(sym)),
                         post_only=True,
                         max_slippage_bps=25.0,
                     )
                 )
+
+    if not smart_orders and str(state.get("run_mode") or "").lower() == "paper":
+        intent = state.get("trade_intent") if isinstance(state.get("trade_intent"), dict) else {}
+        action = str(intent.get("action") or "").upper()
+        sym = str(intent.get("ticker") or tk)
+        px = _last_price(sym)
+        if action in ("BUY", "SELL") and px is not None and px > 0:
+            s = load_app_settings()
+            cash = float((sm_out.get("paper") or {}).get("cash_usdt") or 0.0)
+            pm = (sm_out.get("paper") or {}).get("positions") or {}
+            p_row = pm.get(sym) if isinstance(pm, dict) else {}
+            pos_spot = float(p_row.get("qty") or 0.0) if isinstance(p_row, dict) else 0.0
+            pos_signed = (
+                float(p_row.get("qty_signed") or pos_spot) if isinstance(p_row, dict) else 0.0
+            )
+            inst = str(s.paper.instrument or "spot").lower()
+            fp = load_fund_policy()
+            lev = min(max(1.0, float(s.paper.leverage)), max(1.0, float(fp.max_leverage)))
+            max_notional = cash * float(s.paper.max_notional_fraction)
+            if inst == "perp":
+                max_notional *= lev
+            c = intent.get("constraints") if isinstance(intent.get("constraints"), dict) else {}
+            cap = c.get("max_notional_usd")
+            if isinstance(cap, (int, float)):
+                max_notional = min(max_notional, float(cap))
+            notional = max(0.0, float(max_notional))
+            if action == "BUY" and cash > 0 and notional >= float(s.paper.min_notional_usd):
+                qty_i = notional / float(px)
+                clamped_orders.append(
+                    {
+                        "symbol": sym,
+                        "side": "buy",
+                        "qty": float(qty_i),
+                        "price": float(px),
+                        "notional_usdt": float(notional),
+                        "source": "intent_synth",
+                    }
+                )
+                smart_orders.append(
+                    adapter.place_smart_order(
+                        symbol=sym,
+                        side="buy",
+                        qty=float(qty_i),
+                        order_type="market",
+                        price=float(px),
+                        post_only=True,
+                        max_slippage_bps=25.0,
+                        client_order_id=f"{run_id or 'run'}:paper:intent",
+                    )
+                )
+            elif action == "SELL" and notional >= float(s.paper.min_notional_usd):
+                if inst == "perp":
+                    if pos_signed > 1e-12:
+                        q_close = min(pos_signed, notional / float(px))
+                    else:
+                        q_close = notional / float(px)
+                    clamped_orders.append(
+                        {
+                            "symbol": sym,
+                            "side": "sell",
+                            "qty": float(q_close),
+                            "price": float(px),
+                            "notional_usdt": float(q_close * float(px)),
+                            "source": "intent_synth",
+                        }
+                    )
+                    smart_orders.append(
+                        adapter.place_smart_order(
+                            symbol=sym,
+                            side="sell",
+                            qty=float(q_close),
+                            order_type="market",
+                            price=float(px),
+                            post_only=True,
+                            max_slippage_bps=25.0,
+                            client_order_id=f"{run_id or 'run'}:paper:intent",
+                        )
+                    )
+                elif pos_spot > 1e-12:
+                    n2 = pos_spot * float(px)
+                    if n2 >= float(s.paper.min_notional_usd):
+                        clamped_orders.append(
+                            {
+                                "symbol": sym,
+                                "side": "sell",
+                                "qty": float(pos_spot),
+                                "price": float(px),
+                                "notional_usdt": float(n2),
+                                "source": "intent_synth",
+                            }
+                        )
+                        smart_orders.append(
+                            adapter.place_smart_order(
+                                symbol=sym,
+                                side="sell",
+                                qty=float(pos_spot),
+                                order_type="market",
+                                price=float(px),
+                                post_only=True,
+                                max_slippage_bps=25.0,
+                                client_order_id=f"{run_id or 'run'}:paper:intent",
+                            )
+                        )
+                else:
+                    exec_notes.append("skip:intent_sell_no_position")
+            else:
+                exec_notes.append("skip:intent_below_min_notional_or_no_cash")
+        elif action in ("BUY", "SELL"):
+            exec_notes.append("skip:intent_missing_price")
+
     smart_order = smart_orders[0] if smart_orders else None
+    run_mode = str(state.get("run_mode") or "").strip().lower()
+    if run_mode == "paper":
+        booked = 0
+        for o in smart_orders:
+            if (
+                isinstance(o, dict)
+                and isinstance(o.get("paper"), dict)
+                and o["paper"].get("booked") is True
+            ):
+                booked += 1
+        exec_status = "executed" if booked > 0 else "skipped"
+    else:
+        exec_status = "executed" if smart_orders else "skipped"
+
     out = {
+        "shared_memory": sm_out,
         "portfolio": portfolio_result
         if exec_blk is None
         else {**(portfolio_result or {}), "execution": exec_blk},
         "execution_result": {
-            "status": "executed" if smart_orders else "skipped",
+            "status": exec_status,
             "portfolio": portfolio_result
             if exec_blk is None
             else {**(portfolio_result or {}), "execution": exec_blk},
             "smart_order": smart_order,
             "smart_orders": smart_orders,
+            "orders_clamped": clamped_orders[:25],
+            "notes": exec_notes[:25],
+            "paper_account": (
+                smart_order.get("paper", {}).get("account")
+                if isinstance(smart_order, dict) and isinstance(smart_order.get("paper"), dict)
+                else paper_snapshot
+            ),
         },
         "reasoning_logs": [
             _reasoning_entry(
                 node="portfolio_execute",
-                thought="Execution desk placed approved orders.",
-                decision=portfolio_result,
+                thought=(
+                    "Execution desk placed orders."
+                    if exec_status == "executed"
+                    else "Execution desk skipped placing orders."
+                ),
+                decision={
+                    "status": exec_status,
+                    "smart_orders": len(smart_orders),
+                    "orders_clamped": len(clamped_orders),
+                    "notes": exec_notes[:10],
+                },
             )
         ],
     }
@@ -1070,10 +1413,19 @@ def portfolio_execute(state: HedgeFundState) -> dict[str, Any]:
     _emit_flow(
         repo,
         FlowEvent.execution(
-            status="executed",
+            status=exec_status,
             run_id=run_id,
-            message="Portfolio execution completed",
-            extra={**{"portfolio_keys": pk}, **_flow_bt_extra(state)},
+            message="Portfolio execution completed"
+            if exec_status == "executed"
+            else "Portfolio execution skipped",
+            extra={
+                **{
+                    "portfolio_keys": pk,
+                    "smart_orders": len(smart_orders),
+                    "notes": exec_notes[:10],
+                },
+                **_flow_bt_extra(state),
+            },
         ),
     )
     logger.debug("portfolio_execute output: %s", out)
@@ -1245,6 +1597,9 @@ def main():
     logger.debug("Initial state: %s", state)
 
     run_id = f"run-{args.ticker.replace('/', '-')}-{int(time.time())}"
+    # Print the run id early so operators can deterministically fetch the right payload,
+    # even if another background process is also producing runs.
+    logger.info("Run id: %s", run_id)
     publisher = LogPublisher(run_id=run_id)
     set_log_publisher(publisher)
     runs_dir = Path(".runs")
@@ -1267,6 +1622,20 @@ def main():
         raise
     finally:
         set_flow_repo(None)
+        try:
+            append_run_index(
+                run_id=run_id,
+                state=result if isinstance(result, dict) else state,
+                events_path=flow_log_path,
+            )
+        except Exception:
+            pass
+        try:
+            enforce_runs_retention(runs_dir=Path(".runs"), keep_run_id=run_id)
+            enforce_backtests_retention(runs_dir=Path(".runs"))
+        except Exception:
+            # Never fail a run due to retention housekeeping.
+            pass
 
 
 if __name__ == "__main__":
