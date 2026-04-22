@@ -3,10 +3,10 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 # Install with `uv sync` (editable by default). Top-level packages live under `src/`
-# (`api`, `backtest`, …) plus modules `main` and `flow_log` — no PYTHONPATH needed.
+# (`api`, `backtest`, …) plus top-level modules like `main`, `flow_log`, `eval_export`.
 [tool.setuptools]
 package-dir = { "" = "src" }
-py-modules = ["main", "flow_log"]
+py-modules = ["main", "flow_log", "eval_export"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -40,11 +40,17 @@ dependencies = [
     "websockets>=16.0",
 ]
 
+[project.scripts]
+aimm-export-eval = "eval_export:main"
+
 [project.optional-dependencies]
+export = [
+    "pyarrow>=16.0.0",
+]
 dev = [
     "pre-commit>=4.0.0",
     "pytest>=8.0.0",
-    "ruff>=0.12.4",
+    "ruff==0.15.6",
 ]
 
 [tool.ruff]
