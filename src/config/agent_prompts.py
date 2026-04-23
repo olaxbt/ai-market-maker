@@ -18,8 +18,24 @@ from typing import Any
 
 
 def _default_prompts_path() -> Path:
-    p = (os.getenv("AIMM_AGENT_PROMPTS_PATH") or "config/agent_prompts.json").strip()
-    return Path(p)
+    p = (os.getenv("AIMM_AGENT_PROMPTS_PATH") or "").strip()
+    if p:
+        return Path(p)
+
+    # Persona bundle: `config/agent_prompts.<profile>.json`
+    profile = (os.getenv("AIMM_TRADER_PROFILE") or "").strip()
+    if profile:
+        cand = Path(f"config/agent_prompts.{profile}.json")
+        if cand.is_file():
+            return cand
+
+    style = (os.getenv("AIMM_TRADING_STYLE") or "").strip()
+    if style:
+        cand = Path(f"config/agent_prompts.{style}.json")
+        if cand.is_file():
+            return cand
+
+    return Path("config/agent_prompts.json")
 
 
 @dataclass(frozen=True)

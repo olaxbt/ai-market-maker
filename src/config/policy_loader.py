@@ -9,6 +9,7 @@ deployment policy lives in `config/policy.default.json`.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -167,6 +168,13 @@ def load_fund_policy(*, path: Path | None = None) -> FundPolicy:
 
     This is intentionally strict: missing/invalid policy should fail fast.
     """
+    if path is None:
+        # Optional env override for CI/operators/persona selection.
+        env_path = (
+            os.getenv("AIMM_CONFIG_PATH") or os.getenv("AIMM_POLICY_CONFIG_PATH") or ""
+        ).strip()
+        if env_path:
+            path = Path(env_path)
     p = path or Path("config/policy.default.json")
     obj = _load_policy_config_from_json(str(p))
     return _policy_from_mapping(obj)
