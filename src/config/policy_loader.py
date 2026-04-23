@@ -170,7 +170,9 @@ def load_fund_policy(*, path: Path | None = None) -> FundPolicy:
     """
     if path is None:
         # Optional env override for CI/operators/persona selection.
-        env_path = (os.getenv("AIMM_CONFIG_PATH") or os.getenv("AIMM_POLICY_CONFIG_PATH") or "").strip()
+        env_path = (
+            os.getenv("AIMM_CONFIG_PATH") or os.getenv("AIMM_POLICY_CONFIG_PATH") or ""
+        ).strip()
         if env_path:
             path = Path(env_path)
     p = path or Path("config/policy.default.json")
