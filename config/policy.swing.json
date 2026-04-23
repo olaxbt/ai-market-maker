@@ -1,0 +1,22 @@
+{
+  "policy": {
+    "portfolio_budget_usd": 10000,
+    "stop_loss_pct": 0.03,
+    "take_profit_pct": 0.08,
+    "max_leverage": 2,
+    "min_confidence_directional": 0.45,
+    "trade_cooldown_bars": 24,
+    "allows_short": true,
+    "order_max_add_btc": 0.08,
+    "order_max_add_notional_usd": 2500,
+    "intent_notional_fraction": 0.18,
+    "rule_sentiment_buy_min": 48,
+    "rule_sentiment_sell_below": 38,
+    "bull_exposure_floor": 0.6,
+    "bear_exposure_cap": 0.25,
+    "risk_max_drawdown_stop": 0.18,
+    "risk_kill_switch_cooldown_bars": 160,
+    "risk_position_cap_usd": 2500
+  }
+}
+

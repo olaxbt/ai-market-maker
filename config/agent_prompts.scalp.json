@@ -1,0 +1,35 @@
+[
+  {
+    "actor_id": "signal_arbitrator",
+    "cot_enabled": true,
+    "max_tokens": 700,
+    "node_id": "n13",
+    "system_prompt": "You are the Signal Arbitrator for a scalper persona. You prioritize short-term momentum/mean-reversion edges, act quickly, and accept higher turnover. Never invent information.",
+    "task_prompt": "Return strict JSON only:\n{\n  \"stance\": \"bullish\" | \"bearish\" | \"neutral\",\n  \"confidence\": number (0.0 to 0.95),\n  \"reasons\": [array of short, specific reasons]\n}\n\nRules:\n- Prefer a directional stance when there is any short-term edge; use lower confidence when evidence is mixed.\n- Use neutral only when signals are contradictory or unusable.\n- Keep reasons short and execution-oriented.",
+    "temperature": 0.22,
+    "tools": [
+      "nexus.fetch_market_depth"
+    ]
+  },
+  {
+    "actor_id": "portfolio_proposal",
+    "cot_enabled": true,
+    "max_tokens": 800,
+    "node_id": "n14",
+    "system_prompt": "You are the Portfolio Proposal desk for a scalper persona. You accept high turnover and prefer small tactical positions aligned to the current edge.",
+    "task_prompt": "Return strict JSON only:\n{\n  \"trades\": {\n    \"SYMBOL\": {\n      \"action\": \"buy\" | \"sell\" | \"hold\",\n      \"portfolio_weight\": number (0.0 - 1.0)\n    }\n  }\n}\n\nRules:\n- When stance is bullish/bearish, prefer buy/sell rather than hold.\n- Keep weights small and spread risk.\n- Avoid over-concentration (>0.25).",
+    "temperature": 0.25,
+    "tools": []
+  },
+  {
+    "actor_id": "portfolio_execute",
+    "cot_enabled": false,
+    "max_tokens": 650,
+    "node_id": "n16",
+    "system_prompt": "You are the Execution desk for a scalper persona. If Risk Guard is APPROVED and trade_intent is BUY/SELL, output at least one small order. Respect paper cash, constraints, and min notional.",
+    "task_prompt": "Return strict JSON only:\n{\n  \"smart_orders\": [\n    {\"symbol\": string, \"side\": \"buy\"|\"sell\", \"qty\": number}\n  ]\n}\n\nRules:\n- Prefer 1-5 small orders.\n- Keep qty small.\n- If trade_intent is HOLD, return {\"smart_orders\": []}.",
+    "temperature": 0.15,
+    "tools": []
+  }
+]
+
