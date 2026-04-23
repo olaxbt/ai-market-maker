@@ -475,8 +475,7 @@ def execute_run_demo(args: argparse.Namespace, parser: argparse.ArgumentParser) 
 
 
 def main(argv: list[str] | None = None) -> dict[str, Any]:
-    # Always let `.env` win over inherited shell env (including empty values).
-    load_dotenv(override=True)
+    load_dotenv()
     parser = build_run_demo_parser()
     args = parser.parse_args(argv)
     if args.llm:
