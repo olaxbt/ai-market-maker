@@ -12,7 +12,6 @@ from backtest.loaders.base import NoAvailableSourceError, validate_date_range
 from backtest.loaders.registry import (
     FALLBACK_CHAINS,
     LOADER_REGISTRY,
-    _ensure_registered,
     register,
     resolve_loader,
 )
@@ -49,7 +48,6 @@ class TestRegistry:
         assert LOADER_REGISTRY["_unittest_test"] is _TestLoader
 
     def test_registry_has_all_loaders(self):
-        _ensure_registered()
         assert "ccxt" in LOADER_REGISTRY
         assert "futu" in LOADER_REGISTRY
         assert "yfinance" in LOADER_REGISTRY
@@ -61,7 +59,6 @@ class TestRegistry:
         assert "us_equity" in FALLBACK_CHAINS
 
     def test_resolve_returns_first_in_chain(self):
-        _ensure_registered()
         loader = resolve_loader("crypto")
         assert loader.name == "ccxt"
 
@@ -70,12 +67,10 @@ class TestRegistry:
             resolve_loader("nonexistent_market_xyz")
 
     def test_resolve_hk_equity_returns_futu(self):
-        _ensure_registered()
         loader = resolve_loader("hk_equity")
         assert loader.name == "futu"
 
     def test_resolve_us_returns_yfinance(self):
-        _ensure_registered()
         loader = resolve_loader("us_equity")
         assert loader.name == "yfinance"
 
@@ -113,7 +108,7 @@ class TestFutuKtype:
         futu_mock = MagicMock()
         futu_mock.KLType.K_DAY = "K_DAY"
         futu_mock.KLType.K_60M = "K_60M"
-        futu_mock.KLType.K_240M = "K_240M"
+        futu_mock.KLType.K_30M = "K_30M"
         futu_mock.KLType.K_WEEK = "K_WEEK"
         futu_mock.KLType.K_MON = "K_MON"
         monkeypatch.setitem(sys.modules, "futu", futu_mock)
@@ -128,7 +123,7 @@ class TestFutuKtype:
 
         assert _to_futu_ktype("1H") == "K_60M"
 
-    def test_four_hour(self):
+    def test_four_hour_falls_back_to_day(self):
         from backtest.loaders.futu_loader import _to_futu_ktype
 
         assert _to_futu_ktype("4H") == "K_DAY"
