@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from backtest.engines.perp import PerpEngine, FUNDING_HOURS
+from backtest.engines.perp import PerpEngine
 
 
 def test_basic_long_profits():
