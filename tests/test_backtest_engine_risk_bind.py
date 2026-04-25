@@ -22,7 +22,10 @@ def test_basic_long_profits():
 
 def test_liquidation_triggers():
     """10x long on a crash → gets liquidated."""
-    bars = [[900_000 * i, 100.0 - i * 6.0, 101.0 - i * 6.0, 99.0 - i * 6.0, 100.0 - i * 6.0, 10.0] for i in range(20)]
+    bars = [
+        [900_000 * i, 100.0 - i * 6.0, 101.0 - i * 6.0, 99.0 - i * 6.0, 100.0 - i * 6.0, 10.0]
+        for i in range(20)
+    ]
 
     def signal(sym, window, pos, cap):
         if len(window) < 2:
