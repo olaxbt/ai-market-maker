@@ -5,9 +5,10 @@ from __future__ import annotations
 import os
 from typing import Dict, List, Optional
 
+import ccxt
 import pandas as pd
 
-from .base import NoAvailableSourceError, validate_date_range
+from .base import validate_date_range
 from .registry import register
 
 _OHLCV_COLUMNS = ["open", "high", "low", "close", "volume"]
@@ -36,15 +37,6 @@ class CCXTLoader:
     def __init__(self) -> None:
         self._exchange_id = os.environ.get("CCXT_EXCHANGE", "binance")
 
-    def is_available(self) -> bool:
-        try:
-            import ccxt  # noqa: PLC0415
-
-            ex_class = getattr(ccxt, self._exchange_id, None)
-            return ex_class is not None
-        except ImportError:
-            return False
-
     def fetch(
         self,
         codes: list[str],
@@ -59,11 +51,9 @@ class CCXTLoader:
             return {}
         validate_date_range(start_date, end_date)
 
-        import ccxt  # noqa: PLC0415
-
         ex_class = getattr(ccxt, self._exchange_id, None)
         if ex_class is None:
-            raise NoAvailableSourceError(f"Unknown exchange: {self._exchange_id}")
+            raise ValueError(f"Unknown exchange: {self._exchange_id}")
         exchange = ex_class({"enableRateLimit": True})
         exchange.load_markets()
 
@@ -75,13 +65,8 @@ class CCXTLoader:
         for code in codes:
             resolved = self._resolve_symbol(exchange, code)
             if resolved not in exchange.symbols:
-                print(f"[WARN] Symbol {code} not on {self._exchange_id}, skipping")
                 continue
-            try:
-                raw = self._fetch_range(exchange, resolved, timeframe, since_ms, until_ms)
-            except Exception as exc:
-                print(f"[WARN] Failed to fetch {code}: {exc}")
-                continue
+            raw = self._fetch_range(exchange, resolved, timeframe, since_ms, until_ms)
             if not raw:
                 continue
             results[code] = self._to_dataframe(raw)
@@ -108,17 +93,13 @@ class CCXTLoader:
                 break
             for row in batch:
                 ts = int(row[0])
-                if ts < since_ms:
-                    continue
-                if ts > until_ms:
+                if ts < since_ms or ts > until_ms:
                     continue
                 out.append([float(v) for v in row])
             last_ts = int(batch[-1][0])
-            if last_ts <= cursor:
+            if last_ts <= cursor or len(batch) < 1000:
                 break
             cursor = last_ts + 1
-            if len(batch) < 1000:
-                break
         out.sort(key=lambda r: r[0])
         return out
 

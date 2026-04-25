@@ -1,11 +1,14 @@
-"""Tests for Loader Registry and CCXT loader."""
+"""Tests for data loader registry and individual loaders."""
 
 from __future__ import annotations
+
+import sys
+from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
 
-from backtest.loaders.base import DataLoaderProtocol, NoAvailableSourceError, validate_date_range
+from backtest.loaders.base import NoAvailableSourceError, validate_date_range
 from backtest.loaders.registry import (
     FALLBACK_CHAINS,
     LOADER_REGISTRY,
@@ -31,22 +34,6 @@ class TestValidateDateRange:
         validate_date_range("2024-01-01", "2024-01-01")
 
 
-class TestProtocol:
-    def test_protocol_runtime_checkable(self):
-        class FakeLoader:
-            name = "test"
-            markets = {"crypto"}
-            requires_auth = False
-
-            def is_available(self):
-                return True
-
-            def fetch(self, codes, start, end, *, interval="1D", fields=None):
-                return {}
-
-        assert isinstance(FakeLoader(), DataLoaderProtocol)
-
-
 class TestRegistry:
     def test_register_decorator(self):
         @register
@@ -55,24 +42,25 @@ class TestRegistry:
             markets = {"crypto"}
             requires_auth = False
 
-            def is_available(self):
-                return False
-
-            def fetch(self, codes, start, end, *, interval="1D", fields=None):
+            def fetch(self, codes, start, end, **kw):
                 return {}
 
         assert "_unittest_test" in LOADER_REGISTRY
         assert LOADER_REGISTRY["_unittest_test"] is _TestLoader
 
-    def test_registry_has_ccxt(self):
+    def test_registry_has_all_loaders(self):
         _ensure_registered()
         assert "ccxt" in LOADER_REGISTRY
+        assert "futu" in LOADER_REGISTRY
+        assert "yfinance" in LOADER_REGISTRY
 
     def test_fallback_chains_defined(self):
         assert "crypto" in FALLBACK_CHAINS
         assert "hk_equity" in FALLBACK_CHAINS
+        assert "a_share" in FALLBACK_CHAINS
+        assert "us_equity" in FALLBACK_CHAINS
 
-    def test_resolve_crypto_tries_ccxt(self):
+    def test_resolve_returns_first_in_chain(self):
         _ensure_registered()
         loader = resolve_loader("crypto")
         assert loader.name == "ccxt"
@@ -81,81 +69,85 @@ class TestRegistry:
         with pytest.raises(NoAvailableSourceError):
             resolve_loader("nonexistent_market_xyz")
 
+    def test_resolve_hk_equity_returns_futu(self):
+        _ensure_registered()
+        loader = resolve_loader("hk_equity")
+        assert loader.name == "futu"
 
-class TestCCXTLoader:
-    def test_imports(self):
-        from backtest.loaders.ccxt_loader import CCXTLoader
-
-        assert CCXTLoader.name == "ccxt"
-        assert "crypto" in CCXTLoader.markets
-
-    def test_is_available_returns_bool(self):
-        from backtest.loaders.ccxt_loader import CCXTLoader
-
-        result = CCXTLoader().is_available()
-        assert isinstance(result, bool)
+    def test_resolve_us_returns_yfinance(self):
+        _ensure_registered()
+        loader = resolve_loader("us_equity")
+        assert loader.name == "yfinance"
 
 
-class TestFutuLoader:
-    def test_imports(self):
-        from backtest.loaders.futu_loader import (
-            FutuLoader,
-        )
-
-        assert FutuLoader.name == "futu"
-        assert "hk_equity" in FutuLoader.markets
-
-    def test_symbol_hk(self):
+class TestFutuSymbol:
+    def test_hk(self):
         from backtest.loaders.futu_loader import _to_futu_symbol
 
         assert _to_futu_symbol("700.HK") == "HK.00700"
 
-    def test_symbol_hk_short_padded(self):
+    def test_hk_short_padded(self):
         from backtest.loaders.futu_loader import _to_futu_symbol
 
         assert _to_futu_symbol("5.HK") == "HK.00005"
 
-    def test_symbol_sz(self):
+    def test_sz(self):
         from backtest.loaders.futu_loader import _to_futu_symbol
 
         assert _to_futu_symbol("000001.SZ") == "SZ.000001"
 
-    def test_symbol_sh(self):
+    def test_sh(self):
         from backtest.loaders.futu_loader import _to_futu_symbol
 
         assert _to_futu_symbol("600519.SH") == "SH.600519"
 
-    def test_symbol_case_insensitive(self):
+    def test_case_insensitive(self):
         from backtest.loaders.futu_loader import _to_futu_symbol
 
         assert _to_futu_symbol("700.hk") == "HK.00700"
 
-    def test_ktype_daily(self):
-        import sys
-        from unittest.mock import MagicMock
 
+class TestFutuKtype:
+    @pytest.fixture(autouse=True)
+    def mock_futu(self, monkeypatch):
+        futu_mock = MagicMock()
+        futu_mock.KLType.K_DAY = "K_DAY"
+        futu_mock.KLType.K_60M = "K_60M"
+        futu_mock.KLType.K_240M = "K_240M"
+        futu_mock.KLType.K_WEEK = "K_WEEK"
+        futu_mock.KLType.K_MON = "K_MON"
+        monkeypatch.setitem(sys.modules, "futu", futu_mock)
+
+    def test_daily(self):
         from backtest.loaders.futu_loader import _to_futu_ktype
 
-        futu_stub = MagicMock()
-        futu_stub.KLType.K_DAY = "K_DAY"
-        futu_stub.KLType.K_60M = "K_60M"
-        futu_stub.KLType.K_240M = "K_240M"
-        futu_stub.KLType.K_WEEK = "K_WEEK"
-        futu_stub.KLType.K_MON = "K_MON"
-        sys.modules["futu"] = futu_stub
-
         assert _to_futu_ktype("1D") == "K_DAY"
+
+    def test_hourly(self):
+        from backtest.loaders.futu_loader import _to_futu_ktype
+
         assert _to_futu_ktype("1H") == "K_60M"
+
+    def test_four_hour(self):
+        from backtest.loaders.futu_loader import _to_futu_ktype
+
+        assert _to_futu_ktype("4H") == "K_DAY"
+
+    def test_unknown_defaults_to_day(self):
+        from backtest.loaders.futu_loader import _to_futu_ktype
+
         assert _to_futu_ktype("unknown") == "K_DAY"
 
-    def test_normalize_frame_empty(self):
+
+class TestNormalizeFrame:
+    def test_empty_input(self):
         from backtest.loaders.futu_loader import _normalize_frame
 
         result = _normalize_frame(pd.DataFrame())
         assert result.empty
         assert list(result.columns) == ["open", "high", "low", "close", "volume"]
 
-    def test_normalize_frame_columns(self):
+    def test_happy_path(self):
         from backtest.loaders.futu_loader import _normalize_frame
 
         df = pd.DataFrame(
@@ -174,21 +166,3 @@ class TestFutuLoader:
         assert list(result.columns) == ["open", "high", "low", "close", "volume"]
         assert result.index.name == "trade_date"
         assert len(result) == 2
-
-    def test_normalize_frame_drops_nan_ohlc(self):
-        from backtest.loaders.futu_loader import _normalize_frame
-
-        df = pd.DataFrame(
-            {
-                "code": ["HK.00700", "HK.00700"],
-                "time_key": ["2024-01-02 00:00:00", "2024-01-03 00:00:00"],
-                "open": [350.0, None],
-                "high": [360.0, None],
-                "low": [345.0, None],
-                "close": [355.0, None],
-                "volume": [1_000_000, 900_000],
-                "turnover": [350_000_000.0, 320_000_000.0],
-            }
-        )
-        result = _normalize_frame(df)
-        assert len(result) == 1

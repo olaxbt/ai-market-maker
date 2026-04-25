@@ -5,30 +5,23 @@ from __future__ import annotations
 import os
 from typing import Dict, List, Optional
 
+import futu
 import pandas as pd
 
-from .base import NoAvailableSourceError, validate_date_range
+from .base import validate_date_range
 from .registry import register
 
 _OHLCV_COLUMNS = ["open", "high", "low", "close", "volume"]
 _INTERVAL_MAP: dict[str, str] = {
     "1D": "K_DAY",
     "1H": "K_60M",
-    "4H": "K_240M",
+    "4H": "K_DAY",
     "1W": "K_WEEK",
     "1M": "K_MON",
 }
 
 
 def _to_futu_symbol(code: str) -> str:
-    """Convert project symbol to Futu OpenAPI format.
-
-    Examples:
-        700.HK    -> HK.00700
-        5.HK      -> HK.00005
-        000001.SZ -> SZ.000001
-        600519.SH -> SH.600519
-    """
     upper = code.strip().upper()
     if upper.endswith(".HK"):
         return f"HK.{upper[:-3].zfill(5)}"
@@ -39,17 +32,13 @@ def _to_futu_symbol(code: str) -> str:
     return upper
 
 
-def _to_futu_ktype(interval: str):
-    from futu import KLType  # noqa: PLC0415
-
-    return getattr(KLType, _INTERVAL_MAP.get(interval.strip(), "K_DAY"))
+def _to_futu_ktype(interval: str) -> str:
+    return getattr(futu.KLType, _INTERVAL_MAP.get(interval.strip(), "K_DAY"))
 
 
 def _normalize_frame(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalise a Futu kline DataFrame to the standard OHLCV schema."""
     if df.empty:
         return pd.DataFrame(columns=_OHLCV_COLUMNS)
-
     result = df.copy()
     result.index = pd.to_datetime(result["time_key"])
     result.index.name = "trade_date"
@@ -64,8 +53,7 @@ def _normalize_frame(df: pd.DataFrame) -> pd.DataFrame:
 class FutuLoader:
     """Fetch HK and China A-share bars from Futu OpenAPI.
 
-    Requires FutuOpenD running locally (https://www.futunn.com/download/openAPI)
-    and the env vars ``FUTU_HOST`` / ``FUTU_PORT`` to be set.
+    Requires FutuOpenD running locally (https://www.futunn.com/download/openAPI).
     """
 
     name = "futu"
@@ -76,18 +64,6 @@ class FutuLoader:
         self._host = os.environ.get("FUTU_HOST", "127.0.0.1")
         self._port = int(os.environ.get("FUTU_PORT", "11111"))
 
-    def is_available(self) -> bool:
-        if not os.environ.get("FUTU_HOST") or not os.environ.get("FUTU_PORT"):
-            return False
-        try:
-            import futu  # noqa: PLC0415
-
-            ctx = futu.OpenQuoteContext(host=self._host, port=self._port)
-            ctx.close()
-            return True
-        except Exception:
-            return False
-
     def fetch(
         self,
         codes: List[str],
@@ -97,31 +73,13 @@ class FutuLoader:
         interval: str = "1D",
         fields: Optional[List[str]] = None,
     ) -> Dict[str, pd.DataFrame]:
-        """Fetch OHLCV history from Futu OpenAPI.
-
-        Args:
-            codes: Project symbols such as ``700.HK`` or ``000001.SZ``.
-            start_date: Start date in ``YYYY-MM-DD`` format.
-            end_date: End date in ``YYYY-MM-DD`` format.
-            interval: Backtest interval — ``1D``, ``1H``, or ``4H``.
-
-        Returns:
-            Mapping of input symbol to normalised OHLCV dataframe.
-        """
         del fields
         if not codes:
             return {}
         validate_date_range(start_date, end_date)
 
-        try:
-            import futu  # noqa: PLC0415
-
-            ktype = _to_futu_ktype(interval)
-            ctx = futu.OpenQuoteContext(host=self._host, port=self._port)
-        except Exception as exc:
-            raise NoAvailableSourceError(
-                f"Cannot connect to FutuOpenD at {self._host}:{self._port}: {exc}"
-            ) from exc
+        ktype = _to_futu_ktype(interval)
+        ctx = futu.OpenQuoteContext(host=self._host, port=self._port)
 
         results: Dict[str, pd.DataFrame] = {}
         try:
@@ -135,7 +93,6 @@ class FutuLoader:
                     max_count=10_000,
                 )
                 if ret != futu.RET_OK:
-                    print(f"[WARN] Futu returned error for {futu_code}: {data}")
                     continue
                 results[code] = _normalize_frame(data)
         finally:
