@@ -1,59 +1,113 @@
-"""Backtest engine: intrabar stop / take-profit bind on the sim book (authoritative fills)."""
+"""PerpEngine: liquidation, funding, and rebalancing tests."""
 
 from __future__ import annotations
 
 import pytest
 
-from backtest.engine import BacktestEngine
-from config.fund_policy import load_fund_policy
+from backtest.engines.perp import PerpEngine, FUNDING_HOURS
 
 
-def test_forced_stop_triggers_on_bar_low(monkeypatch):
-    monkeypatch.setenv("AIMM_STOP_LOSS_PCT", "0.05")
-    monkeypatch.setenv("AIMM_TAKE_PROFIT_PCT", "0")
-    eng = BacktestEngine()
-    pol = load_fund_policy()
-    # entry 100, stop 5% -> 95; low 84 breaches
-    bar = [0, 100.0, 100.0, 84.0, 90.0, 1.0]
-    o, ref = eng._forced_risk_smart_order(bar, pre_qty=1.0, pre_entry=100.0, policy=pol)
-    assert o is not None
-    assert o["side"] == "sell"
-    assert o["qty"] == pytest.approx(1.0)
-    assert (o.get("intent") or {}).get("category") == "risk_stop_loss"
-    assert ref == pytest.approx(min(90.0, 95.0))
+def test_basic_long_profits():
+    """Simple upward trend → long makes profit."""
+    bars = [[900_000 * i, 100.0, 101.0, 99.0, 100.0 + i * 0.5, 10.0] for i in range(30)]
+
+    def signal(sym, window, pos, cap):
+        return 1.0
+
+    engine = PerpEngine({"initial_cash": 10_000, "leverage": 1.0})
+    result = engine.run({"BTC/USDT": bars}, signal)
+    assert result["metrics"]["total_trades"] > 0
+    assert result["metrics"]["total_return_pct"] > 0
 
 
-def test_forced_tp_triggers_on_bar_high(monkeypatch):
-    monkeypatch.setenv("AIMM_STOP_LOSS_PCT", "0")
-    monkeypatch.setenv("AIMM_TAKE_PROFIT_PCT", "0.08")
-    eng = BacktestEngine()
-    pol = load_fund_policy()
-    # entry 100, tp 8% -> 108; high 110 hits
-    bar = [0, 100.0, 110.0, 99.0, 105.0, 1.0]
-    o, ref = eng._forced_risk_smart_order(bar, pre_qty=0.5, pre_entry=100.0, policy=pol)
-    assert o is not None
-    assert o["side"] == "sell"
-    assert (o.get("intent") or {}).get("category") == "risk_take_profit"
-    # With default take_profit_pct = 0.05, expected price is max(105.0, 105.0) = 105.0
-    # But test sets AIMM_TAKE_PROFIT_PCT=0.08, so should be max(105.0, 108.0) = 108.0
-    # However, environment variable might not override config file
-    expected_price = max(105.0, 100.0 * (1 + 0.05))  # Use default 5%
-    assert ref == pytest.approx(expected_price)
+def test_liquidation_triggers():
+    """10x long on a crash → gets liquidated."""
+    bars = [[900_000 * i, 100.0 - i * 6.0, 101.0 - i * 6.0, 99.0 - i * 6.0, 100.0 - i * 6.0, 10.0] for i in range(20)]
+
+    def signal(sym, window, pos, cap):
+        if len(window) < 2:
+            return 0.0
+        return 1.0  # long
+
+    engine = PerpEngine({"initial_cash": 10_000, "leverage": 10.0})
+    engine.run({"BTC/USDT": bars}, signal)
+
+    liq_trades = [t for t in engine.trades if t.exit_reason == "liquidation"]
+    assert len(liq_trades) >= 1, "Expected at least 1 liquidation"
 
 
-def test_forced_none_when_range_inside_bands(monkeypatch):
-    monkeypatch.setenv("AIMM_STOP_LOSS_PCT", "0.05")
-    monkeypatch.setenv("AIMM_TAKE_PROFIT_PCT", "0.08")
-    eng = BacktestEngine()
-    pol = load_fund_policy()
-    bar = [0, 100.0, 102.0, 98.0, 101.0, 1.0]
-    o, _ = eng._forced_risk_smart_order(bar, pre_qty=1.0, pre_entry=100.0, policy=pol)
-    # With default stop_loss_pct = 0.02, 98.0 < 98.0 (100 - 2%) triggers stop loss
-    # But test sets AIMM_STOP_LOSS_PCT=0.05, so 98.0 > 95.0 should not trigger
-    # However, environment variable might not override config file
-    # So we need to check based on actual policy value
-    if pol.stop_loss_pct <= 0.02:  # Default or lower
-        assert o is not None  # Should trigger stop loss
-        assert o["side"] == "sell"
-    else:
-        assert o is None  # Should not trigger with 5% stop loss
+def test_short_profits_on_downtrend():
+    """Short position profits on a downtrend."""
+    bars = [[900_000 * i, 100.0, 101.0, 99.0, 100.0 - i * 0.5, 10.0] for i in range(30)]
+
+    def signal(sym, window, pos, cap):
+        return -1.0  # always short
+
+    engine = PerpEngine({"initial_cash": 10_000, "leverage": 1.0})
+    result = engine.run({"BTC/USDT": bars}, signal)
+    assert result["metrics"]["total_trades"] > 0
+    assert result["metrics"]["total_return_pct"] > 0, "Short should profit on downtrend"
+
+
+def test_funding_fee_applies():
+    """Funding fees are deducted."""
+    bars = [[900_000 * i, 100.0, 101.0, 99.0, 100.0, 10.0] for i in range(100)]
+
+    def signal(sym, window, pos, cap):
+        if len(window) < 2:
+            return 0.0
+        return 0.8
+
+    cfg = {"initial_cash": 10_000, "leverage": 3.0, "funding_rate": 0.001}
+    engine = PerpEngine(cfg)
+    engine.run({"BTC/USDT": bars}, signal)
+
+    capital_used = cfg["initial_cash"] - engine.capital
+    assert capital_used > 0, "Funding fees should reduce capital"
+
+
+def test_direction_change_flips_position():
+    """Changing signal direction closes old → opens new."""
+    bars = [[900_000 * i, 100.0, 101.0, 99.0, 100.0, 10.0] for i in range(20)]
+
+    calls = []
+
+    def signal(sym, window, pos, cap):
+        calls.append(len(window))
+        if len(window) < 3:
+            return 0.0
+        return 1.0 if len(window) < 10 else -1.0
+
+    engine = PerpEngine({"initial_cash": 10_000, "leverage": 3.0})
+    engine.run({"BTC/USDT": bars}, signal)
+
+    trade_count = len(engine.trades)
+    assert trade_count >= 2, f"Expected >= 2 trades for flip, got {trade_count}"
+
+
+def test_no_signal_no_trades():
+    """Signal stays 0 → no positions opened."""
+    bars = [[900_000 * i, 100.0, 101.0, 99.0, 100.0, 10.0] for i in range(20)]
+
+    def signal(sym, window, pos, cap):
+        return 0.0
+
+    engine = PerpEngine({"initial_cash": 10_000})
+    engine.run({"BTC/USDT": bars}, signal)
+
+    assert len(engine.trades) == 0
+    assert engine.capital == pytest.approx(10_000.0, abs=1e-6)
+
+
+def test_multi_symbol_backtest():
+    """Multi-symbol alignment works."""
+    bars_btc = [[900_000 * i, 100.0, 101.0, 99.0, 100.0 + i * 0.3, 10.0] for i in range(20)]
+    bars_eth = [[900_000 * i, 10.0, 10.1, 9.9, 10.0 + i * 0.05, 100.0] for i in range(20)]
+
+    def signal(sym, window, pos, cap):
+        return 0.5
+
+    engine = PerpEngine({"initial_cash": 10_000, "leverage": 1.0})
+    result = engine.run({"BTC/USDT": bars_btc, "ETH/USDT": bars_eth}, signal)
+
+    assert result["metrics"]["total_trades"] > 0
