@@ -9,7 +9,6 @@ import futu
 import pandas as pd
 
 from .base import validate_date_range
-from .registry import register
 
 _OHLCV_COLUMNS = ["open", "high", "low", "close", "volume"]
 _INTERVAL_MAP: dict[str, str] = {
@@ -49,7 +48,6 @@ def _normalize_frame(df: pd.DataFrame) -> pd.DataFrame:
     return result.sort_index()
 
 
-@register
 class FutuLoader:
     """Fetch HK and China A-share bars from Futu OpenAPI.
 

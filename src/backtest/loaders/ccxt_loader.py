@@ -9,7 +9,6 @@ import ccxt
 import pandas as pd
 
 from .base import validate_date_range
-from .registry import register
 
 _OHLCV_COLUMNS = ["open", "high", "low", "close", "volume"]
 _INTERVAL_MAP = {
@@ -26,7 +25,6 @@ _INTERVAL_MAP = {
 }
 
 
-@register
 class CCXTLoader:
     """Fetch crypto OHLCV bars via CCXT (public, no API key needed)."""
 

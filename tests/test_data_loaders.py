@@ -12,7 +12,7 @@ from backtest.loaders.base import NoAvailableSourceError, validate_date_range
 from backtest.loaders.registry import (
     FALLBACK_CHAINS,
     LOADER_REGISTRY,
-    register,
+    register_loader,
     resolve_loader,
 )
 
@@ -34,9 +34,8 @@ class TestValidateDateRange:
 
 
 class TestRegistry:
-    def test_register_decorator(self):
-        @register
-        class _TestLoader:
+    def test_register_loader(self):
+        class _MockLoader:
             name = "_unittest_test"
             markets = {"crypto"}
             requires_auth = False
@@ -44,8 +43,9 @@ class TestRegistry:
             def fetch(self, codes, start, end, **kw):
                 return {}
 
+        register_loader(_MockLoader)
         assert "_unittest_test" in LOADER_REGISTRY
-        assert LOADER_REGISTRY["_unittest_test"] is _TestLoader
+        assert LOADER_REGISTRY["_unittest_test"] is _MockLoader
 
     def test_registry_has_all_loaders(self):
         assert "ccxt" in LOADER_REGISTRY

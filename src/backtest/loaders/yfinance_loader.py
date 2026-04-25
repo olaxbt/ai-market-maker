@@ -8,12 +8,10 @@ import pandas as pd
 import yfinance as yf
 
 from .base import validate_date_range
-from .registry import register
 
 _OHLCV_COLUMNS = ["open", "high", "low", "close", "volume"]
 
 
-@register
 class YFinanceLoader:
     """Fetch global equity bars via yfinance (free, no API key needed)."""
 

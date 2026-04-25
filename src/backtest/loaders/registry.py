@@ -1,7 +1,6 @@
-"""Loader registry with direct module-level registration.
+"""Loader registry with market-level fallback chains.
 
-Loaders self-register via the ``@register`` decorator when their module is
-imported.
+Loaders are registered explicitly — no decorators, no automatic imports.
 """
 
 from __future__ import annotations
@@ -9,16 +8,11 @@ from __future__ import annotations
 from typing import Any, Type
 
 from .base import NoAvailableSourceError
+from .ccxt_loader import CCXTLoader
+from .futu_loader import FutuLoader
+from .yfinance_loader import YFinanceLoader
 
 LOADER_REGISTRY: dict[str, Type[Any]] = {}
-
-
-def register(cls: Type[Any]) -> Type[Any]:
-    """Class decorator: register a loader into the global registry."""
-    LOADER_REGISTRY[cls.name] = cls
-    return cls
-
-
 FALLBACK_CHAINS: dict[str, list[str]] = {
     "crypto": ["ccxt"],
     "hk_equity": ["futu", "yfinance", "ccxt"],
@@ -29,6 +23,16 @@ FALLBACK_CHAINS: dict[str, list[str]] = {
 }
 
 
+def register_loader(cls: Type[Any]) -> Type[Any]:
+    LOADER_REGISTRY[cls.name] = cls
+    return cls
+
+
+register_loader(CCXTLoader)
+register_loader(FutuLoader)
+register_loader(YFinanceLoader)
+
+
 def resolve_loader(market: str) -> Any:
     """Return the first loader instance for *market* following the fallback chain."""
     chain = FALLBACK_CHAINS.get(market, [])
@@ -36,15 +40,8 @@ def resolve_loader(market: str) -> Any:
     for name in chain:
         if name not in LOADER_REGISTRY:
             continue
-        loader = LOADER_REGISTRY[name]()
         tried.append(name)
-        return loader
+        return LOADER_REGISTRY[name]()
     raise NoAvailableSourceError(
         f"No available data source for market '{market}'. Tried: {tried or chain}."
     )
-
-
-# Import loaders at module bottom so @register fires after LOADER_REGISTRY exists.
-import backtest.loaders.ccxt_loader  # noqa: F401 E402
-import backtest.loaders.futu_loader  # noqa: F401 E402
-import backtest.loaders.yfinance_loader  # noqa: F401 E402
