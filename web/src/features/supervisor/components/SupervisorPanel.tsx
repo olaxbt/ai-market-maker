@@ -228,7 +228,9 @@ export function SupervisorPanel({
             }
             // Append chunk to assistant message.
             setMessages((m) => {
-              const next = m.map((msg) => (msg.id === assistantId ? { ...msg, text: (msg.text || "") + data } : msg));
+              const next = m.map((msg) =>
+                msg.id === assistantId ? { ...msg, text: (msg.text || "") + data } : msg,
+              );
               supervisorMemoryCache.set(cacheKey, { snapshot, messages: next });
               return next;
             });
@@ -273,9 +275,7 @@ export function SupervisorPanel({
 
   // Shared pane height so Chat and Summary align.
   // In embedded layout (split view), let the parent control height.
-  const paneHeightClass = embedded
-    ? "min-h-0"
-    : "h-[min(calc(100vh-320px),740px)] min-h-[420px]";
+  const paneHeightClass = embedded ? "min-h-0" : "h-[min(calc(100vh-320px),740px)] min-h-[420px]";
 
   return (
     <div
@@ -288,16 +288,21 @@ export function SupervisorPanel({
       <div className="rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-glow)]">Supervisor</p>
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-glow)]">
+              Supervisor
+            </p>
             <h2 className="mt-1 text-base font-semibold">Supervisor (live system + backtests)</h2>
             <p className="mt-1 text-[12px] leading-relaxed text-[var(--nexus-muted)]">
-              Always LLM-enabled. Requires backend <code className="font-mono text-[var(--nexus-text)]">OPENAI_API_KEY</code>.
+              Always LLM-enabled. Requires backend{" "}
+              <code className="font-mono text-[var(--nexus-text)]">OPENAI_API_KEY</code>.
             </p>
             <p className="mt-2 font-mono text-[11px] text-[var(--nexus-muted)]">
               Target:{" "}
               <span className="text-[var(--nexus-text)]">
                 {target === "live" ? "live" : "backtest"} ·{" "}
-                {effectiveRunId === "latest" ? `latest${resolvedRunId ? ` → ${resolvedRunId}` : ""}` : effectiveRunId}
+                {effectiveRunId === "latest"
+                  ? `latest${resolvedRunId ? ` → ${resolvedRunId}` : ""}`
+                  : effectiveRunId}
               </span>
             </p>
           </div>
@@ -368,7 +373,9 @@ export function SupervisorPanel({
           </div>
         ) : null}
         {error ? (
-          <div className="mt-3 rounded border border-red-900/45 bg-red-950/35 px-3 py-2 font-mono text-[11px] text-red-100">{error}</div>
+          <div className="mt-3 rounded border border-red-900/45 bg-red-950/35 px-3 py-2 font-mono text-[11px] text-red-100">
+            {error}
+          </div>
         ) : null}
       </div>
 
@@ -377,8 +384,12 @@ export function SupervisorPanel({
           className={`flex min-h-0 flex-col rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/60 p-4 ${paneHeightClass}`}
         >
           <div className="flex items-center justify-between gap-3">
-            <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">Chat</p>
-            <span className="font-mono text-[10px] text-[var(--nexus-muted)]">run={effectiveRunId}</span>
+            <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+              Chat
+            </p>
+            <span className="font-mono text-[10px] text-[var(--nexus-muted)]">
+              run={effectiveRunId}
+            </span>
           </div>
 
           <div
@@ -397,7 +408,10 @@ export function SupervisorPanel({
             ) : (
               <div className="space-y-3.5">
                 {messages.map((m) => (
-                  <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"} mb-2`}>
+                  <div
+                    key={m.id}
+                    className={`flex ${m.role === "user" ? "justify-end" : "justify-start"} mb-2`}
+                  >
                     <div
                       className={`min-w-0 max-w-[min(34rem,92%)] rounded-2xl px-4 py-3 font-mono text-[12px] leading-relaxed shadow-sm ${
                         m.role === "user"
@@ -408,13 +422,18 @@ export function SupervisorPanel({
                       <div className="mb-1 flex items-center justify-between gap-3">
                         <span
                           className={`text-[10px] uppercase tracking-wider ${
-                            m.role === "user" ? "text-[var(--nexus-glow)]" : "text-[var(--nexus-muted)]"
+                            m.role === "user"
+                              ? "text-[var(--nexus-glow)]"
+                              : "text-[var(--nexus-muted)]"
                           }`}
                         >
                           {m.role === "user" ? "You" : "Supervisor"}
                         </span>
                         <span className="text-[10px] tabular-nums text-[var(--nexus-muted)]">
-                          {new Date(m.ts).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}
+                          {new Date(m.ts).toLocaleTimeString(undefined, {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
                         </span>
                       </div>
                       <div
@@ -464,7 +483,9 @@ export function SupervisorPanel({
           className={`flex min-h-0 flex-col rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/60 p-4 ${paneHeightClass}`}
         >
           <div className="flex items-center justify-between gap-3">
-            <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">Executive summary</p>
+            <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+              Executive summary
+            </p>
             <button
               type="button"
               onClick={() => setShowRaw((v) => !v)}
@@ -478,7 +499,9 @@ export function SupervisorPanel({
             {snapshot?.llm_summary ? (
               <div className="space-y-3">
                 <div className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-black/15 p-3">
-                  <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">Brief</p>
+                  <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                    Brief
+                  </p>
                   <ul className="mt-2 space-y-1.5 font-mono text-[12px] leading-relaxed text-[var(--nexus-text)]">
                     {(snapshot.llm_summary.brief ?? []).length ? (
                       (snapshot.llm_summary.brief ?? []).slice(0, 8).map((b, idx) => (
@@ -494,14 +517,18 @@ export function SupervisorPanel({
                 </div>
 
                 <div className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-black/15 p-3">
-                  <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">Detail</p>
+                  <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                    Detail
+                  </p>
                   <p className="mt-2 whitespace-pre-wrap font-mono text-[12px] leading-relaxed text-[var(--nexus-text)]">
                     {snapshot.llm_summary.detail?.trim() ? snapshot.llm_summary.detail.trim() : "—"}
                   </p>
                 </div>
 
                 <div className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-black/15 p-3">
-                  <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">Risks</p>
+                  <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                    Risks
+                  </p>
                   <ul className="mt-2 space-y-1.5 font-mono text-[12px] leading-relaxed text-[var(--nexus-text)]">
                     {(snapshot.llm_summary.risks ?? []).length ? (
                       (snapshot.llm_summary.risks ?? []).slice(0, 8).map((r, idx) => (
@@ -517,7 +544,9 @@ export function SupervisorPanel({
                 </div>
 
                 <div className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-black/15 p-3">
-                  <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">Next actions</p>
+                  <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                    Next actions
+                  </p>
                   <ul className="mt-2 space-y-1.5 font-mono text-[12px] leading-relaxed text-[var(--nexus-text)]">
                     {(snapshot.llm_summary.next_actions ?? []).length ? (
                       (snapshot.llm_summary.next_actions ?? []).slice(0, 10).map((a, idx) => (
@@ -542,7 +571,8 @@ export function SupervisorPanel({
               <div className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-black/15 p-3">
                 <p className="font-mono text-[11px] leading-relaxed text-[var(--nexus-muted)]">
                   No executive summary yet. Ensure backend has{" "}
-                  <code className="font-mono text-[var(--nexus-text)]">OPENAI_API_KEY</code> set, then hit Generate summary.
+                  <code className="font-mono text-[var(--nexus-text)]">OPENAI_API_KEY</code> set,
+                  then hit Generate summary.
                 </p>
                 <div className="mt-3 flex items-center gap-2">
                   <button
@@ -562,4 +592,3 @@ export function SupervisorPanel({
     </div>
   );
 }
-

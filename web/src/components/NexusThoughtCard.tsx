@@ -11,9 +11,25 @@ interface NexusThoughtCardProps {
 
 export function NexusThoughtCard({ trace, index = 0 }: NexusThoughtCardProps) {
   const { actor, timestamp, content, parent_id } = trace;
-  const { thought_process = [], signal, confidence, formula, proposal, veto_status, context } = content ?? {};
-  const signalVal = signal ?? (context && typeof context === "object" && "signal" in context ? (context as { signal?: string }).signal : undefined);
-  const confidenceVal = confidence ?? (context && typeof context === "object" && "confidence" in context ? (context as { confidence?: number }).confidence : undefined);
+  const {
+    thought_process = [],
+    signal,
+    confidence,
+    formula,
+    proposal,
+    veto_status,
+    context,
+  } = content ?? {};
+  const signalVal =
+    signal ??
+    (context && typeof context === "object" && "signal" in context
+      ? (context as { signal?: string }).signal
+      : undefined);
+  const confidenceVal =
+    confidence ??
+    (context && typeof context === "object" && "confidence" in context
+      ? (context as { confidence?: number }).confidence
+      : undefined);
 
   const vetoColor =
     veto_status?.status === "APPROVED"
@@ -40,12 +56,13 @@ export function NexusThoughtCard({ trace, index = 0 }: NexusThoughtCardProps) {
       )}
 
       <div className="space-y-1.5 text-[var(--nexus-text)]">
-        {Array.isArray(thought_process) && thought_process.map((t, i) => (
-          <div key={i} className="flex gap-2">
-            <span className="text-[var(--nexus-glow)]/70 shrink-0">➜</span>
-            <p>{t.detail}</p>
-          </div>
-        ))}
+        {Array.isArray(thought_process) &&
+          thought_process.map((t, i) => (
+            <div key={i} className="flex gap-2">
+              <span className="text-[var(--nexus-glow)]/70 shrink-0">➜</span>
+              <p>{t.detail}</p>
+            </div>
+          ))}
       </div>
 
       {signalVal != null && (
@@ -53,14 +70,20 @@ export function NexusThoughtCard({ trace, index = 0 }: NexusThoughtCardProps) {
           <span className="text-[var(--nexus-muted)]">Signal:</span>{" "}
           <span className="text-[var(--nexus-glow)]">{String(signalVal)}</span>
           {confidenceVal != null && (
-            <span className="text-[var(--nexus-muted)] ml-1">({(Number(confidenceVal) * 100).toFixed(0)}%)</span>
+            <span className="text-[var(--nexus-muted)] ml-1">
+              ({(Number(confidenceVal) * 100).toFixed(0)}%)
+            </span>
           )}
         </div>
       )}
 
       {formula != null && (
         <div className="mt-2 p-1.5 bg-[var(--nexus-panel)] rounded border border-[var(--nexus-border)] text-[10px] text-[var(--nexus-muted)]">
-          {typeof formula === "string" ? formula : (formula as { name?: string; latex?: string; computed?: string })?.computed ?? (formula as { name?: string }).name ?? JSON.stringify(formula)}
+          {typeof formula === "string"
+            ? formula
+            : ((formula as { name?: string; latex?: string; computed?: string })?.computed ??
+              (formula as { name?: string }).name ??
+              JSON.stringify(formula))}
         </div>
       )}
 
@@ -86,7 +109,9 @@ export function NexusThoughtCard({ trace, index = 0 }: NexusThoughtCardProps) {
 
       {veto_status && (
         <div className={`mt-2 px-2 py-1 rounded border text-[10px] ${vetoColor}`}>
-          {veto_status.checked_by != null && <span className="font-semibold">{veto_status.checked_by}: </span>}
+          {veto_status.checked_by != null && (
+            <span className="font-semibold">{veto_status.checked_by}: </span>
+          )}
           {veto_status.status}
           {veto_status.reason && (
             <span className="block text-[var(--nexus-muted)] mt-0.5">{veto_status.reason}</span>

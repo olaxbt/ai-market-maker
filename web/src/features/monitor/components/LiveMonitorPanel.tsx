@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { NexusPayload } from "@/types/nexus-payload";
-import type { BarsResponse, EquitySeriesResponse, SummaryPayload, TradesResponse } from "@/types/backtest";
+import type {
+  BarsResponse,
+  EquitySeriesResponse,
+  SummaryPayload,
+  TradesResponse,
+} from "@/types/backtest";
 import { getFlowApiOrigin } from "@/lib/flowApiOrigin";
 import {
   Area,
@@ -67,10 +72,21 @@ function formatChartTickLabel(ms: number, rangeMs: number): string {
   if (Number.isNaN(d.getTime())) return "—";
   const spanDays = rangeMs / (24 * 60 * 60 * 1000);
   if (spanDays >= 2) {
-    return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    return d.toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   }
   if (spanDays >= 0.5) {
-    return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    return d.toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
   }
   return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
@@ -265,16 +281,25 @@ export function LiveMonitorPanel({
         const base = getFlowApiOrigin();
         const [sRes, eRes, tRes, bRes] = await Promise.all([
           fetch(`${base}/backtests/${encodeURIComponent(rid)}/summary`, { cache: "no-store" }),
-          fetch(`${base}/backtests/${encodeURIComponent(rid)}/equity?max_points=2500`, { cache: "no-store" }),
-          fetch(`${base}/backtests/${encodeURIComponent(rid)}/trades?limit=2000`, { cache: "no-store" }),
-          fetch(`${base}/backtests/${encodeURIComponent(rid)}/bars?max_points=2500`, { cache: "no-store" }),
+          fetch(`${base}/backtests/${encodeURIComponent(rid)}/equity?max_points=2500`, {
+            cache: "no-store",
+          }),
+          fetch(`${base}/backtests/${encodeURIComponent(rid)}/trades?limit=2000`, {
+            cache: "no-store",
+          }),
+          fetch(`${base}/backtests/${encodeURIComponent(rid)}/bars?max_points=2500`, {
+            cache: "no-store",
+          }),
         ]);
         const s = (await sRes.json().catch(() => ({}))) as SummaryPayload;
         const e = (await eRes.json().catch(() => ({}))) as EquitySeriesResponse;
         const t = (await tRes.json().catch(() => ({}))) as TradesResponse;
         const b = (await bRes.json().catch(() => ({}))) as BarsResponse;
         if (cancelled) return;
-        if (!sRes.ok) throw new Error((s as unknown as { detail?: string }).detail || "Failed to load backtest summary");
+        if (!sRes.ok)
+          throw new Error(
+            (s as unknown as { detail?: string }).detail || "Failed to load backtest summary",
+          );
         setReplaySummary(s);
         if (eRes.ok) setReplayEquity(e);
         if (tRes.ok) setReplayTrades(t);
@@ -304,7 +329,9 @@ export function LiveMonitorPanel({
   const ticker = payload?.metadata?.ticker ?? "—";
   const universeCount =
     payload?.metadata?.universe_size ??
-    (Array.isArray(payload?.metadata?.universe_symbols) ? payload?.metadata?.universe_symbols.length : null);
+    (Array.isArray(payload?.metadata?.universe_symbols)
+      ? payload?.metadata?.universe_symbols.length
+      : null);
   const status = payload?.metadata?.status ?? "—";
 
   const replayEnabled = Boolean(replaySummary && replayEquity?.points?.length);
@@ -317,17 +344,29 @@ export function LiveMonitorPanel({
     const last = replayEquity?.points?.[replayEquity.points.length - 1];
     const eq = typeof last?.equity === "number" ? last.equity : null;
     const cash =
-      typeof (last as unknown as { cash?: unknown })?.cash === "number" ? ((last as unknown as { cash: number }).cash as number) : null;
+      typeof (last as unknown as { cash?: unknown })?.cash === "number"
+        ? ((last as unknown as { cash: number }).cash as number)
+        : null;
     const sharpe = replaySummary?.metrics?.sharpe;
     return [
       { label: "Replay run", value: rid, tone: "text-[#22d3ee]" },
-      { label: "Sharpe (ann.)", value: fmtMetric(typeof sharpe === "number" ? sharpe : null, 3), tone: "text-[#fbbf24]" },
+      {
+        label: "Sharpe (ann.)",
+        value: fmtMetric(typeof sharpe === "number" ? sharpe : null, 3),
+        tone: "text-[#fbbf24]",
+      },
       { label: "Desk", value: "Primary", tone: "text-[#a78bfa]" },
       { label: "Points", value: String(pts), tone: "text-[var(--nexus-muted)]" },
       { label: "Equity", value: fmtUsd(eq), tone: "text-[#3b82f6]" },
       { label: "Cash", value: fmtUsd(cash), tone: "text-[#00d4aa]" },
     ];
-  }, [fallbackRunId, replayEnabled, replayEquity?.points, replaySummary?.metrics?.sharpe, replaySummary?.run_id]);
+  }, [
+    fallbackRunId,
+    replayEnabled,
+    replayEquity?.points,
+    replaySummary?.metrics?.sharpe,
+    replaySummary?.run_id,
+  ]);
 
   const cards = useMemo(
     () => [
@@ -335,14 +374,19 @@ export function LiveMonitorPanel({
       {
         label: "Sharpe (ann.)",
         value: fmtMetric(
-          typeof payload?.metadata?.kpis?.sharpe === "number" && Number.isFinite(payload.metadata.kpis.sharpe)
+          typeof payload?.metadata?.kpis?.sharpe === "number" &&
+            Number.isFinite(payload.metadata.kpis.sharpe)
             ? payload.metadata.kpis.sharpe
             : null,
           3,
         ),
         tone: "text-[#fbbf24]",
       },
-      { label: "Universe", value: universeCount == null ? "—" : String(universeCount), tone: "text-[#a78bfa]" },
+      {
+        label: "Universe",
+        value: universeCount == null ? "—" : String(universeCount),
+        tone: "text-[#a78bfa]",
+      },
       { label: "Status", value: status, tone: "text-[var(--nexus-muted)]" },
       { label: "USDT balance", value: fmtUsd(usdt), tone: "text-[#00d4aa]" },
       { label: "Stable total", value: fmtUsd(totalStable), tone: "text-[#3b82f6]" },
@@ -350,9 +394,21 @@ export function LiveMonitorPanel({
     [payload?.metadata?.kpis?.sharpe, runId, universeCount, status, usdt, totalStable],
   );
 
-  const chartData = useMemo(() => history.map((p) => ({ ts: p.ts, t: formatTimeShort(p.ts), totalUsd: p.totalUsd, usdt: p.usdt })), [history]);
+  const chartData = useMemo(
+    () =>
+      history.map((p) => ({
+        ts: p.ts,
+        t: formatTimeShort(p.ts),
+        totalUsd: p.totalUsd,
+        usdt: p.usdt,
+      })),
+    [history],
+  );
 
-  const replayIntervalSec = Math.max(60, replaySummary?.interval_sec ?? replayBars?.interval_sec ?? 300);
+  const replayIntervalSec = Math.max(
+    60,
+    replaySummary?.interval_sec ?? replayBars?.interval_sec ?? 300,
+  );
 
   const replayChartData = useMemo(() => {
     if (!replayEnabled || !replayEquity?.points?.length) return [];
@@ -403,7 +459,14 @@ export function LiveMonitorPanel({
   const showDemo = !err && !useReplay && ((chartData.length < 3 && !health?.ts) || liveSpan < 1);
   const demoData = useMemo(() => (showDemo ? demoSeries(Date.now(), 96) : []), [showDemo]);
   const chartRows = showDemo
-    ? demoData.map((p) => ({ ts: p.ts, t: formatTimeShort(p.ts), totalUsd: p.totalUsd, usdt: p.usdt, btc: p.btc, eth: p.eth }))
+    ? demoData.map((p) => ({
+        ts: p.ts,
+        t: formatTimeShort(p.ts),
+        totalUsd: p.totalUsd,
+        usdt: p.usdt,
+        btc: p.btc,
+        eth: p.eth,
+      }))
     : effectiveChart;
 
   const chartTimeRangeMs = useMemo(() => {
@@ -468,8 +531,20 @@ export function LiveMonitorPanel({
     return rows.slice(0, 8);
   }, [balances]);
 
-  const allocationTotal = useMemo(() => allocation.reduce((s, r) => s + (Number.isFinite(r.value) ? r.value : 0), 0), [allocation]);
-  const allocationColors = ["#00D4AA", "#3B82F6", "#A78BFA", "#F59E0B", "#FB7185", "#22D3EE", "#34D399", "#F97316"];
+  const allocationTotal = useMemo(
+    () => allocation.reduce((s, r) => s + (Number.isFinite(r.value) ? r.value : 0), 0),
+    [allocation],
+  );
+  const allocationColors = [
+    "#00D4AA",
+    "#3B82F6",
+    "#A78BFA",
+    "#F59E0B",
+    "#FB7185",
+    "#22D3EE",
+    "#34D399",
+    "#F97316",
+  ];
 
   const positions = Array.isArray(health?.positions) ? health?.positions : [];
   const eventTape = useMemo<TapeEntry[]>(() => {
@@ -488,7 +563,13 @@ export function LiveMonitorPanel({
     }
     const entries = payload?.message_log ?? [];
     const sorted = [...entries].sort((a, b) => (b.seq ?? 0) - (a.seq ?? 0));
-    return sorted.slice(0, 60).map((e, i) => ({ seq: typeof e.seq === "number" ? e.seq : i, kind: String(e.kind ?? "event"), node_id: String(e.node_id ?? "—"), ts: String(e.ts ?? "—"), message: String(e.message ?? "") }));
+    return sorted.slice(0, 60).map((e, i) => ({
+      seq: typeof e.seq === "number" ? e.seq : i,
+      kind: String(e.kind ?? "event"),
+      node_id: String(e.node_id ?? "—"),
+      ts: String(e.ts ?? "—"),
+      message: String(e.message ?? ""),
+    }));
   }, [payload?.message_log, useReplay, replayTrades?.trades]);
 
   const tradeStats = useMemo(() => {
@@ -536,8 +617,12 @@ export function LiveMonitorPanel({
         <div className="overflow-hidden rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[radial-gradient(900px_360px_at_20%_0%,rgba(34,211,238,0.14),transparent_60%),radial-gradient(800px_340px_at_85%_10%,rgba(167,139,250,0.12),transparent_60%),radial-gradient(900px_360px_at_55%_110%,rgba(245,158,11,0.10),transparent_65%)] px-5 py-4 shadow-[0_0_28px_rgba(0,212,170,0.06)]">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-glow)]">Operations</p>
-              <h2 className="mt-1 text-lg font-semibold tracking-tight text-[var(--nexus-text)]">Monitor</h2>
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-glow)]">
+                Operations
+              </p>
+              <h2 className="mt-1 text-lg font-semibold tracking-tight text-[var(--nexus-text)]">
+                Monitor
+              </h2>
               <p className="mt-2 max-w-2xl text-[12px] leading-relaxed text-[var(--nexus-muted)]">
                 Portfolio analytics.
               </p>
@@ -546,10 +631,12 @@ export function LiveMonitorPanel({
             {fallbackRunId ? (
               <div className="flex items-center gap-2">
                 <div className="nexus-segmented-toggle flex items-center gap-1 rounded-xl p-1">
-                  {([
-                    ["live", "Live"],
-                    ["replay", "Replay"],
-                  ] as const).map(([id, label]) => {
+                  {(
+                    [
+                      ["live", "Live"],
+                      ["replay", "Replay"],
+                    ] as const
+                  ).map(([id, label]) => {
                     const active = mode === id;
                     const disabled = id === "replay" && !replayEnabled;
                     return (
@@ -610,7 +697,9 @@ export function LiveMonitorPanel({
               key={c.label}
               className={`min-h-[4.25rem] rounded-xl px-3 py-2.5 sm:px-4 sm:py-3 ${MONITOR_KPI_SHELL[idx % MONITOR_KPI_SHELL.length]}`}
             >
-              <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">{c.label}</p>
+              <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                {c.label}
+              </p>
               <p className={`mt-1 truncate font-mono text-sm ${c.tone}`} title={c.value}>
                 {c.value}
               </p>
@@ -623,17 +712,27 @@ export function LiveMonitorPanel({
           <div className="overflow-hidden rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[radial-gradient(1000px_420px_at_15%_-10%,rgba(249,115,22,0.16),transparent_58%),radial-gradient(900px_400px_at_85%_0%,rgba(59,130,246,0.12),transparent_60%),radial-gradient(900px_420px_at_50%_120%,rgba(245,158,11,0.10),transparent_62%)] p-5 shadow-[0_0_32px_rgba(245,158,11,0.12)]">
             <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
               <div className="min-w-0">
-                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">Portfolio equity curve</p>
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
+                  Portfolio equity curve
+                </p>
                 <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1">
                   <div className="font-mono text-2xl font-semibold tracking-tight text-[var(--nexus-text)]">
                     {fmtUsd(seriesStats?.endUsd ?? null)}
                   </div>
                   <div className="font-mono text-[12px] text-[var(--nexus-muted)]">
                     PnL{" "}
-                    <span className={seriesStats && seriesStats.pnlUsd >= 0 ? "text-[#34d399]" : "text-[#fb7185]"}>
+                    <span
+                      className={
+                        seriesStats && seriesStats.pnlUsd >= 0 ? "text-[#34d399]" : "text-[#fb7185]"
+                      }
+                    >
                       {fmtUsd(seriesStats?.pnlUsd ?? null)}
                     </span>{" "}
-                    <span className={seriesStats && seriesStats.retPct >= 0 ? "text-[#34d399]" : "text-[#fb7185]"}>
+                    <span
+                      className={
+                        seriesStats && seriesStats.retPct >= 0 ? "text-[#34d399]" : "text-[#fb7185]"
+                      }
+                    >
                       ({pct(seriesStats?.retPct ?? null, 2)})
                     </span>
                   </div>
@@ -642,7 +741,9 @@ export function LiveMonitorPanel({
                   {useReplay ? (
                     <>
                       Replay · {replaySummary?.ticker ?? "—"} · run{" "}
-                      <span className="text-[var(--nexus-text)]">{replaySummary?.run_id ?? fallbackRunId}</span>
+                      <span className="text-[var(--nexus-text)]">
+                        {replaySummary?.run_id ?? fallbackRunId}
+                      </span>
                     </>
                   ) : (
                     <>
@@ -655,16 +756,28 @@ export function LiveMonitorPanel({
 
               <div className="grid shrink-0 grid-cols-3 gap-2">
                 <div className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[linear-gradient(180deg,rgba(167,139,250,0.16),rgba(167,139,250,0.04))] px-3 py-2">
-                  <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">Max DD</p>
-                  <p className="mt-1 font-mono text-[12px] text-[#c4b5fd]">{fmtDrawdownPct(seriesStats?.ddPct ?? null, 2)}</p>
+                  <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                    Max DD
+                  </p>
+                  <p className="mt-1 font-mono text-[12px] text-[#c4b5fd]">
+                    {fmtDrawdownPct(seriesStats?.ddPct ?? null, 2)}
+                  </p>
                 </div>
                 <div className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[linear-gradient(180deg,rgba(59,130,246,0.18),rgba(59,130,246,0.04))] px-3 py-2">
-                  <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">High</p>
-                  <p className="mt-1 font-mono text-[12px] text-[#60a5fa]">{fmtUsd(seriesStats?.hi ?? null)}</p>
+                  <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                    High
+                  </p>
+                  <p className="mt-1 font-mono text-[12px] text-[#60a5fa]">
+                    {fmtUsd(seriesStats?.hi ?? null)}
+                  </p>
                 </div>
                 <div className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[linear-gradient(180deg,rgba(251,113,133,0.16),rgba(251,113,133,0.04))] px-3 py-2">
-                  <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">Low</p>
-                  <p className="mt-1 font-mono text-[12px] text-[#fb7185]">{fmtUsd(seriesStats?.lo ?? null)}</p>
+                  <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                    Low
+                  </p>
+                  <p className="mt-1 font-mono text-[12px] text-[#fb7185]">
+                    {fmtUsd(seriesStats?.lo ?? null)}
+                  </p>
                 </div>
               </div>
             </div>
@@ -692,19 +805,36 @@ export function LiveMonitorPanel({
                     minTickGap={28}
                     tickFormatter={(v) => formatChartTickLabel(Number(v), chartTimeRangeMs)}
                   />
-                  <YAxis tick={{ fill: "rgba(138,149,166,0.92)", fontSize: 10 }} tickLine={false} axisLine={false} width={64} tickFormatter={(v) => `$${Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`} />
+                  <YAxis
+                    tick={{ fill: "rgba(138,149,166,0.92)", fontSize: 10 }}
+                    tickLine={false}
+                    axisLine={false}
+                    width={64}
+                    tickFormatter={(v) =>
+                      `$${Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                    }
+                  />
                   <Tooltip
                     contentStyle={{
                       background: "rgba(10,13,18,0.92)",
                       border: "1px solid rgba(138,149,166,0.22)",
                       borderRadius: 10,
-                      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                      fontFamily:
+                        "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
                       fontSize: 11,
                     }}
                     formatter={(v: unknown) => fmtUsd(typeof v === "number" ? v : null)}
                     labelFormatter={(l) => formatChartTickLabel(Number(l), chartTimeRangeMs)}
                   />
-                  <Area type="monotone" dataKey="totalUsd" stroke="#F59E0B" strokeWidth={2.8} fill="url(#heroArea)" dot={false} isAnimationActive={false} />
+                  <Area
+                    type="monotone"
+                    dataKey="totalUsd"
+                    stroke="#F59E0B"
+                    strokeWidth={2.8}
+                    fill="url(#heroArea)"
+                    dot={false}
+                    isAnimationActive={false}
+                  />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -714,14 +844,21 @@ export function LiveMonitorPanel({
               <div className="overflow-hidden rounded-xl border border-[color:var(--nexus-card-stroke)] bg-black/10 p-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
-                    {useReplay ? `${replaySummary?.ticker ?? "Asset"} price (close)` : "Asset price (waiting for live OHLC)"}
+                    {useReplay
+                      ? `${replaySummary?.ticker ?? "Asset"} price (close)`
+                      : "Asset price (waiting for live OHLC)"}
                   </p>
-                  <p className="font-mono text-[10px] text-[var(--nexus-muted)]">{assetPriceRows.length ? `${assetPriceRows.length} pts` : "—"}</p>
+                  <p className="font-mono text-[10px] text-[var(--nexus-muted)]">
+                    {assetPriceRows.length ? `${assetPriceRows.length} pts` : "—"}
+                  </p>
                 </div>
                 <div className="mt-2 h-[140px] min-h-[140px] w-full rounded-lg border border-[color:var(--nexus-card-stroke)] bg-black/5 p-2 shadow-[inset_0_0_0_1px_rgba(34,211,238,0.12)]">
                   {assetPriceRows.length ? (
                     <ResponsiveContainer width="100%" height="100%" minHeight={120} minWidth={260}>
-                      <AreaChart data={assetPriceRows} margin={{ left: 12, right: 12, top: 6, bottom: 0 }}>
+                      <AreaChart
+                        data={assetPriceRows}
+                        margin={{ left: 12, right: 12, top: 6, bottom: 0 }}
+                      >
                         <defs>
                           <linearGradient id="assetArea" x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0%" stopColor="#22d3ee" stopOpacity={0.34} />
@@ -746,26 +883,39 @@ export function LiveMonitorPanel({
                           tickLine={false}
                           axisLine={false}
                           width={56}
-                          tickFormatter={(v) => Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          tickFormatter={(v) =>
+                            Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 })
+                          }
                         />
                         <Tooltip
                           contentStyle={{
                             background: "rgba(10,13,18,0.92)",
                             border: "1px solid rgba(138,149,166,0.22)",
                             borderRadius: 10,
-                            fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                            fontFamily:
+                              "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
                             fontSize: 11,
                           }}
                           formatter={(v: unknown) => fmtNum(typeof v === "number" ? v : null, 2)}
                           labelFormatter={(l) => formatChartTickLabel(Number(l), assetTimeRangeMs)}
                         />
-                        <Area type="monotone" dataKey="close" stroke="#22d3ee" strokeWidth={2.4} fill="url(#assetArea)" dot={false} isAnimationActive={false} />
+                        <Area
+                          type="monotone"
+                          dataKey="close"
+                          stroke="#22d3ee"
+                          strokeWidth={2.4}
+                          fill="url(#assetArea)"
+                          dot={false}
+                          isAnimationActive={false}
+                        />
                       </AreaChart>
                     </ResponsiveContainer>
                   ) : (
                     <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-[color:var(--nexus-card-stroke)] bg-white/[0.02]">
                       <p className="font-mono text-[11px] text-[var(--nexus-muted)]">
-                        {useReplay ? "No bars data for this run." : "Live OHLC not available yet (replay shows price)."}
+                        {useReplay
+                          ? "No bars data for this run."
+                          : "Live OHLC not available yet (replay shows price)."}
                       </p>
                     </div>
                   )}
@@ -774,57 +924,93 @@ export function LiveMonitorPanel({
 
               <div className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-black/10 p-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">Quick analytics</p>
-                  <p className="font-mono text-[10px] text-[var(--nexus-muted)]">{chartRows.length ? `${chartRows.length} pts` : "—"}</p>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
+                    Quick analytics
+                  </p>
+                  <p className="font-mono text-[10px] text-[var(--nexus-muted)]">
+                    {chartRows.length ? `${chartRows.length} pts` : "—"}
+                  </p>
                 </div>
 
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   <div className="rounded-lg border border-[color:var(--nexus-card-stroke)] bg-white/[0.02] px-3 py-2">
-                    <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">Return</p>
-                    <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">{pct(seriesStats?.retPct ?? null, 2)}</p>
+                    <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                      Return
+                    </p>
+                    <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">
+                      {pct(seriesStats?.retPct ?? null, 2)}
+                    </p>
                   </div>
                   <div className="rounded-lg border border-[color:var(--nexus-card-stroke)] bg-white/[0.02] px-3 py-2">
-                    <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">PnL</p>
-                    <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">{fmtUsd(seriesStats?.pnlUsd ?? null)}</p>
+                    <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                      PnL
+                    </p>
+                    <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">
+                      {fmtUsd(seriesStats?.pnlUsd ?? null)}
+                    </p>
                   </div>
                   <div className="rounded-lg border border-[color:var(--nexus-card-stroke)] bg-white/[0.02] px-3 py-2">
-                    <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">Range</p>
+                    <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                      Range
+                    </p>
                     <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">
                       {seriesStats ? fmtUsd(seriesStats.hi - seriesStats.lo) : "—"}
                     </p>
                   </div>
                   <div className="rounded-lg border border-[color:var(--nexus-card-stroke)] bg-white/[0.02] px-3 py-2">
-                    <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">Max DD</p>
-                    <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">{fmtDrawdownPct(seriesStats?.ddPct ?? null, 2)}</p>
+                    <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                      Max DD
+                    </p>
+                    <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">
+                      {fmtDrawdownPct(seriesStats?.ddPct ?? null, 2)}
+                    </p>
                   </div>
                 </div>
 
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   <div className="rounded-lg border border-[color:var(--nexus-card-stroke)] bg-white/[0.02] px-3 py-2">
-                    <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">Sharpe (ann.)</p>
-                    <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">{fmtMetric(displaySharpe, 3)}</p>
+                    <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                      Sharpe (ann.)
+                    </p>
+                    <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">
+                      {fmtMetric(displaySharpe, 3)}
+                    </p>
                     {!useReplay ? (
-                      <p className="mt-0.5 font-mono text-[9px] text-[var(--nexus-muted)]">From backtest summary in Replay</p>
+                      <p className="mt-0.5 font-mono text-[9px] text-[var(--nexus-muted)]">
+                        From backtest summary in Replay
+                      </p>
                     ) : null}
                   </div>
                   <div className="rounded-lg border border-[color:var(--nexus-card-stroke)] bg-white/[0.02] px-3 py-2">
-                    <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">Sortino</p>
-                    <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">{fmtMetric(displaySortino, 3)}</p>
+                    <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                      Sortino
+                    </p>
+                    <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">
+                      {fmtMetric(displaySortino, 3)}
+                    </p>
                   </div>
                   <div className="rounded-lg border border-[color:var(--nexus-card-stroke)] bg-white/[0.02] px-3 py-2">
-                    <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">Win rate</p>
+                    <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                      Win rate
+                    </p>
                     <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">
                       {displayWinRate != null ? pct(displayWinRate * 100, 1) : "—"}
                     </p>
                   </div>
                   <div className="rounded-lg border border-[color:var(--nexus-card-stroke)] bg-white/[0.02] px-3 py-2">
-                    <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">Profit factor</p>
-                    <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">{fmtMetric(displayProfitFactor, 2)}</p>
+                    <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                      Profit factor
+                    </p>
+                    <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">
+                      {fmtMetric(displayProfitFactor, 2)}
+                    </p>
                   </div>
                 </div>
 
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[color:var(--nexus-card-stroke)] bg-white/[0.02] px-3 py-2">
-                  <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">Trades</p>
+                  <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                    Trades
+                  </p>
                   <p className="font-mono text-[11px] text-[var(--nexus-text)]">
                     {tradeStats ? (
                       <>
@@ -843,23 +1029,41 @@ export function LiveMonitorPanel({
           </div>
 
           <div className="rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 p-5 shadow-[0_0_24px_rgba(0,212,170,0.04)]">
-            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">Highlights</p>
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
+              Highlights
+            </p>
             <div className="mt-3 space-y-3">
               <div className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[linear-gradient(180deg,rgba(34,211,238,0.18),rgba(34,211,238,0.03))] p-3">
-                <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">Compliance</p>
+                <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                  Compliance
+                </p>
                 <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">Clear</p>
               </div>
               <div className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[linear-gradient(180deg,rgba(0,212,170,0.18),rgba(0,212,170,0.03))] p-3">
-                <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">Allocation</p>
-                <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">{allocation.length ? `${allocation[0]?.asset ?? "—"} · top` : "—"}</p>
+                <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                  Allocation
+                </p>
+                <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">
+                  {allocation.length ? `${allocation[0]?.asset ?? "—"} · top` : "—"}
+                </p>
                 <p className="mt-0.5 font-mono text-[10px] text-[var(--nexus-muted)]">
-                  {allocation.length ? `${((allocation[0].value / Math.max(1, allocationTotal)) * 100).toFixed(1)}%` : "—"}
+                  {allocation.length
+                    ? `${((allocation[0].value / Math.max(1, allocationTotal)) * 100).toFixed(1)}%`
+                    : "—"}
                 </p>
               </div>
               <div className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[linear-gradient(180deg,rgba(245,158,11,0.18),rgba(245,158,11,0.03))] p-3">
-                <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">Freshness</p>
-                <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">{formatTimeShort((useReplay ? seriesStats?.lastTs : (health?.ts ?? null)) as number | null)}</p>
-                <p className="mt-0.5 font-mono text-[10px] text-[var(--nexus-muted)]">{showDemo ? "Demo overlay active (flat series)" : "Data-driven"}</p>
+                <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                  Freshness
+                </p>
+                <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">
+                  {formatTimeShort(
+                    (useReplay ? seriesStats?.lastTs : (health?.ts ?? null)) as number | null,
+                  )}
+                </p>
+                <p className="mt-0.5 font-mono text-[10px] text-[var(--nexus-muted)]">
+                  {showDemo ? "Demo overlay active (flat series)" : "Data-driven"}
+                </p>
               </div>
             </div>
           </div>
@@ -868,8 +1072,12 @@ export function LiveMonitorPanel({
         <section className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <div className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">Positions</p>
-              <p className="font-mono text-[10px] text-[var(--nexus-muted)]">{positions.length} open</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
+                Positions
+              </p>
+              <p className="font-mono text-[10px] text-[var(--nexus-muted)]">
+                {positions.length} open
+              </p>
             </div>
 
             <div className="mt-3 overflow-hidden rounded-lg border border-[var(--nexus-rule-soft)]">
@@ -882,24 +1090,40 @@ export function LiveMonitorPanel({
               <div className="max-h-[260px] overflow-auto">
                 {positions.length ? (
                   positions.map((p, i) => {
-                    const sym = pickString(p, ["symbol", "ticker", "pair", "instrument"]) ?? (typeof p === "string" ? p : `pos_${i + 1}`);
+                    const sym =
+                      pickString(p, ["symbol", "ticker", "pair", "instrument"]) ??
+                      (typeof p === "string" ? p : `pos_${i + 1}`);
                     const side = pickString(p, ["side", "direction", "positionSide"]) ?? "—";
                     const qty = pickNumber(p, ["qty", "quantity", "size", "positionAmt", "amount"]);
-                    const entry = pickNumber(p, ["entry", "entry_price", "avgEntryPrice", "entryPrice", "price"]);
+                    const entry = pickNumber(p, [
+                      "entry",
+                      "entry_price",
+                      "avgEntryPrice",
+                      "entryPrice",
+                      "price",
+                    ]);
                     return (
                       <div
                         key={`${sym}_${i}`}
                         className="grid grid-cols-12 gap-2 border-b border-[var(--nexus-rule-soft)] px-3 py-2 font-mono text-[11px] text-slate-200 last:border-b-0"
                       >
                         <div className="col-span-5 truncate text-[var(--nexus-text)]">{sym}</div>
-                        <div className="col-span-2 text-right text-[var(--nexus-muted)]">{side}</div>
-                        <div className="col-span-2 text-right tabular-nums text-[var(--nexus-text)]">{qty == null ? "—" : fmtNum(qty, 6)}</div>
-                        <div className="col-span-3 text-right tabular-nums text-[var(--nexus-muted)]">{entry == null ? "—" : fmtUsd(entry)}</div>
+                        <div className="col-span-2 text-right text-[var(--nexus-muted)]">
+                          {side}
+                        </div>
+                        <div className="col-span-2 text-right tabular-nums text-[var(--nexus-text)]">
+                          {qty == null ? "—" : fmtNum(qty, 6)}
+                        </div>
+                        <div className="col-span-3 text-right tabular-nums text-[var(--nexus-muted)]">
+                          {entry == null ? "—" : fmtUsd(entry)}
+                        </div>
                       </div>
                     );
                   })
                 ) : (
-                  <div className="px-3 py-3 font-mono text-[11px] text-[var(--nexus-muted)]">No open positions reported.</div>
+                  <div className="px-3 py-3 font-mono text-[11px] text-[var(--nexus-muted)]">
+                    No open positions reported.
+                  </div>
                 )}
               </div>
             </div>
@@ -907,8 +1131,12 @@ export function LiveMonitorPanel({
 
           <div className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">Event tape</p>
-              <p className="font-mono text-[10px] text-[var(--nexus-muted)]">latest {eventTape.length}</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
+                Event tape
+              </p>
+              <p className="font-mono text-[10px] text-[var(--nexus-muted)]">
+                latest {eventTape.length}
+              </p>
             </div>
 
             <div className="mt-3 max-h-[360px] overflow-auto rounded-lg border border-[var(--nexus-rule-soft)] bg-[var(--nexus-bg)]/25">
@@ -922,18 +1150,26 @@ export function LiveMonitorPanel({
                         </span>
                         <span className="text-[var(--nexus-muted)]">{e.ts}</span>
                       </div>
-                      <p className="mt-1 font-mono text-[11px] leading-relaxed text-[var(--nexus-text)]">{e.message}</p>
+                      <p className="mt-1 font-mono text-[11px] leading-relaxed text-[var(--nexus-text)]">
+                        {e.message}
+                      </p>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="px-3 py-3 font-mono text-[11px] text-[var(--nexus-muted)]">No events in `message_log` yet.</div>
+                <div className="px-3 py-3 font-mono text-[11px] text-[var(--nexus-muted)]">
+                  No events in `message_log` yet.
+                </div>
               )}
             </div>
 
             <div className="mt-3 rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)]/25 px-3 py-2">
-              <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">Last event</p>
-              <p className="mt-1 font-mono text-[11px] leading-relaxed text-[var(--nexus-text)]">{lastMsg}</p>
+              <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
+                Last event
+              </p>
+              <p className="mt-1 font-mono text-[11px] leading-relaxed text-[var(--nexus-text)]">
+                {lastMsg}
+              </p>
             </div>
           </div>
         </section>
@@ -941,8 +1177,12 @@ export function LiveMonitorPanel({
         <section className="grid gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
           <div className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 p-4 shadow-[0_0_24px_rgba(0,212,170,0.04)]">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">Assets / equity trend</p>
-              <p className="font-mono text-[10px] text-[var(--nexus-muted)]">{chartRows.length ? `${chartRows.length} pts` : "—"}</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
+                Assets / equity trend
+              </p>
+              <p className="font-mono text-[10px] text-[var(--nexus-muted)]">
+                {chartRows.length ? `${chartRows.length} pts` : "—"}
+              </p>
             </div>
             <div className="mt-3 h-[220px] w-full">
               <ResponsiveContainer width="100%" height="100%">
@@ -953,7 +1193,7 @@ export function LiveMonitorPanel({
                       <stop offset="100%" stopColor="#3B82F6" stopOpacity={0.02} />
                     </linearGradient>
                     <linearGradient id="nexusAreaUsdt" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#00D4AA" stopOpacity={0.30} />
+                      <stop offset="0%" stopColor="#00D4AA" stopOpacity={0.3} />
                       <stop offset="100%" stopColor="#00D4AA" stopOpacity={0.02} />
                     </linearGradient>
                   </defs>
@@ -969,24 +1209,65 @@ export function LiveMonitorPanel({
                     minTickGap={28}
                     tickFormatter={(v) => formatChartTickLabel(Number(v), chartTimeRangeMs)}
                   />
-                  <YAxis tick={{ fill: "rgba(138,149,166,0.9)", fontSize: 10 }} tickLine={false} axisLine={false} width={56} tickFormatter={(v) => `$${Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`} />
+                  <YAxis
+                    tick={{ fill: "rgba(138,149,166,0.9)", fontSize: 10 }}
+                    tickLine={false}
+                    axisLine={false}
+                    width={56}
+                    tickFormatter={(v) =>
+                      `$${Number(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                    }
+                  />
                   <Tooltip
                     contentStyle={{
                       background: "rgba(10,13,18,0.92)",
                       border: "1px solid rgba(138,149,166,0.22)",
                       borderRadius: 10,
-                      fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                      fontFamily:
+                        "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
                       fontSize: 11,
                     }}
                     formatter={(v: unknown) => fmtUsd(typeof v === "number" ? v : null)}
                     labelFormatter={(l) => formatChartTickLabel(Number(l), chartTimeRangeMs)}
                   />
-                  <Area type="monotone" dataKey="totalUsd" stroke="#3B82F6" strokeWidth={2} fill="url(#nexusAreaTotal)" dot={false} isAnimationActive={false} />
-                  <Area type="monotone" dataKey="usdt" stroke="#00D4AA" strokeWidth={1.5} fill="url(#nexusAreaUsdt)" dot={false} isAnimationActive={false} />
+                  <Area
+                    type="monotone"
+                    dataKey="totalUsd"
+                    stroke="#3B82F6"
+                    strokeWidth={2}
+                    fill="url(#nexusAreaTotal)"
+                    dot={false}
+                    isAnimationActive={false}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="usdt"
+                    stroke="#00D4AA"
+                    strokeWidth={1.5}
+                    fill="url(#nexusAreaUsdt)"
+                    dot={false}
+                    isAnimationActive={false}
+                  />
                   {showDemo ? (
                     <>
-                      <Area type="monotone" dataKey="btc" stroke="#F59E0B" strokeWidth={1.25} fillOpacity={0} dot={false} isAnimationActive={false} />
-                      <Area type="monotone" dataKey="eth" stroke="#A78BFA" strokeWidth={1.15} fillOpacity={0} dot={false} isAnimationActive={false} />
+                      <Area
+                        type="monotone"
+                        dataKey="btc"
+                        stroke="#F59E0B"
+                        strokeWidth={1.25}
+                        fillOpacity={0}
+                        dot={false}
+                        isAnimationActive={false}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="eth"
+                        stroke="#A78BFA"
+                        strokeWidth={1.15}
+                        fillOpacity={0}
+                        dot={false}
+                        isAnimationActive={false}
+                      />
                     </>
                   ) : null}
                 </AreaChart>
@@ -995,8 +1276,10 @@ export function LiveMonitorPanel({
             <p className="mt-2 font-mono text-[10px] text-[var(--nexus-muted)]">
               {showDemo ? (
                 <>
-                  Demo overlay · <span className="text-[#3B82F6]">Total</span> · <span className="text-[#00D4AA]">USDT</span> ·{" "}
-                  <span className="text-[#F59E0B]">BTC</span> · <span className="text-[#A78BFA]">ETH</span>
+                  Demo overlay · <span className="text-[#3B82F6]">Total</span> ·{" "}
+                  <span className="text-[#00D4AA]">USDT</span> ·{" "}
+                  <span className="text-[#F59E0B]">BTC</span> ·{" "}
+                  <span className="text-[#A78BFA]">ETH</span>
                 </>
               ) : (
                 <>
@@ -1010,14 +1293,27 @@ export function LiveMonitorPanel({
 
           <div className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 p-4 shadow-[0_0_24px_rgba(0,212,170,0.04)]">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">Allocation (balances)</p>
-              <p className="font-mono text-[10px] text-[var(--nexus-muted)]">{allocation.length ? `${allocation.length} assets` : "—"}</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
+                Allocation (balances)
+              </p>
+              <p className="font-mono text-[10px] text-[var(--nexus-muted)]">
+                {allocation.length ? `${allocation.length} assets` : "—"}
+              </p>
             </div>
             <div className="mt-3 grid gap-3 sm:grid-cols-[200px_minmax(0,1fr)]">
               <div className="h-[200px] w-full">
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
-                    <Pie data={allocation} dataKey="value" nameKey="asset" innerRadius={52} outerRadius={82} paddingAngle={2} stroke="rgba(0,0,0,0)" isAnimationActive={false}>
+                    <Pie
+                      data={allocation}
+                      dataKey="value"
+                      nameKey="asset"
+                      innerRadius={52}
+                      outerRadius={82}
+                      paddingAngle={2}
+                      stroke="rgba(0,0,0,0)"
+                      isAnimationActive={false}
+                    >
                       {allocation.map((_, idx) => (
                         <Cell key={idx} fill={allocationColors[idx % allocationColors.length]} />
                       ))}
@@ -1027,10 +1323,15 @@ export function LiveMonitorPanel({
                         background: "rgba(10,13,18,0.92)",
                         border: "1px solid rgba(138,149,166,0.22)",
                         borderRadius: 10,
-                        fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                        fontFamily:
+                          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
                         fontSize: 11,
                       }}
-                      formatter={(v: unknown, _n, p: { payload?: { asset?: unknown } } | undefined) =>
+                      formatter={(
+                        v: unknown,
+                        _n,
+                        p: { payload?: { asset?: unknown } } | undefined,
+                      ) =>
                         `${fmtNum(typeof v === "number" ? v : null, 4)} ${String(p?.payload?.asset ?? "")}`
                       }
                     />
@@ -1041,9 +1342,16 @@ export function LiveMonitorPanel({
                 <div className="space-y-2">
                   {allocation.length ? (
                     allocation.map((r, idx) => (
-                      <div key={r.asset} className="flex items-center justify-between gap-3 font-mono text-[11px]">
+                      <div
+                        key={r.asset}
+                        className="flex items-center justify-between gap-3 font-mono text-[11px]"
+                      >
                         <div className="flex min-w-0 items-center gap-2">
-                          <span className="h-2.5 w-2.5 rounded-sm" style={{ background: allocationColors[idx % allocationColors.length] }} aria-hidden />
+                          <span
+                            className="h-2.5 w-2.5 rounded-sm"
+                            style={{ background: allocationColors[idx % allocationColors.length] }}
+                            aria-hidden
+                          />
                           <span className="truncate text-[var(--nexus-text)]">{r.asset}</span>
                         </div>
                         <div className="flex items-center gap-2">
@@ -1056,12 +1364,18 @@ export function LiveMonitorPanel({
                               }}
                             />
                           </div>
-                          <span className="tabular-nums text-[var(--nexus-muted)]">{allocationTotal > 0 ? `${((r.value / allocationTotal) * 100).toFixed(1)}%` : "—"}</span>
+                          <span className="tabular-nums text-[var(--nexus-muted)]">
+                            {allocationTotal > 0
+                              ? `${((r.value / allocationTotal) * 100).toFixed(1)}%`
+                              : "—"}
+                          </span>
                         </div>
                       </div>
                     ))
                   ) : (
-                    <p className="font-mono text-[11px] text-[var(--nexus-muted)]">No balances yet.</p>
+                    <p className="font-mono text-[11px] text-[var(--nexus-muted)]">
+                      No balances yet.
+                    </p>
                   )}
                 </div>
               </div>
@@ -1070,7 +1384,9 @@ export function LiveMonitorPanel({
         </section>
 
         <section className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 p-4">
-          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">Raw portfolio health</p>
+          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
+            Raw portfolio health
+          </p>
           <pre className="mt-2 overflow-auto rounded-lg border border-[var(--nexus-rule-soft)] bg-[var(--nexus-bg)]/40 p-3 text-[11px] text-[var(--nexus-muted)]">
             {JSON.stringify(health ?? {}, null, 2)}
           </pre>
@@ -1079,4 +1395,3 @@ export function LiveMonitorPanel({
     </div>
   );
 }
-

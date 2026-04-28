@@ -3,4 +3,3 @@ export { NexusConsoleHeader, type NexusViewMode } from "@/components/NexusConsol
 export { NexusDeskView } from "@/components/NexusDeskView";
 export { NexusStarSystem } from "@/components/NexusStarSystem";
 export { NexusThoughtStreamPanel } from "@/components/NexusThoughtStreamPanel";
-

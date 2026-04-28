@@ -13,7 +13,7 @@ All modes use the same LangGraph workflow, controlled by a single `run_mode` set
 
 - `MODE` — `backtest` \| `paper` \| `live` (default: `paper`)
 - `AI_MARKET_MAKER_ALLOW_LIVE` — Must be set to `1`, `true`, or `yes` to enable `live` mode. The process will exit otherwise.
-- `STRATEGY_INTERVAL_SEC` — Seconds between full graph runs when using `./start.sh` (default: 180).
+- `STRATEGY_INTERVAL_SEC` — Seconds between full graph runs for repeated CLI invocations (default: 180).
 
 You can override the mode for a single run with the CLI:
 

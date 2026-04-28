@@ -41,7 +41,10 @@ export function latestBeat(trace: NexusTrace | undefined): string | null {
 
   const sig = c.signal ?? c.context?.signal;
   const conf = c.confidence ?? c.context?.confidence;
-  const pair = c.context && typeof c.context === "object" && "pair" in c.context ? String((c.context as { pair?: string }).pair ?? "") : "";
+  const pair =
+    c.context && typeof c.context === "object" && "pair" in c.context
+      ? String((c.context as { pair?: string }).pair ?? "")
+      : "";
 
   if (sig != null) {
     const confStr = conf != null ? ` · ${(Number(conf) * 100).toFixed(0)}% conf` : "";
@@ -59,7 +62,11 @@ export function latestBeat(trace: NexusTrace | undefined): string | null {
 }
 
 /** First outgoing hop label(s) for pipeline context. */
-export function nextHopSummary(nodeId: string, edges: TopologyEdge[], byId: Map<string, TopologyNode>): string | null {
+export function nextHopSummary(
+  nodeId: string,
+  edges: TopologyEdge[],
+  byId: Map<string, TopologyNode>,
+): string | null {
   const outs = edges.filter((e) => e.from === nodeId).map((e) => e.to);
   if (outs.length === 0) return null;
   const labels = outs.map((id) => byId.get(id)?.label ?? id);

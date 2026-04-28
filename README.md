@@ -96,12 +96,26 @@ uv run pre-commit install
 # 3. Set up environment
 cp .env.example .env
 # Edit .env with your API keys (Binance Testnet + OpenAI recommended)
+#
+# Required for the Docker stack:
+#   DATABASE_URL=postgresql+psycopg://aimm:aimm@db:5432/aimm
+#   AIMM_AUTH_SECRET=<long-random-secret>
 
-# 4. Run the full stack (API + strategy + web UI)
-./start.sh
+# 4. Run the platform stack (recommended): DB + API + worker + web
+# Requires Docker Desktop / docker compose.
+#
+docker compose -f docker-compose.prod.yml up --build -d
+
+# 5. Run migrations (first time, and after schema changes)
+docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
+
+# 6. Open the dashboard
+# http://localhost:3000
 ```
 
 Open http://localhost:3000 to view the dashboard.
+
+Note: first boot may show an empty Leaderboard/Signals until you run a backtest (Nexus → Research) or publish provider results/signals.
 
 For CLI-only trading mode:
 ```bash

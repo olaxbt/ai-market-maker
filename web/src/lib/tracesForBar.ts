@@ -4,7 +4,9 @@ import type { NexusTrace } from "@/types/nexus-payload";
 /** Traces belonging to a bar: prefer `trace_id` links from the message log, else `bar_step` on traces. */
 export function tracesForBarGroup(g: BarTimelineGroup, all: NexusTrace[]): NexusTrace[] {
   const ids = new Set(
-    g.entries.map((e) => e.trace_id).filter((x): x is string => typeof x === "string" && x.length > 0),
+    g.entries
+      .map((e) => e.trace_id)
+      .filter((x): x is string => typeof x === "string" && x.length > 0),
   );
   let list: NexusTrace[];
   if (ids.size > 0) {

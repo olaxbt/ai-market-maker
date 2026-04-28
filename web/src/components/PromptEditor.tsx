@@ -107,10 +107,12 @@ export default function PromptEditor({
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <div className="nexus-segmented-toggle flex items-center gap-1 rounded-xl p-1">
-                {([
-                  ["system", "System prompt"],
-                  ["task", "Task prompt"],
-                ] as const).map(([id, label]) => {
+                {(
+                  [
+                    ["system", "System prompt"],
+                    ["task", "Task prompt"],
+                  ] as const
+                ).map(([id, label]) => {
                   const active = tab === id;
                   return (
                     <button
@@ -179,7 +181,9 @@ export default function PromptEditor({
                 value={tab === "system" ? value.system : value.task}
                 onChange={(e) =>
                   setValue((v) =>
-                    tab === "system" ? { ...v, system: e.target.value } : { ...v, task: e.target.value },
+                    tab === "system"
+                      ? { ...v, system: e.target.value }
+                      : { ...v, task: e.target.value },
                   )
                 }
                 spellCheck={false}
@@ -195,22 +199,26 @@ export default function PromptEditor({
               </p>
               <ul className="mt-3 space-y-2 font-mono text-[11px] leading-relaxed text-slate-300">
                 <li>
-                  <span className="text-[var(--nexus-muted)]">Keep it</span> explicit: constraints, style, and output
-                  shape.
+                  <span className="text-[var(--nexus-muted)]">Keep it</span> explicit: constraints,
+                  style, and output shape.
                 </li>
                 <li>
-                  <span className="text-[var(--nexus-muted)]">Prefer</span> short sections & bullet lists over walls of
-                  text.
+                  <span className="text-[var(--nexus-muted)]">Prefer</span> short sections & bullet
+                  lists over walls of text.
                 </li>
                 <li>
-                  <span className="text-[var(--nexus-muted)]">Avoid</span> secrets. Prompts are stored server-side.
+                  <span className="text-[var(--nexus-muted)]">Avoid</span> secrets. Prompts are
+                  stored server-side.
                 </li>
               </ul>
 
               <div className="mt-4 border-t border-[var(--nexus-rule-soft)] pt-4">
-                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">Runtime</p>
+                <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
+                  Runtime
+                </p>
                 <p className="mt-2 font-mono text-[11px] leading-relaxed text-[var(--nexus-muted)]">
-                  Save triggers a prompt update via the API and expects the agent runtime to hot-reload.
+                  Save triggers a prompt update via the API and expects the agent runtime to
+                  hot-reload.
                 </p>
               </div>
             </aside>
@@ -220,4 +228,3 @@ export default function PromptEditor({
     </div>
   );
 }
-

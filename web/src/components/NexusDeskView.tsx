@@ -4,7 +4,12 @@ import { NexusStarSystem } from "@/components/NexusStarSystem";
 import { NexusThoughtStreamPanel } from "@/components/NexusThoughtStreamPanel";
 import { TopologyGraph } from "@/components/TopologyGraph";
 import type { RefObject } from "react";
-import type { MessageLogEntry, NexusTrace, TopologyEdge, TopologyNode } from "@/types/nexus-payload";
+import type {
+  MessageLogEntry,
+  NexusTrace,
+  TopologyEdge,
+  TopologyNode,
+} from "@/types/nexus-payload";
 
 interface NexusDeskViewProps {
   nodes: TopologyNode[];
@@ -37,8 +42,7 @@ export function NexusDeskView({
   revealDone,
   onIntroDone,
 }: NexusDeskViewProps) {
-  const activeStarId =
-    selectedNodeId ?? nodes.find((n) => n.status === "ACTIVE")?.id ?? null;
+  const activeStarId = selectedNodeId ?? nodes.find((n) => n.status === "ACTIVE")?.id ?? null;
 
   if (!revealDone) {
     return (
@@ -49,8 +53,7 @@ export function NexusDeskView({
               Event stream · chain-of-thought & provenance · node_id / parent_id
             </h2>
           </div>
-          <div className="flex-1 min-h-0 p-3">
-          </div>
+          <div className="flex-1 min-h-0 p-3"></div>
         </section>
 
         <section className="flex h-full items-center justify-center bg-[var(--nexus-bg)]/50 p-2 lg:p-4">
@@ -71,8 +74,7 @@ export function NexusDeskView({
               Topology · nodes & edges
             </h2>
           </div>
-          <div className="flex-1 min-h-0 p-3">
-          </div>
+          <div className="flex-1 min-h-0 p-3"></div>
         </section>
       </main>
     );

@@ -73,7 +73,10 @@ function orderedNodes(nodes: TopologyNode[], edges: TopologyEdge[]): TopologyNod
 }
 
 /** Evenly space agents on one orbit; coords are % of container (center 50,50) */
-function orbitPositions(nodes: TopologyNode[], edges: TopologyEdge[]): Array<{ node: TopologyNode; pos: Pt }> {
+function orbitPositions(
+  nodes: TopologyNode[],
+  edges: TopologyEdge[],
+): Array<{ node: TopologyNode; pos: Pt }> {
   const list = orderedNodes(nodes, edges);
   const n = list.length;
   const r = 34;
@@ -136,7 +139,9 @@ function AmbientRingsCanvas({ width, height }: { width: number; height: number }
     }
   }, [width, height, size, rs]);
 
-  return <canvas ref={ref} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden />;
+  return (
+    <canvas ref={ref} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden />
+  );
 }
 
 function buildSphereDots(count: number): Dot3D[] {
@@ -282,7 +287,8 @@ function RotatingSphereCanvas({
         const dist = Math.hypot(dx, dy);
         const depth = (a.depth + b.depth) * 0.5;
         const shimmer = 0.5 + 0.5 * Math.sin(t * 1.4 + (ia + ib) * 0.013);
-        const alpha = Math.max(0.02, 0.16 - dist / (size * 2.7)) * (0.45 + depth * 0.55) * shimmer * burstFade;
+        const alpha =
+          Math.max(0.02, 0.16 - dist / (size * 2.7)) * (0.45 + depth * 0.55) * shimmer * burstFade;
         ctx.strokeStyle = `rgba(96, 231, 255, ${alpha})`;
         ctx.lineWidth = 0.48;
         ctx.beginPath();
@@ -294,7 +300,9 @@ function RotatingSphereCanvas({
       for (const p of projected) {
         const glow = 0.33 + p.depth * 0.63;
         const pulse =
-          (1 - p.dot.twinkleAmp) + Math.sin(t * p.dot.twinkleRate + p.dot.twinklePhase) * p.dot.twinkleAmp;
+          1 -
+          p.dot.twinkleAmp +
+          Math.sin(t * p.dot.twinkleRate + p.dot.twinklePhase) * p.dot.twinkleAmp;
         const alpha = Math.max(0, glow * pulse * burstFade);
         const r = Math.max(0.5, p.dot.baseSize * (0.65 + p.depth * 1.05));
 
@@ -344,7 +352,9 @@ function RotatingSphereCanvas({
     return () => cancelAnimationFrame(raf);
   }, [width, height, size, dots, mode, burstStartedAt]);
 
-  return <canvas ref={ref} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden />;
+  return (
+    <canvas ref={ref} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden />
+  );
 }
 
 const CENTER_PCT: Pt = { x: 50, y: 50 };
@@ -453,7 +463,9 @@ function AgentStar({
       className="absolute z-20 flex flex-col items-center gap-2 -translate-x-1/2 -translate-y-1/2"
     >
       <div className={`h-3 w-3 rounded-full transition-all duration-500 ${dotClass}`} />
-      <span className={`max-w-[140px] text-center font-mono text-[9px] uppercase tracking-widest ${labelClass}`}>
+      <span
+        className={`max-w-[140px] text-center font-mono text-[9px] uppercase tracking-widest ${labelClass}`}
+      >
         {label}
       </span>
     </motion.div>
@@ -601,10 +613,13 @@ export function NexusStarSystem({
   useEffect(() => {
     if (!playIntro) return;
     if (!readyToReveal || hubPhase !== "intro") return;
-    const wait = window.setTimeout(() => {
-      burstStartedAtRef.current = performance.now();
-      setHubPhase("burst");
-    }, Math.max(0, INTRO_MS - 400));
+    const wait = window.setTimeout(
+      () => {
+        burstStartedAtRef.current = performance.now();
+        setHubPhase("burst");
+      },
+      Math.max(0, INTRO_MS - 400),
+    );
     return () => clearTimeout(wait);
   }, [readyToReveal, hubPhase, playIntro]);
 
@@ -699,102 +714,102 @@ export function NexusStarSystem({
           willChange: "transform",
         }}
       >
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_40%,rgba(34,211,238,0.08),transparent_55%)]" />
-      {hubPhase === "done" && (
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(34,211,238,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(34,211,238,0.035)_1px,transparent_1px)] bg-[length:24px_24px]" />
-      )}
-      <div className="absolute inset-0 opacity-[0.12] mix-blend-overlay bg-[radial-gradient(circle_at_20%_30%,rgba(255,255,255,0.15),transparent_50%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_40%,rgba(34,211,238,0.08),transparent_55%)]" />
+        {hubPhase === "done" && (
+          <div className="absolute inset-0 bg-[linear-gradient(rgba(34,211,238,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(34,211,238,0.035)_1px,transparent_1px)] bg-[length:24px_24px]" />
+        )}
+        <div className="absolute inset-0 opacity-[0.12] mix-blend-overlay bg-[radial-gradient(circle_at_20%_30%,rgba(255,255,255,0.15),transparent_50%)]" />
 
-      {box.w > 0 && box.h > 0 && hubPhase !== "done" && (
-        <RotatingSphereCanvas
-          width={box.w}
-          height={box.h}
-          mode={hubPhase}
-          burstStartedAt={burstStartedAtRef.current}
-        />
-      )}
-      {box.w > 0 && box.h > 0 && hubPhase === "done" && (
-        <div className="absolute inset-0 nexus-ambient-rings" aria-hidden>
-          <AmbientRingsCanvas width={box.w} height={box.h} />
-        </div>
-      )}
-
-      {/* Always-on scanning sweep (subtle) */}
-      {!frameless && hubPhase === "done" ? (
-        <motion.div
-          className="pointer-events-none absolute inset-0 z-[6] nexus-scan-sweep"
-          aria-hidden
-          animate={{ backgroundPositionX: ["-140%", "140%"] }}
-          transition={{
-            duration: 10 - energy * 3.5,
-            repeat: Infinity,
-            ease: "linear",
-            repeatDelay: 0.6,
-          }}
-          style={{ opacity: 0.12 + energy * 0.12 }}
-        />
-      ) : null}
-
-      {hubPhase === "done" && (
-        <svg
-          className="pointer-events-none absolute inset-0 z-[5] h-full w-full"
-          viewBox="0 0 100 100"
-          preserveAspectRatio="none"
-        >
-          <defs>
-            <linearGradient id={edgeGradId} x1="0%" y1="0%" x2="100%" y2="0%">
-              <stop offset="0%" stopColor="rgba(34, 211, 238, 0.25)" />
-              <stop offset="100%" stopColor="rgba(34, 211, 238, 0.08)" />
-            </linearGradient>
-          </defs>
-          {edges.map((e, i) => {
-            const a = placed.find((p) => p.node.id === e.from)?.pos;
-            const b = placed.find((p) => p.node.id === e.to)?.pos;
-            if (!a || !b) return null;
-            return (
-              <line
-                key={`${e.from}-${e.to}-${i}`}
-                x1={a.x}
-                y1={a.y}
-                x2={b.x}
-                y2={b.y}
-                stroke={`url(#${edgeGradId})`}
-                strokeWidth={0.15}
-                vectorEffect="non-scaling-stroke"
-              />
-            );
-          })}
-        </svg>
-      )}
-
-      <div className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
-        <CentralStar energy={energy} variant={frameless ? "loading" : "hub"} />
-      </div>
-
-      {hubPhase === "done" &&
-        placed.map(({ node, pos }) => (
-          <AgentStar
-            key={node.id}
-            label={node.label}
-            selected={activeNodeId != null && node.id === activeNodeId}
-            pipelineActive={node.status === "ACTIVE"}
-            position={pos}
+        {box.w > 0 && box.h > 0 && hubPhase !== "done" && (
+          <RotatingSphereCanvas
+            width={box.w}
+            height={box.h}
+            mode={hubPhase}
+            burstStartedAt={burstStartedAtRef.current}
           />
-        ))}
+        )}
+        {box.w > 0 && box.h > 0 && hubPhase === "done" && (
+          <div className="absolute inset-0 nexus-ambient-rings" aria-hidden>
+            <AmbientRingsCanvas width={box.w} height={box.h} />
+          </div>
+        )}
 
-      <AnimatePresence>
-        {particles.map((p) => (
-          <StarParticle key={p.id} start={CENTER_PCT} end={p.end} />
-        ))}
-      </AnimatePresence>
+        {/* Always-on scanning sweep (subtle) */}
+        {!frameless && hubPhase === "done" ? (
+          <motion.div
+            className="pointer-events-none absolute inset-0 z-[6] nexus-scan-sweep"
+            aria-hidden
+            animate={{ backgroundPositionX: ["-140%", "140%"] }}
+            transition={{
+              duration: 10 - energy * 3.5,
+              repeat: Infinity,
+              ease: "linear",
+              repeatDelay: 0.6,
+            }}
+            style={{ opacity: 0.12 + energy * 0.12 }}
+          />
+        ) : null}
 
-      {hubPhase === "done" && (
-        <div className="absolute bottom-6 left-6 z-20 font-mono text-[10px] text-cyan-500/50">
-          SYSTEM_CLOCK: {clock}
-          <br />
-          MESH_SYNC: STABLE // ENTROPY: 0.031
+        {hubPhase === "done" && (
+          <svg
+            className="pointer-events-none absolute inset-0 z-[5] h-full w-full"
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+          >
+            <defs>
+              <linearGradient id={edgeGradId} x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="rgba(34, 211, 238, 0.25)" />
+                <stop offset="100%" stopColor="rgba(34, 211, 238, 0.08)" />
+              </linearGradient>
+            </defs>
+            {edges.map((e, i) => {
+              const a = placed.find((p) => p.node.id === e.from)?.pos;
+              const b = placed.find((p) => p.node.id === e.to)?.pos;
+              if (!a || !b) return null;
+              return (
+                <line
+                  key={`${e.from}-${e.to}-${i}`}
+                  x1={a.x}
+                  y1={a.y}
+                  x2={b.x}
+                  y2={b.y}
+                  stroke={`url(#${edgeGradId})`}
+                  strokeWidth={0.15}
+                  vectorEffect="non-scaling-stroke"
+                />
+              );
+            })}
+          </svg>
+        )}
+
+        <div className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
+          <CentralStar energy={energy} variant={frameless ? "loading" : "hub"} />
         </div>
-      )}
+
+        {hubPhase === "done" &&
+          placed.map(({ node, pos }) => (
+            <AgentStar
+              key={node.id}
+              label={node.label}
+              selected={activeNodeId != null && node.id === activeNodeId}
+              pipelineActive={node.status === "ACTIVE"}
+              position={pos}
+            />
+          ))}
+
+        <AnimatePresence>
+          {particles.map((p) => (
+            <StarParticle key={p.id} start={CENTER_PCT} end={p.end} />
+          ))}
+        </AnimatePresence>
+
+        {hubPhase === "done" && (
+          <div className="absolute bottom-6 left-6 z-20 font-mono text-[10px] text-cyan-500/50">
+            SYSTEM_CLOCK: {clock}
+            <br />
+            MESH_SYNC: STABLE // ENTROPY: 0.031
+          </div>
+        )}
       </motion.div>
     </div>
   );

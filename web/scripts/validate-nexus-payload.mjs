@@ -35,4 +35,3 @@ for (const err of validate.errors ?? []) {
   console.error(`- ${where}: ${err.message}`);
 }
 process.exit(1);
-

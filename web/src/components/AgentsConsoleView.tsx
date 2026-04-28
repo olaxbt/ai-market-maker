@@ -3,7 +3,12 @@
 import { useMemo, useState } from "react";
 import { AgentDetailPanel } from "@/components/AgentDetailPanel";
 import { AgentGridView } from "@/components/AgentGridView";
-import type { AgentPromptSettings, NexusTrace, TopologyEdge, TopologyNode } from "@/types/nexus-payload";
+import type {
+  AgentPromptSettings,
+  NexusTrace,
+  TopologyEdge,
+  TopologyNode,
+} from "@/types/nexus-payload";
 
 interface AgentsConsoleViewProps {
   nodes: TopologyNode[];
@@ -102,7 +107,9 @@ export function AgentsConsoleView({
       const tr = latestByNode.get(id);
       const now =
         tr?.content?.thought_process?.[0]?.detail ??
-        (tr?.content?.context?.signal != null ? `signal=${String(tr.content.context.signal)}` : null) ??
+        (tr?.content?.context?.signal != null
+          ? `signal=${String(tr.content.context.signal)}`
+          : null) ??
         n?.summary ??
         "—";
       return { id, label: n?.label ?? id, now: String(now).slice(0, 140) };
@@ -119,11 +126,13 @@ export function AgentsConsoleView({
               View
             </div>
             <div className="flex items-center gap-1.5">
-              {([
-                ["desk", "Desk"],
-                ["llm", "LLM-only"],
-                ["full", "Full graph"],
-              ] as const).map(([id, label]) => {
+              {(
+                [
+                  ["desk", "Desk"],
+                  ["llm", "LLM-only"],
+                  ["full", "Full graph"],
+                ] as const
+              ).map(([id, label]) => {
                 const active = filter === id;
                 return (
                   <button
@@ -196,7 +205,9 @@ export function AgentsConsoleView({
           <AgentDetailPanel
             nodeId={selectedAgentId}
             node={selectedAgentNodeFiltered ?? selectedAgentNode}
-            traces={selectedAgentTracesFiltered.length ? selectedAgentTracesFiltered : selectedAgentTraces}
+            traces={
+              selectedAgentTracesFiltered.length ? selectedAgentTracesFiltered : selectedAgentTraces
+            }
             promptDefaults={selectedAgentPromptFiltered ?? selectedAgentPrompt}
             loading={streaming}
             onClose={() => onSelectAgent(null)}

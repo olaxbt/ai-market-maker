@@ -20,4 +20,3 @@ describe("topologyLayers", () => {
     expect(layers.map((row) => row.map((n) => n.id))).toEqual([["a"], ["b", "c"], ["d"]]);
   });
 });
-

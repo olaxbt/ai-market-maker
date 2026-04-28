@@ -299,15 +299,14 @@ body {
 
 /* Central star: rotating conic aura ring */
 .nexus-core-aura {
-  background:
-    conic-gradient(
-      from 0deg,
-      rgba(34, 211, 238, 0.0),
-      rgba(34, 211, 238, 0.18),
-      rgba(0, 212, 170, 0.08),
-      rgba(255, 255, 255, 0.05),
-      rgba(34, 211, 238, 0.0)
-    );
+  background: conic-gradient(
+    from 0deg,
+    rgba(34, 211, 238, 0),
+    rgba(34, 211, 238, 0.18),
+    rgba(0, 212, 170, 0.08),
+    rgba(255, 255, 255, 0.05),
+    rgba(34, 211, 238, 0)
+  );
   filter: blur(0.4px);
   mask-image: radial-gradient(circle, transparent 52%, black 58%, black 66%, transparent 72%);
   opacity: 0.7;
@@ -318,7 +317,7 @@ body {
   background-image: linear-gradient(
     90deg,
     rgba(0, 0, 0, 0) 0%,
-    rgba(34, 211, 238, 0.0) 35%,
+    rgba(34, 211, 238, 0) 35%,
     rgba(34, 211, 238, 0.18) 50%,
     rgba(0, 212, 170, 0.08) 55%,
     rgba(0, 0, 0, 0) 75%
@@ -466,7 +465,9 @@ body {
   background:
     radial-gradient(ellipse 75% 50% at 50% 42%, rgba(0, 212, 170, 0.09), transparent 70%),
     var(--nexus-bg);
-  transition: opacity 900ms ease, filter 900ms ease;
+  transition:
+    opacity 900ms ease,
+    filter 900ms ease;
 }
 
 .nexus-loader-wrap.is-exploding {

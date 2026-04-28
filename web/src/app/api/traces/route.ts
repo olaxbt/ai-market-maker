@@ -3,8 +3,7 @@ import mockTraces from "@/data/mock-traces.json";
 import { flowAuthHeaders } from "../_flowAuth";
 
 export async function GET() {
-  const useMock =
-    (process.env.USE_MOCK ?? process.env.NEXT_PUBLIC_USE_MOCK ?? "0") === "1";
+  const useMock = (process.env.USE_MOCK ?? process.env.NEXT_PUBLIC_USE_MOCK ?? "0") === "1";
   if (useMock) {
     return NextResponse.json(mockTraces);
   }

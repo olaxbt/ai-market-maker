@@ -26,4 +26,3 @@ export type PortfolioManagerAskResponse = {
   answer: string;
   model?: string | null;
 };
-

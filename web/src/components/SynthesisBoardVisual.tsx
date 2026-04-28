@@ -48,7 +48,9 @@ export function SynthesisBoardVisual({ board, reduceMotion = false }: SynthesisB
           <span>Score blend</span>
           <span className="tabular-nums">
             {scores.bull_score ?? "—"} bull · {scores.bear_score ?? "—"} bear
-            {scores.sentiment_score != null ? ` · sent ${Number(scores.sentiment_score).toFixed(0)}` : ""}
+            {scores.sentiment_score != null
+              ? ` · sent ${Number(scores.sentiment_score).toFixed(0)}`
+              : ""}
           </span>
         </div>
         <div className="h-2 rounded-full bg-[var(--nexus-bg)] border border-[var(--nexus-rule-soft)] overflow-hidden flex">
@@ -57,7 +59,10 @@ export function SynthesisBoardVisual({ board, reduceMotion = false }: SynthesisB
             style={{ width: `${bullW * 100}%` }}
             title="Constructive weight"
           />
-          <div className="flex-1 h-full bg-gradient-to-l from-rose-700/85 to-rose-500/55" title="Defensive weight" />
+          <div
+            className="flex-1 h-full bg-gradient-to-l from-rose-700/85 to-rose-500/55"
+            title="Defensive weight"
+          />
         </div>
       </div>
 
@@ -69,7 +74,9 @@ export function SynthesisBoardVisual({ board, reduceMotion = false }: SynthesisB
               {bull?.label ?? "Constructive"}
             </span>
             {typeof bull?.signal_count === "number" ? (
-              <span className="text-[9px] text-[var(--nexus-muted)] tabular-nums">({bull.signal_count} raw)</span>
+              <span className="text-[9px] text-[var(--nexus-muted)] tabular-nums">
+                ({bull.signal_count} raw)
+              </span>
             ) : null}
           </div>
           <ul className="space-y-1.5 list-none">
@@ -90,7 +97,9 @@ export function SynthesisBoardVisual({ board, reduceMotion = false }: SynthesisB
               {bear?.label ?? "Defensive"}
             </span>
             {typeof bear?.signal_count === "number" ? (
-              <span className="text-[9px] text-[var(--nexus-muted)] tabular-nums">({bear.signal_count} raw)</span>
+              <span className="text-[9px] text-[var(--nexus-muted)] tabular-nums">
+                ({bear.signal_count} raw)
+              </span>
             ) : null}
           </div>
           <ul className="space-y-1.5 list-none">
@@ -112,10 +121,14 @@ export function SynthesisBoardVisual({ board, reduceMotion = false }: SynthesisB
             Tier-0 consensus
           </div>
           {consensus.summary ? (
-            <p className="font-mono text-[11px] leading-relaxed text-[var(--nexus-text)]/85">{consensus.summary}</p>
+            <p className="font-mono text-[11px] leading-relaxed text-[var(--nexus-text)]/85">
+              {consensus.summary}
+            </p>
           ) : null}
           {consensus.block_aggressive_long ? (
-            <p className="mt-1 font-mono text-[10px] text-amber-400/90">Aggressive long blocked by desk consensus.</p>
+            <p className="mt-1 font-mono text-[10px] text-amber-400/90">
+              Aggressive long blocked by desk consensus.
+            </p>
           ) : null}
         </div>
       )}

@@ -32,6 +32,7 @@ from config.llm_env import use_llm_arbitrator
 from config.llm_mode import llm_mode_enabled
 from config.run_mode import RunMode, load_run_mode
 from flow_log import FlowEventRepo, get_flow_repo, set_flow_repo
+from leadpage_local_scan import append_local_scan_result
 from llm.arbitrator_llm import signal_arbitrator_llm
 from llm.portfolio_llm import llm_portfolio_execute, llm_portfolio_proposal
 from market.universe import augment_universe_with_oi, select_universe_from_tickers
@@ -1628,6 +1629,11 @@ def main():
                 state=result if isinstance(result, dict) else state,
                 events_path=flow_log_path,
             )
+        except Exception:
+            pass
+        try:
+            if isinstance(result, dict):
+                append_local_scan_result(run_id=run_id, state=result)
         except Exception:
             pass
         try:

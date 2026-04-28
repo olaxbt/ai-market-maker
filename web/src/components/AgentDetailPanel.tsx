@@ -44,15 +44,11 @@ export function AgentDetailPanel({
   const [promptEditorOpen, setPromptEditorOpen] = useState(false);
   const cotEnabled = !!promptDefaults?.cot_enabled;
   const appliesToRuntime =
-    !!promptDefaults &&
-    typeof promptDefaults === "object" &&
-    "applies_to_runtime" in promptDefaults
+    !!promptDefaults && typeof promptDefaults === "object" && "applies_to_runtime" in promptDefaults
       ? Boolean((promptDefaults as unknown as { applies_to_runtime?: boolean }).applies_to_runtime)
       : false;
   const effectiveMode =
-    !!promptDefaults &&
-    typeof promptDefaults === "object" &&
-    "mode" in promptDefaults
+    !!promptDefaults && typeof promptDefaults === "object" && "mode" in promptDefaults
       ? String((promptDefaults as unknown as { mode?: string }).mode ?? "")
       : "";
 
@@ -214,8 +210,9 @@ export function AgentDetailPanel({
               </div>
               {!appliesToRuntime ? (
                 <p className="mt-2 font-mono text-[10px] text-[var(--nexus-muted)] leading-relaxed">
-                  This node runs deterministic code today. Prompt settings are shown for transparency, but editing them
-                  won’t change behavior until this node is upgraded to an LLM-backed implementation.
+                  This node runs deterministic code today. Prompt settings are shown for
+                  transparency, but editing them won’t change behavior until this node is upgraded
+                  to an LLM-backed implementation.
                 </p>
               ) : (
                 <p className="mt-2 font-mono text-[10px] text-[var(--nexus-muted)] leading-relaxed">
@@ -224,9 +221,12 @@ export function AgentDetailPanel({
               )}
             </section>
           ) : null}
-          {promptDefaults && (promptDefaults.model != null || (promptDefaults.tools?.length ?? 0) > 0) ? (
+          {promptDefaults &&
+          (promptDefaults.model != null || (promptDefaults.tools?.length ?? 0) > 0) ? (
             <section className="rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)]/50 p-3">
-              <div className="text-[10px] uppercase tracking-widest text-[var(--nexus-muted)] mb-2">Model & tools</div>
+              <div className="text-[10px] uppercase tracking-widest text-[var(--nexus-muted)] mb-2">
+                Model & tools
+              </div>
               <div className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10px] text-slate-300">
                 {promptDefaults.model != null ? (
                   <span>
@@ -235,12 +235,14 @@ export function AgentDetailPanel({
                 ) : null}
                 {promptDefaults.temperature != null ? (
                   <span>
-                    <span className="text-[var(--nexus-muted)]">temp</span> {promptDefaults.temperature}
+                    <span className="text-[var(--nexus-muted)]">temp</span>{" "}
+                    {promptDefaults.temperature}
                   </span>
                 ) : null}
                 {promptDefaults.max_tokens != null ? (
                   <span>
-                    <span className="text-[var(--nexus-muted)]">max_tokens</span> {promptDefaults.max_tokens}
+                    <span className="text-[var(--nexus-muted)]">max_tokens</span>{" "}
+                    {promptDefaults.max_tokens}
                   </span>
                 ) : null}
               </div>
@@ -262,13 +264,17 @@ export function AgentDetailPanel({
           <section className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)]/20 p-4">
             <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
               <div className="flex min-w-0 items-start gap-2.5">
-                <SlidersHorizontal className="mt-0.5 h-4 w-4 shrink-0 text-[var(--nexus-glow)]" aria-hidden />
+                <SlidersHorizontal
+                  className="mt-0.5 h-4 w-4 shrink-0 text-[var(--nexus-glow)]"
+                  aria-hidden
+                />
                 <div>
                   <h3 className="font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--nexus-glow)]">
                     Prompt configuration
                   </h3>
                   <p className="mt-1 max-w-prose text-[10px] leading-relaxed text-slate-400">
-                    Hidden by default to keep the panel clean. Open Advanced to view/edit (LLM-backed nodes only).
+                    Hidden by default to keep the panel clean. Open Advanced to view/edit
+                    (LLM-backed nodes only).
                   </p>
                 </div>
               </div>
@@ -279,7 +285,9 @@ export function AgentDetailPanel({
                     disabled={!promptDefaults}
                     onClick={() => setPromptEditorOpen(true)}
                     className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--nexus-glow)]/40 bg-[var(--nexus-glow)]/10 px-2.5 font-mono text-[9px] uppercase tracking-wide text-[var(--nexus-glow)] transition-colors hover:border-[var(--nexus-glow)]/65 disabled:opacity-40"
-                    title={promptDefaults ? "Open full-screen editor" : "No agent_prompts row available"}
+                    title={
+                      promptDefaults ? "Open full-screen editor" : "No agent_prompts row available"
+                    }
                   >
                     <Maximize2 className="h-3 w-3" aria-hidden />
                     Full editor
@@ -343,65 +351,71 @@ export function AgentDetailPanel({
 
             {showAdvanced ? (
               <>
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-widest text-[var(--nexus-muted)]">
-              System prompt
-            </label>
-            <textarea
-              value={systemPrompt}
-              onChange={(e) => setSystemPrompt(e.target.value)}
-              rows={6}
-              placeholder="System prompt for this agent…"
-              spellCheck={false}
-              disabled={!appliesToRuntime}
-              className="nexus-prompt-input w-full rounded-lg px-3 py-2 font-mono text-[11px] leading-relaxed placeholder:opacity-90"
-            />
-            <div className="h-3" />
-            <label className="mb-1 block text-[10px] font-semibold uppercase tracking-widest text-[var(--nexus-muted)]">
-              Task prompt
-            </label>
-            <textarea
-              value={taskPrompt}
-              onChange={(e) => setTaskPrompt(e.target.value)}
-              rows={5}
-              placeholder="Task / instruction template…"
-              spellCheck={false}
-              disabled={!appliesToRuntime}
-              className="nexus-prompt-input w-full rounded-lg px-3 py-2 font-mono text-[11px] leading-relaxed placeholder:opacity-90"
-            />
-            <div className="nexus-cot-inner-rule mt-4 flex items-center justify-between gap-3 bg-transparent px-0 py-3">
-              <div>
-                <div className="text-[10px] font-semibold uppercase tracking-widest text-[var(--nexus-muted)]">Chain-of-thought</div>
-                <div className="mt-0.5 font-mono text-[10px] text-[var(--nexus-text)]">
-                  {cotEnabled ? "Enabled by policy" : "Disabled by policy"}
+                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-widest text-[var(--nexus-muted)]">
+                  System prompt
+                </label>
+                <textarea
+                  value={systemPrompt}
+                  onChange={(e) => setSystemPrompt(e.target.value)}
+                  rows={6}
+                  placeholder="System prompt for this agent…"
+                  spellCheck={false}
+                  disabled={!appliesToRuntime}
+                  className="nexus-prompt-input w-full rounded-lg px-3 py-2 font-mono text-[11px] leading-relaxed placeholder:opacity-90"
+                />
+                <div className="h-3" />
+                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-widest text-[var(--nexus-muted)]">
+                  Task prompt
+                </label>
+                <textarea
+                  value={taskPrompt}
+                  onChange={(e) => setTaskPrompt(e.target.value)}
+                  rows={5}
+                  placeholder="Task / instruction template…"
+                  spellCheck={false}
+                  disabled={!appliesToRuntime}
+                  className="nexus-prompt-input w-full rounded-lg px-3 py-2 font-mono text-[11px] leading-relaxed placeholder:opacity-90"
+                />
+                <div className="nexus-cot-inner-rule mt-4 flex items-center justify-between gap-3 bg-transparent px-0 py-3">
+                  <div>
+                    <div className="text-[10px] font-semibold uppercase tracking-widest text-[var(--nexus-muted)]">
+                      Chain-of-thought
+                    </div>
+                    <div className="mt-0.5 font-mono text-[10px] text-[var(--nexus-text)]">
+                      {cotEnabled ? "Enabled by policy" : "Disabled by policy"}
+                    </div>
+                  </div>
+                  <span
+                    className={`inline-flex h-7 items-center rounded-md px-2.5 font-mono text-[9px] uppercase tracking-wide ring-1 ${
+                      cotEnabled
+                        ? "bg-[var(--nexus-glow)]/10 text-[var(--nexus-glow)] ring-[var(--nexus-glow)]/35"
+                        : "bg-[var(--nexus-surface)]/70 text-slate-300 ring-[var(--nexus-border)]"
+                    }`}
+                  >
+                    Read only
+                  </span>
                 </div>
-              </div>
-              <span
-                className={`inline-flex h-7 items-center rounded-md px-2.5 font-mono text-[9px] uppercase tracking-wide ring-1 ${
-                  cotEnabled
-                    ? "bg-[var(--nexus-glow)]/10 text-[var(--nexus-glow)] ring-[var(--nexus-glow)]/35"
-                    : "bg-[var(--nexus-surface)]/70 text-slate-300 ring-[var(--nexus-border)]"
-                }`}
-              >
-                Read only
-              </span>
-            </div>
-            {!promptDefaults ? (
-              <p className="mt-3 pt-3 text-[10px] leading-relaxed text-[var(--nexus-muted)] font-mono">
-                No agent_prompts row for this node — add one in mock data or API.
-              </p>
-            ) : null}
+                {!promptDefaults ? (
+                  <p className="mt-3 pt-3 text-[10px] leading-relaxed text-[var(--nexus-muted)] font-mono">
+                    No agent_prompts row for this node — add one in mock data or API.
+                  </p>
+                ) : null}
               </>
             ) : null}
           </section>
 
           <section className="rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)]/20 p-4">
             <div className="mb-2 flex items-center justify-between gap-2 pb-2">
-              <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-[var(--nexus-muted)]">Traces</span>
+              <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-[var(--nexus-muted)]">
+                Traces
+              </span>
               <span className="font-mono text-[10px] text-slate-400">{traces.length} run(s)</span>
             </div>
             {loading && <p className="font-mono text-xs text-[var(--nexus-muted)]">Loading…</p>}
             {!loading && traces.length === 0 && (
-              <p className="font-mono text-xs text-[var(--nexus-muted)]">No traces for this agent yet.</p>
+              <p className="font-mono text-xs text-[var(--nexus-muted)]">
+                No traces for this agent yet.
+              </p>
             )}
             <div className="space-y-3 pt-1">
               {traces.map((t, i) => (

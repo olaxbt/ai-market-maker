@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { InitialBootOverlay } from "@/components/InitialBootOverlay";
 
 const jetbrains = JetBrains_Mono({
   subsets: ["latin"],
@@ -20,7 +21,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={jetbrains.variable}>
-      <body className="min-h-screen antialiased">{children}</body>
+      <body className="min-h-screen antialiased nexus-bg">
+        <InitialBootOverlay />
+        {children}
+      </body>
     </html>
   );
 }
