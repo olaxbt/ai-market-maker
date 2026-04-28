@@ -363,9 +363,7 @@
           "params": {
             "action": "BUY",
             "confidence": 0.63,
-            "reasons": [
-              "desk_debate_entries=2"
-            ]
+            "reasons": ["desk_debate_entries=2"]
           }
         }
       }

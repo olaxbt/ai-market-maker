@@ -45,7 +45,14 @@ export function BacktestPriceChart({
     const key = (step: number, side: string) => `${step}:${side}`;
     const agg = new Map<
       string,
-      { step: number; side: "buy" | "sell"; ts: number; qty: number; notional: number; fills: number }
+      {
+        step: number;
+        side: "buy" | "sell";
+        ts: number;
+        qty: number;
+        notional: number;
+        fills: number;
+      }
     >();
     for (const t of trades) {
       const side = t.side === "buy" || t.side === "sell" ? t.side : null;
@@ -153,4 +160,3 @@ export function BacktestPriceChart({
 
   return <div ref={hostRef} className="w-full min-w-0" style={{ height }} />;
 }
-

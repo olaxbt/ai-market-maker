@@ -1,0 +1,82 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: aimm
+      POSTGRES_USER: aimm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aimm}
+    volumes:
+      - aimm_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aimm -d aimm"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      AIMM_DB_AUTOCREATE: "0"
+      AIMM_AUTH_SECRET: ${AIMM_AUTH_SECRET}
+      AIMM_API_KEY: ${AIMM_API_KEY:-}
+      AIMM_CORS_ORIGINS: ${AIMM_CORS_ORIGINS:-*}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8001:8001"
+    volumes:
+      - aimm_runs:/app/.runs
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      PLATFORM_WORKER_AUTO_EXECUTE: ${PLATFORM_WORKER_AUTO_EXECUTE:-0}
+      PLATFORM_WORKER_INTERVAL_SEC: ${PLATFORM_WORKER_INTERVAL_SEC:-2.0}
+      PLATFORM_WORKER_BATCH: ${PLATFORM_WORKER_BATCH:-200}
+      PLATFORM_WORKER_CURSOR: ${PLATFORM_WORKER_CURSOR:-default}
+      PLATFORM_SYNC_LOCAL_BACKTESTS: ${PLATFORM_SYNC_LOCAL_BACKTESTS:-0}
+      PLATFORM_SYNC_LOCAL_BACKTESTS_EVERY_SEC: ${PLATFORM_SYNC_LOCAL_BACKTESTS_EVERY_SEC:-10}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - aimm_runs:/app/.runs
+
+  engine:
+    profiles: ["engine"]
+    image: henry-ai-market-maker-api
+    environment:
+      MODE: ${MODE:-paper}
+      TICKER: ${TICKER:-BTC/USDT}
+      STRATEGY_INTERVAL_SEC: ${STRATEGY_INTERVAL_SEC:-180}
+    depends_on:
+      - api
+    volumes:
+      - aimm_runs:/app/.runs
+    command: >
+      sh -lc "while true; do python src/main.py --mode \"$MODE\" --ticker \"$TICKER\" || true; sleep \"$STRATEGY_INTERVAL_SEC\"; done"
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    environment:
+      FLOW_API_BASE_URL: ${FLOW_API_BASE_URL:-http://api:8001}
+      AIMM_API_KEY: ${AIMM_API_KEY:-}
+      NODE_ENV: production
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
+
+volumes:
+  aimm_pgdata:
+  aimm_runs:
+

@@ -25,6 +25,53 @@ python3 openclaw/scripts/claw_runner.py --paper --ticker BTC/USDT
 python3 openclaw/scripts/claw_runner.py --backtest --symbols BTC/USDT,ETH/USDT --steps 100
 ```
 
+## Platform / Leadpage (Leaderboard + Providers)
+
+This repo includes a lightweight platform surface:
+
+- Providers (engines/traders) can publish results
+- A leaderboard page at `/leadpage`
+- Optional Postgres storage when `DATABASE_URL` is set
+
+### Local Postgres (optional but recommended)
+
+```bash
+docker compose up -d
+export DATABASE_URL="postgresql+psycopg://aimm:aimm@127.0.0.1:5432/aimm"
+```
+
+### Publish a provider result (signed)
+
+```bash
+export LEADPAGE_PROVIDER_KEYS="demoProvider:demoKey"
+export LEADPAGE_REQUIRE_SIGNED=1
+
+python3 scripts/publish_leadpage_result.py \
+  --base-url http://127.0.0.1:8001 \
+  --provider demoProvider \
+  --run-id r1 \
+  --total-return-pct 1.2 \
+  --signed --key demoKey
+```
+
+### Publish a signal (strategy / ops / discussion)
+
+Signals appear on the dashboard feed at `/feed` (and on each provider page).
+
+```bash
+curl -X POST "http://127.0.0.1:8001/signals/publish" \
+  -H "Content-Type: application/json" \
+  -H "x-leadpage-provider-key: demoKey" \
+  -d '{
+    "provider": "demoProvider",
+    "kind": "strategy",
+    "title": "Weekly bias: range fade",
+    "body": "Plan: fade extremes; reduce size into events; tighten risk guard thresholds.",
+    "ticker": "BTC/USDT",
+    "meta": { "timeframe": "1h" }
+  }'
+```
+
 ## Operational Modes
 
 ### 1. Paper Trading Mode

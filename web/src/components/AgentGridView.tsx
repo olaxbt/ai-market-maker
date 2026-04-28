@@ -5,7 +5,12 @@ import { PanelRightOpen } from "lucide-react";
 import { buildAgentTraceIndex, runtimeHealth } from "@/lib/agentGridModel";
 import { formatTraceTime } from "@/lib/formatTraceTime";
 import { isPipelineSink, latestBeat, nextHopSummary } from "@/lib/agentCardPreview";
-import type { AgentPromptSettings, NexusTrace, TopologyEdge, TopologyNode } from "@/types/nexus-payload";
+import type {
+  AgentPromptSettings,
+  NexusTrace,
+  TopologyEdge,
+  TopologyNode,
+} from "@/types/nexus-payload";
 import { agentAvatarStaticSrc } from "@/lib/agentAvatars";
 
 interface AgentGridViewProps {
@@ -39,7 +44,10 @@ const runtimeNowPill: Record<string, string> = {
   STANDBY: "bg-slate-700/25 border-slate-500/30 text-slate-200",
 };
 
-function promptRowFor(nodeId: string, rows: AgentPromptSettings[] | null | undefined): AgentPromptSettings | undefined {
+function promptRowFor(
+  nodeId: string,
+  rows: AgentPromptSettings[] | null | undefined,
+): AgentPromptSettings | undefined {
   return rows?.find((p) => p.node_id === nodeId);
 }
 
@@ -55,20 +63,28 @@ function promptFlags(row: AgentPromptSettings | undefined): { applies: boolean; 
   return { applies, mode };
 }
 
-export function AgentGridView({ nodes, edges = [], traces, agentPrompts, selectedAgentId, onSelectAgent }: AgentGridViewProps) {
+export function AgentGridView({
+  nodes,
+  edges = [],
+  traces,
+  agentPrompts,
+  selectedAgentId,
+  onSelectAgent,
+}: AgentGridViewProps) {
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  const { traceCountByNode, lastTsByNode, lastTraceByNode, latestGlobalTs } = buildAgentTraceIndex(traces);
+  const { traceCountByNode, lastTsByNode, lastTraceByNode, latestGlobalTs } =
+    buildAgentTraceIndex(traces);
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col gap-2 overflow-hidden px-4 pb-3 pt-3">
       <div className="shrink-0">
-        <div className="text-[10px] uppercase tracking-widest text-[var(--nexus-muted)]">Agents · Directory</div>
+        <div className="text-[10px] uppercase tracking-widest text-[var(--nexus-muted)]">
+          Agents · Directory
+        </div>
       </div>
 
       {/* lg: 3×3 rows share remaining height so cards grow into desktop space */}
-      <div
-        className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto sm:grid-cols-2 sm:gap-3 lg:grid-cols-3 lg:gap-3"
-      >
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto sm:grid-cols-2 sm:gap-3 lg:grid-cols-3 lg:gap-3">
         {nodes.map((n) => {
           const count = traceCountByNode.get(n.id) ?? 0;
           const lastTs = lastTsByNode.get(n.id);
@@ -129,9 +145,15 @@ export function AgentGridView({ nodes, edges = [], traces, agentPrompts, selecte
                     className={`relative flex h-10 w-10 items-center justify-center rounded-full border ${avatarBorder} overflow-hidden`}
                     style={
                       selected
-                        ? { boxShadow: "0 0 0 1px rgba(0,212,170,0.35), 0 0 18px rgba(0,212,170,0.10)" }
+                        ? {
+                            boxShadow:
+                              "0 0 0 1px rgba(0,212,170,0.35), 0 0 18px rgba(0,212,170,0.10)",
+                          }
                         : isRunning
-                          ? { boxShadow: "0 0 0 1px rgba(52,211,153,0.28), 0 0 14px rgba(16,185,129,0.12)" }
+                          ? {
+                              boxShadow:
+                                "0 0 0 1px rgba(52,211,153,0.28), 0 0 14px rgba(16,185,129,0.12)",
+                            }
                           : undefined
                     }
                     aria-hidden
@@ -175,7 +197,11 @@ export function AgentGridView({ nodes, edges = [], traces, agentPrompts, selecte
                         ? "border-[var(--nexus-glow)]/40 bg-[var(--nexus-glow)]/10 text-[var(--nexus-glow)]"
                         : "border-[var(--nexus-border)] bg-[var(--nexus-surface)]/50 text-slate-200"
                     }`}
-                    title={applies ? "LLM-backed (settings apply at runtime)" : "Deterministic (prompt settings don’t apply)"}
+                    title={
+                      applies
+                        ? "LLM-backed (settings apply at runtime)"
+                        : "Deterministic (prompt settings don’t apply)"
+                    }
                   >
                     {applies ? "LLM" : "DET"}
                   </span>
@@ -200,7 +226,9 @@ export function AgentGridView({ nodes, edges = [], traces, agentPrompts, selecte
               <div className="nexus-agent-card-inner-rule mt-3 flex min-h-0 flex-1 flex-col pt-3">
                 <div className="flex min-h-0 items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-[var(--nexus-muted)]">Now</div>
+                    <div className="text-[9px] font-semibold uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
+                      Now
+                    </div>
                     <div className="mt-1">
                       <span
                         className={`inline-flex max-w-full items-center gap-1 rounded-md border px-2 py-1 font-mono text-[11px] font-semibold leading-none ${nowPill}`}
@@ -216,13 +244,17 @@ export function AgentGridView({ nodes, edges = [], traces, agentPrompts, selecte
 
                 <div className="mt-2 grid min-h-0 flex-1 grid-cols-2 gap-2">
                   <div className="min-w-0">
-                    <div className="text-[9px] font-semibold uppercase tracking-widest text-[var(--nexus-muted)]">Context</div>
+                    <div className="text-[9px] font-semibold uppercase tracking-widest text-[var(--nexus-muted)]">
+                      Context
+                    </div>
                     <p className="mt-1 truncate whitespace-nowrap font-mono text-[10px] leading-tight text-slate-300">
                       {n.summary ?? "—"}
                     </p>
                   </div>
                   <div className="min-w-0">
-                    <div className="text-[9px] font-semibold uppercase tracking-widest text-[var(--nexus-muted)]">Next</div>
+                    <div className="text-[9px] font-semibold uppercase tracking-widest text-[var(--nexus-muted)]">
+                      Next
+                    </div>
                     <p className="mt-1 truncate whitespace-nowrap font-mono text-[10px] leading-tight text-slate-300">
                       {nextHop ? (
                         <>→ {nextHop}</>
@@ -241,7 +273,6 @@ export function AgentGridView({ nodes, edges = [], traces, agentPrompts, selecte
                   {toolCount > 0 ? ` · ${toolCount} tool${toolCount === 1 ? "" : "s"}` : ""}
                 </p>
               </div>
-
             </button>
           );
         })}

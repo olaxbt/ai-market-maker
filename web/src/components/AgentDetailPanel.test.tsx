@@ -49,4 +49,3 @@ describe("AgentDetailPanel", () => {
     expect(screen.getByText("Enabled by policy")).toBeInTheDocument();
   });
 });
-

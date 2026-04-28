@@ -8,6 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "format": "prettier --write \"src/**/*.{js,jsx,ts,tsx,json,css,md}\" \"*.{js,ts,json,md}\"",
+    "format:check": "prettier --check \"src/**/*.{js,jsx,ts,tsx,json,css,md}\" \"*.{js,ts,json,md}\"",
     "test:contract": "node scripts/validate-nexus-payload.mjs",
     "generate:mock": "node src/data/generate-mock-payload.mjs",
     "test": "vitest run",
@@ -42,6 +44,7 @@
     "eslint-config-next": "^14.2.0",
     "jsdom": "^25.0.1",
     "postcss": "^8.4.0",
+    "prettier": "^3.6.0",
     "tailwindcss": "^3.4.0",
     "typescript": "^5.0.0",
     "vitest": "^2.1.9"

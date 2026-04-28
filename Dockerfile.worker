@@ -1,0 +1,19 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN pip install --no-cache-dir uv
+
+COPY pyproject.toml /app/pyproject.toml
+COPY README.md /app/README.md
+COPY src /app/src
+COPY config /app/config
+COPY scripts /app/scripts
+
+RUN uv pip install --system -e .
+
+CMD ["python", "scripts/run_platform_worker.py"]
+

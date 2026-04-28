@@ -60,10 +60,13 @@ export function BacktestTradesTable({
       </div>
       {truncated ? (
         <p className="font-mono text-[10px] text-amber-200/90">
-          Showing the most recent rows (server limit). Export JSON from the run payload for full ledger paths on disk.
+          Showing the most recent rows (server limit). Export JSON from the run payload for full
+          ledger paths on disk.
         </p>
       ) : null}
-      <div className={`nexus-scroll overflow-auto rounded-lg border border-[color:var(--nexus-card-stroke)] ${maxH}`}>
+      <div
+        className={`nexus-scroll overflow-auto rounded-lg border border-[color:var(--nexus-card-stroke)] ${maxH}`}
+      >
         <table className="w-full border-collapse font-mono text-[10px]">
           <thead className="sticky top-0 bg-[var(--nexus-panel)] text-left text-[var(--nexus-muted)]">
             <tr className="border-b border-[var(--nexus-rule-soft)]">
@@ -78,9 +81,14 @@ export function BacktestTradesTable({
           </thead>
           <tbody>
             {trades.map((t, i) => (
-              <tr key={`${t.step}-${i}`} className="border-b border-[var(--nexus-rule-soft)] hover:bg-[var(--nexus-glow)]/[0.04]">
+              <tr
+                key={`${t.step}-${i}`}
+                className="border-b border-[var(--nexus-rule-soft)] hover:bg-[var(--nexus-glow)]/[0.04]"
+              >
                 <td className="px-2 py-1.5 text-[var(--nexus-muted)]">{t.step}</td>
-                <td className="whitespace-nowrap px-2 py-1.5 text-[var(--nexus-muted)]">{fmtTime(t.ts_ms)}</td>
+                <td className="whitespace-nowrap px-2 py-1.5 text-[var(--nexus-muted)]">
+                  {fmtTime(t.ts_ms)}
+                </td>
                 <td
                   className={
                     t.side === "buy"
@@ -99,10 +107,14 @@ export function BacktestTradesTable({
                   {Number(t.price).toLocaleString(undefined, { maximumFractionDigits: 4 })}
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums text-[var(--nexus-muted)]">
-                  {t.cash != null ? Number(t.cash).toLocaleString(undefined, { maximumFractionDigits: 2 }) : "—"}
+                  {t.cash != null
+                    ? Number(t.cash).toLocaleString(undefined, { maximumFractionDigits: 2 })
+                    : "—"}
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums text-[var(--nexus-muted)]">
-                  {t.qty_base != null ? Number(t.qty_base).toLocaleString(undefined, { maximumFractionDigits: 6 }) : "—"}
+                  {t.qty_base != null
+                    ? Number(t.qty_base).toLocaleString(undefined, { maximumFractionDigits: 6 })
+                    : "—"}
                 </td>
               </tr>
             ))}
@@ -112,4 +124,3 @@ export function BacktestTradesTable({
     </div>
   );
 }
-

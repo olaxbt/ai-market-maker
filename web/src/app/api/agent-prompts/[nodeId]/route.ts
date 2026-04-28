@@ -5,10 +5,7 @@ function flowBase(): string {
   return process.env.FLOW_API_BASE_URL ?? "http://127.0.0.1:8001";
 }
 
-export async function GET(
-  _req: Request,
-  { params }: { params: { nodeId: string } },
-) {
+export async function GET(_req: Request, { params }: { params: { nodeId: string } }) {
   const base = flowBase();
   const nodeId = decodeURIComponent(params.nodeId);
   const res = await fetch(`${base}/agent-prompts/${encodeURIComponent(nodeId)}`, {
@@ -22,10 +19,7 @@ export async function GET(
   });
 }
 
-export async function PUT(
-  req: Request,
-  { params }: { params: { nodeId: string } },
-) {
+export async function PUT(req: Request, { params }: { params: { nodeId: string } }) {
   const base = flowBase();
   const nodeId = decodeURIComponent(params.nodeId);
   const body = await req.text();
@@ -40,4 +34,3 @@ export async function PUT(
     headers: { "content-type": res.headers.get("content-type") ?? "application/json" },
   });
 }
-

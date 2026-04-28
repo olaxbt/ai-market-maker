@@ -12,10 +12,6 @@ export async function GET() {
     const data = await res.json().catch(() => ({}));
     return NextResponse.json(data, { status: res.status });
   } catch {
-    return NextResponse.json(
-      { error: "Flow API unreachable", hint: flowApiBase },
-      { status: 502 },
-    );
+    return NextResponse.json({ error: "Flow API unreachable", hint: flowApiBase }, { status: 502 });
   }
 }
-

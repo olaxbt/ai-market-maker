@@ -106,69 +106,69 @@ export function NexusThoughtStreamPanel({
             </h2>
           </div>
           <div className="p-3 space-y-3">
-          {streaming && !hasTraces && (
-            <motion.div
-              animate={{ opacity: [0.5, 1, 0.5] }}
-              transition={{ repeat: Infinity, duration: 1.2 }}
-              className="text-[var(--nexus-muted)] text-xs font-mono"
-            >
-              Waiting for traces…
-            </motion.div>
-          )}
-          {logToShow.length > 0 ? (
-            <div className="space-y-2">
-              <div className="text-[10px] font-mono uppercase tracking-widest text-[var(--nexus-muted)]">
-                Recent events
-              </div>
-              <div className="space-y-1.5">
-                {logToShow.map((m) => (
-                  <div
-                    key={m.seq}
-                    className="rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)]/70 px-3 py-2 font-mono text-[11px] text-[var(--nexus-text)]"
-                  >
-                    <div className="flex items-center justify-between gap-2 text-[10px] text-[var(--nexus-muted)]">
-                      <span className="truncate">
-                        {m.actor_id} · {m.kind}
-                      </span>
-                      <span className="tabular-nums">{new Date(m.ts).toLocaleTimeString()}</span>
-                    </div>
-                    <div className="mt-1 whitespace-pre-wrap break-words">{m.message}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-          {!streaming && !hasTraces && (
-            <p className="text-[var(--nexus-muted)] text-xs">
-              {selectedNodeId
-                ? "No trace for this node."
-                : "No traces. Run the pipeline or load mock data."}
-            </p>
-          )}
-          {hasTraces &&
-            renderTraces.map((trace, i) => (
-              <div
-                key={trace.trace_id}
-                ref={(el) => setCardRef(trace.trace_id, el)}
-                className={
-                  selectedNodeId && trace.node_id === selectedNodeId
-                    ? "rounded-lg shadow-[0_0_0_1px_rgba(0,212,170,0.35)]"
-                    : ""
-                }
+            {streaming && !hasTraces && (
+              <motion.div
+                animate={{ opacity: [0.5, 1, 0.5] }}
+                transition={{ repeat: Infinity, duration: 1.2 }}
+                className="text-[var(--nexus-muted)] text-xs font-mono"
               >
-                <AgentTraceCard
-                  trace={trace}
-                  index={i}
-                  // Live updates look bad if every new card animates.
-                  reduceMotion={reduceMotion || streaming}
-                />
+                Waiting for traces…
+              </motion.div>
+            )}
+            {logToShow.length > 0 ? (
+              <div className="space-y-2">
+                <div className="text-[10px] font-mono uppercase tracking-widest text-[var(--nexus-muted)]">
+                  Recent events
+                </div>
+                <div className="space-y-1.5">
+                  {logToShow.map((m) => (
+                    <div
+                      key={m.seq}
+                      className="rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)]/70 px-3 py-2 font-mono text-[11px] text-[var(--nexus-text)]"
+                    >
+                      <div className="flex items-center justify-between gap-2 text-[10px] text-[var(--nexus-muted)]">
+                        <span className="truncate">
+                          {m.actor_id} · {m.kind}
+                        </span>
+                        <span className="tabular-nums">{new Date(m.ts).toLocaleTimeString()}</span>
+                      </div>
+                      <div className="mt-1 whitespace-pre-wrap break-words">{m.message}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            ))}
-          {streaming && hasTraces ? (
-            <p className="text-[10px] font-mono text-[var(--nexus-glow)]/80">
-              Live · trace stream updating as bars complete
-            </p>
-          ) : null}
+            ) : null}
+            {!streaming && !hasTraces && (
+              <p className="text-[var(--nexus-muted)] text-xs">
+                {selectedNodeId
+                  ? "No trace for this node."
+                  : "No traces. Run the pipeline or load mock data."}
+              </p>
+            )}
+            {hasTraces &&
+              renderTraces.map((trace, i) => (
+                <div
+                  key={trace.trace_id}
+                  ref={(el) => setCardRef(trace.trace_id, el)}
+                  className={
+                    selectedNodeId && trace.node_id === selectedNodeId
+                      ? "rounded-lg shadow-[0_0_0_1px_rgba(0,212,170,0.35)]"
+                      : ""
+                  }
+                >
+                  <AgentTraceCard
+                    trace={trace}
+                    index={i}
+                    // Live updates look bad if every new card animates.
+                    reduceMotion={reduceMotion || streaming}
+                  />
+                </div>
+              ))}
+            {streaming && hasTraces ? (
+              <p className="text-[10px] font-mono text-[var(--nexus-glow)]/80">
+                Live · trace stream updating as bars complete
+              </p>
+            ) : null}
           </div>
         </div>
 

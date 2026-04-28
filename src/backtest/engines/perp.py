@@ -171,7 +171,6 @@ class PerpEngine:
         run_id: str | None = None,
         runs_dir: Path | None = None,
     ) -> dict[str, Any]:
-
         symbols = sorted(bars_by_symbol.keys())
         aligned = self._align_bars(bars_by_symbol)
         total_bars = len(aligned.get(symbols[0], []))

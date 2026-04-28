@@ -52,7 +52,7 @@ export function ClientAgentDetailPage({ nodeId }: { nodeId: string }) {
             dashboard for inline editing.
           </p>
           <Link
-            href="/"
+            href="/console?view=grid"
             className="rounded border border-[var(--nexus-border)] bg-[var(--nexus-surface)]/70 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-slate-200 hover:border-[var(--nexus-glow)]/50"
           >
             ← Dashboard
@@ -72,4 +72,3 @@ export function ClientAgentDetailPage({ nodeId }: { nodeId: string }) {
     </div>
   );
 }
-

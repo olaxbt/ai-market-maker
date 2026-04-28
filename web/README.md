@@ -90,6 +90,7 @@ See `../docs/nexus-nine-agents-rollout.md` for the broader agent rollout plan.
 ## Integration with Backend
 
 The web app expects a `NexusPayload` shape containing:
+
 - `topology`
 - `traces[]`
 - `metadata`

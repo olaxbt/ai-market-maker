@@ -50,17 +50,14 @@ export function AgentTraceCard({
       ? (formula as { name?: string; latex?: string; computed?: string })
       : null;
 
-  const extraObj =
-    extra && typeof extra === "object" ? (extra as Record<string, unknown>) : null;
-  const toolName =
-    (extraObj && "tool_name" in extraObj ? extraObj.tool_name : null) ?? null;
+  const extraObj = extra && typeof extra === "object" ? (extra as Record<string, unknown>) : null;
+  const toolName = (extraObj && "tool_name" in extraObj ? extraObj.tool_name : null) ?? null;
   const toolArgs = extraObj && "tool_args" in extraObj ? extraObj.tool_args : null;
   const wireName = extraObj && "wire_name" in extraObj ? extraObj.wire_name : null;
   const synthesisBoardRaw =
     (content && typeof content === "object" && "synthesis_board" in content
       ? (content as { synthesis_board?: unknown }).synthesis_board
-      : null) ??
-    (extraObj && "synthesis_board" in extraObj ? extraObj.synthesis_board : null);
+      : null) ?? (extraObj && "synthesis_board" in extraObj ? extraObj.synthesis_board : null);
   const synthesisBoard =
     synthesisBoardRaw &&
     typeof synthesisBoardRaw === "object" &&
@@ -75,7 +72,9 @@ export function AgentTraceCard({
     decision !== null &&
     "debate_preview" in (decision as Record<string, unknown>) &&
     Array.isArray((decision as { debate_preview?: unknown }).debate_preview)
-      ? ((decision as { debate_preview?: unknown }).debate_preview as Array<Record<string, unknown>>)
+      ? ((decision as { debate_preview?: unknown }).debate_preview as Array<
+          Record<string, unknown>
+        >)
       : null;
 
   const shellClass =
@@ -218,7 +217,9 @@ export function AgentTraceCard({
                     const speaker = String(row.speaker ?? "desk");
                     const role = row.role != null ? String(row.role) : "";
                     const text = row.text != null ? String(row.text) : "";
-                    const toolsUsed = Array.isArray(row.tools_used) ? row.tools_used.map(String) : [];
+                    const toolsUsed = Array.isArray(row.tools_used)
+                      ? row.tools_used.map(String)
+                      : [];
                     return (
                       <div
                         key={`${speaker}-${idx}`}
@@ -253,7 +254,9 @@ export function AgentTraceCard({
                               ) : null}
                             </div>
                           ) : (
-                            <span className="font-mono text-[9px] text-[var(--nexus-muted)]">no tools</span>
+                            <span className="font-mono text-[9px] text-[var(--nexus-muted)]">
+                              no tools
+                            </span>
                           )}
                         </div>
                         {text ? (

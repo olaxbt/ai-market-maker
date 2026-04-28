@@ -27,6 +27,10 @@ dependencies = [
     "yfinance>=0.2.0",
     "futu-api>=9.0.0",
     "fastapi>=0.117.0",
+    "sqlalchemy>=2.0.0",
+    "psycopg[binary]>=3.2.0",
+    "passlib[bcrypt]>=1.7.4",
+    "python-jose>=3.3.0",
     "jsonschema>=4.25.1",
     "langgraph>=0.4.7",
     "pandas>=2.2.3",
@@ -39,7 +43,9 @@ dependencies = [
     "pycoingecko>=3.2.0",
     "statsmodels>=0.14.4",
     "uvicorn>=0.36.0",
+    "gunicorn>=22.0.0",
     "websockets>=16.0",
+    "alembic>=1.13.0",
 ]
 
 [project.scripts]

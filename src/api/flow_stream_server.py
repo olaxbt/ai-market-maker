@@ -15,11 +15,19 @@ from starlette.requests import Request
 from starlette.status import HTTP_401_UNAUTHORIZED
 
 from .agent_prompt_routes import router as agent_prompt_router
+from .auth_routes import router as auth_router
 from .backtest_routes import router as backtest_router
+from .copy_routes import router as copy_router
+from .follow_routes import router as follow_router
+from .leadpage_routes import router as leadpage_router
+from .paper_routes import router as paper_router
 from .payload_adapter import build_nexus_payload
 from .pm_routes import router as pm_router
+from .provider_admin_routes import router as provider_admin_router
+from .public_provider_routes import router as public_provider_router
 from .runtime_settings_routes import router as runtime_settings_router
 from .schema_validation import validate_nexus_payload
+from .signal_routes import router as signal_router
 
 _REPO_ROOT_DOTENV = Path(__file__).resolve().parents[2] / ".env"
 load_dotenv(dotenv_path=_REPO_ROOT_DOTENV)
@@ -94,6 +102,14 @@ app.include_router(backtest_router)
 app.include_router(agent_prompt_router)
 app.include_router(runtime_settings_router)
 app.include_router(pm_router)
+app.include_router(leadpage_router)
+app.include_router(auth_router)
+app.include_router(provider_admin_router)
+app.include_router(signal_router)
+app.include_router(follow_router)
+app.include_router(copy_router)
+app.include_router(paper_router)
+app.include_router(public_provider_router)
 
 
 def _resolve_run_log(run_id: str) -> Path:

@@ -15,13 +15,25 @@ export type BarTimelineGroup = {
 const LEGACY_BAR_PREFIX = /^\[bar (\d+) · ([^\]]*)\]\s*/;
 
 /** Strip legacy `[bar n · …]` prefix from message; return cleaned text for outlines. */
-export function stripLegacyBarPrefix(message: string): { rest: string; bar1?: number; barTime?: string } {
+export function stripLegacyBarPrefix(message: string): {
+  rest: string;
+  bar1?: number;
+  barTime?: string;
+} {
   const m = message.match(LEGACY_BAR_PREFIX);
   if (!m) return { rest: message };
-  return { rest: message.slice(m[0].length).trim(), bar1: parseInt(m[1], 10), barTime: m[2]?.trim() };
+  return {
+    rest: message.slice(m[0].length).trim(),
+    bar1: parseInt(m[1], 10),
+    barTime: m[2]?.trim(),
+  };
 }
 
-function entryBarMeta(e: MessageLogEntry): { step0: number | null; time: string | null; text: string } {
+function entryBarMeta(e: MessageLogEntry): {
+  step0: number | null;
+  time: string | null;
+  text: string;
+} {
   if (typeof e.bar_step === "number" && !Number.isNaN(e.bar_step)) {
     return {
       step0: e.bar_step,
@@ -57,7 +69,12 @@ function inferStatus(
     /\berror:\s/i.test(lines);
   if (hardErr) return "error";
 
-  if (streaming && group.barStep0 !== null && globalMaxBar !== null && group.barStep0 === globalMaxBar) {
+  if (
+    streaming &&
+    group.barStep0 !== null &&
+    globalMaxBar !== null &&
+    group.barStep0 === globalMaxBar
+  ) {
     return "running";
   }
   return "complete";
@@ -107,8 +124,7 @@ export function groupBacktestMessageLog(
   return keys.map((key) => {
     const entries = buckets.get(key)!;
     const { step0, time } = meta.get(key)!;
-    const title =
-      step0 !== null ? `Bar ${step0 + 1}` : "Timeline (no bar index)";
+    const title = step0 !== null ? `Bar ${step0 + 1}` : "Timeline (no bar index)";
     const g: BarTimelineGroup = {
       key,
       barStep0: step0,

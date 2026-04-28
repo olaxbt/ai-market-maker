@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { amountUnitToIntervalSec, formatIntervalHuman, intervalSecToAmountUnit } from "./backtestInterval";
+import {
+  amountUnitToIntervalSec,
+  formatIntervalHuman,
+  intervalSecToAmountUnit,
+} from "./backtestInterval";
 
 describe("backtestInterval", () => {
   it("round-trips common presets", () => {

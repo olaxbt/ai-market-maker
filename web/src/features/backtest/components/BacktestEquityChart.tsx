@@ -88,7 +88,11 @@ export function BacktestEquityChart({
             domain={["auto", "auto"]}
             tick={{ fill: "var(--nexus-muted)", fontSize: 10 }}
             tickFormatter={(v: number) =>
-              v >= 1e6 ? `${(v / 1e6).toFixed(2)}M` : v >= 1e3 ? `${(v / 1e3).toFixed(1)}k` : String(v)
+              v >= 1e6
+                ? `${(v / 1e6).toFixed(2)}M`
+                : v >= 1e3
+                  ? `${(v / 1e3).toFixed(1)}k`
+                  : String(v)
             }
             width={56}
           />
@@ -107,7 +111,10 @@ export function BacktestEquityChart({
             }}
             formatter={(value: number | string, name: string) => {
               if (name === "equity") {
-                return [Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 }), "Equity (sim)"];
+                return [
+                  Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 }),
+                  "Equity (sim)",
+                ];
               }
               return [value, name];
             }}
@@ -122,7 +129,14 @@ export function BacktestEquityChart({
               fontSize: 10,
             }}
           />
-          <Line type="monotone" dataKey="equity" stroke="var(--nexus-glow)" dot={false} strokeWidth={2} name="equity" />
+          <Line
+            type="monotone"
+            dataKey="equity"
+            stroke="var(--nexus-glow)"
+            dot={false}
+            strokeWidth={2}
+            name="equity"
+          />
           {markers.length ? (
             <Scatter
               data={markers}
@@ -166,4 +180,3 @@ export function BacktestEquityChart({
     </div>
   );
 }
-

@@ -1,0 +1,23 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# System deps (bcrypt/psycopg wheels are bundled; keep slim).
+RUN pip install --no-cache-dir uv
+
+COPY pyproject.toml /app/pyproject.toml
+COPY README.md /app/README.md
+COPY src /app/src
+COPY config /app/config
+COPY alembic.ini /app/alembic.ini
+COPY alembic /app/alembic
+
+RUN uv pip install --system -e .
+
+EXPOSE 8001
+
+CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8001", "api.flow_stream_server:app", "--workers", "2", "--timeout", "120"]
+

@@ -5,4 +5,3 @@ export async function copyText(text: string): Promise<void> {
     // clipboard denied or unavailable
   }
 }
-

@@ -1,0 +1,10 @@
+.next/
+node_modules/
+out/
+coverage/
+.turbo/
+.vercel/
+
+*.min.js
+*.min.css
+

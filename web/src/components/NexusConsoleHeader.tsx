@@ -1,15 +1,21 @@
 "use client";
 
-import { Activity, LayoutGrid, Orbit, PanelsTopLeft } from "lucide-react";
+import { useEffect } from "react";
+import { NexusHeaderNav } from "@/components/NexusHeaderNav";
 import type { Metadata } from "@/types/nexus-payload";
 
 export type NexusViewMode = "nexus" | "grid" | "backtest" | "supervisor" | "monitor" | "research";
+
+export const NEXUS_LAST_RUN_ID_KEY = "nexus_last_run_id_v1";
 
 interface NexusConsoleHeaderProps {
   metadata: Metadata | null | undefined;
   viewMode: NexusViewMode;
   onViewModeChange: (mode: NexusViewMode) => void;
   viewModeTitle: string;
+  wsConnected?: boolean;
+  loading?: boolean;
+  lastUpdateIso?: string | null;
 }
 
 function KpiStrip({ kpis }: { kpis: Metadata["kpis"] }) {
@@ -40,7 +46,9 @@ function KpiStrip({ kpis }: { kpis: Metadata["kpis"] }) {
       {(kpis.sharpe ?? kpis.sharpe_ratio) != null && (
         <div className="px-2.5 py-1 rounded border border-[var(--nexus-border)] bg-[var(--nexus-surface)] font-mono text-[10px]">
           <span className="text-[var(--nexus-muted)]">Sharpe</span>{" "}
-          <span className="text-[var(--nexus-text)]">{String(kpis.sharpe ?? kpis.sharpe_ratio)}</span>
+          <span className="text-[var(--nexus-text)]">
+            {String(kpis.sharpe ?? kpis.sharpe_ratio)}
+          </span>
         </div>
       )}
       {(kpis.latency ?? kpis.latency_ms) != null && (
@@ -68,7 +76,20 @@ export function NexusConsoleHeader({
   viewMode,
   onViewModeChange,
   viewModeTitle,
+  wsConnected,
+  loading,
+  lastUpdateIso,
 }: NexusConsoleHeaderProps) {
+  useEffect(() => {
+    const runId = metadata?.run_id;
+    if (!runId) return;
+    try {
+      sessionStorage.setItem(NEXUS_LAST_RUN_ID_KEY, String(runId));
+    } catch {
+      // ignore
+    }
+  }, [metadata?.run_id]);
+
   const title =
     viewMode === "backtest"
       ? "BACKTEST LAB"
@@ -76,97 +97,65 @@ export function NexusConsoleHeader({
         ? "SUPERVISOR CONSOLE"
         : viewMode === "research"
           ? "RESEARCH WORKSPACE"
-        : viewMode === "grid"
-          ? "AGENTS CONSOLE"
-          : viewMode === "monitor"
-            ? "LIVE MONITOR"
-          : "NEXUS TRADING CONSOLE";
+          : viewMode === "grid"
+            ? "AGENTS CONSOLE"
+            : viewMode === "monitor"
+              ? "LIVE MONITOR"
+              : "NEXUS TRADING CONSOLE";
   return (
     <header className="border-b border-[var(--nexus-rule-strong)] bg-[var(--nexus-panel)]/95 backdrop-blur-sm px-4 py-2.5">
-      <div className="w-full flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-sm font-bold tracking-[0.2em] text-[var(--nexus-glow)] nexus-glow-text">
-            {title}
-          </h1>
-          <p className="mt-0.5 text-[10px] tracking-wide text-[var(--nexus-muted)]">
-            {viewMode === "backtest"
-              ? "Replay saved runs, run new backtests, and inspect per-bar agent traces."
-              : viewMode === "supervisor"
-                ? "Ask questions and get an executive snapshot for a saved run."
-                : viewMode === "research"
-                  ? "Compact backtest + supervisor side-by-side (shared run context)."
-                : viewMode === "grid"
-                  ? "Browse desks and agents. Inspect traces and edit prompts (where applicable)."
-                  : viewMode === "monitor"
-                    ? "Balances, positions, and last decisions — designed for always-on ops."
-                  : "AI Market Maker · Global telemetry, agent topology, and traceable decision flow."}
-          </p>
-        </div>
-        <div className="flex items-center gap-4 font-mono text-xs">
-          {metadata?.run_id && (
-            <span
-              className="text-[var(--nexus-muted)]"
-              title={
-                viewMode === "backtest"
-                  ? "Live Nexus / strategy stream id (not the saved backtest id in the panel below)"
-                  : undefined
-              }
-            >
-              {viewMode === "backtest" ? "Stream run:" : "Run:"}{" "}
-              <span className="text-[var(--nexus-text)]">{metadata.run_id}</span>
-            </span>
-          )}
-        </div>
-      </div>
-
-      <div className="w-full mt-2 border-t border-[var(--nexus-rule-soft)] pt-2 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2 flex-1 min-w-0">
-          <KpiStrip kpis={metadata?.kpis ?? {}} />
-        </div>
-
-        <div className="shrink-0" title={viewModeTitle}>
-          <div className="nexus-segmented-toggle flex items-center gap-1 rounded-xl p-1">
-            <button
-              type="button"
-              onClick={() => onViewModeChange("nexus")}
-              className={`nexus-segment-btn group flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] tracking-widest uppercase transition-all ${
-                viewMode === "nexus" ? "is-active" : ""
-              }`}
-            >
-              <Orbit className="h-3.5 w-3.5 opacity-80 group-hover:opacity-100" />
-              <span className="leading-none">Nexus</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onViewModeChange("grid")}
-              className={`nexus-segment-btn group flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] tracking-widest uppercase transition-all ${
-                viewMode === "grid" ? "is-active" : ""
-              }`}
-            >
-              <LayoutGrid className="h-3.5 w-3.5 opacity-80 group-hover:opacity-100" />
-              <span className="leading-none">Agents</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onViewModeChange("research")}
-              className={`nexus-segment-btn group flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] tracking-widest uppercase transition-all ${
-                viewMode === "research" ? "is-active" : ""
-              }`}
-            >
-              <PanelsTopLeft className="h-3.5 w-3.5 opacity-80 group-hover:opacity-100" />
-              <span className="leading-none">Research</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onViewModeChange("monitor")}
-              className={`nexus-segment-btn group flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[10px] tracking-widest uppercase transition-all ${
-                viewMode === "monitor" ? "is-active" : ""
-              }`}
-            >
-              <Activity className="h-3.5 w-3.5 opacity-80 group-hover:opacity-100" />
-              <span className="leading-none">Monitor</span>
-            </button>
+      <div className="w-full">
+        <div className="w-full flex flex-wrap items-center justify-start gap-3">
+          <div className="min-w-0">
+            <h1 className="text-sm font-bold tracking-[0.2em] text-[var(--nexus-glow)] nexus-glow-text">
+              {title}
+            </h1>
+            <p className="mt-0.5 text-[10px] tracking-wide text-[var(--nexus-muted)]">
+              {viewMode === "backtest"
+                ? "Replay saved runs, run new backtests, and inspect per-bar agent traces."
+                : viewMode === "supervisor"
+                  ? "Ask questions and get an executive snapshot for a saved run."
+                  : viewMode === "research"
+                    ? "Compact backtest + supervisor side-by-side (shared run context)."
+                    : viewMode === "grid"
+                      ? "Browse desks and agents. Inspect traces and edit prompts (where applicable)."
+                      : viewMode === "monitor"
+                        ? "Balances, positions, and last decisions — designed for always-on ops."
+                        : "AI Market Maker · Global telemetry, agent topology, and traceable decision flow."}
+            </p>
           </div>
+        </div>
+
+        <div className="w-full mt-2 border-t border-[var(--nexus-rule-soft)] pt-2 flex flex-wrap items-center justify-start gap-3">
+          <NexusHeaderNav
+            active="nexus"
+            variant="console"
+            viewMode={viewMode}
+            onViewModeChange={onViewModeChange}
+            viewModeTitle={viewModeTitle}
+          />
+          <span
+            className={`rounded-lg border px-2 py-1 text-[10px] font-mono ${
+              wsConnected
+                ? "border-[rgba(0,212,170,0.22)] bg-[rgba(0,212,170,0.08)] text-[rgba(226,232,240,0.92)]"
+                : "border-[rgba(138,149,166,0.22)] bg-[rgba(138,149,166,0.10)] text-[rgba(226,232,240,0.86)]"
+            }`}
+            title="WebSocket stream connection"
+          >
+            {wsConnected ? "stream: connected" : "stream: offline"}
+          </span>
+          <span
+            className="rounded-lg border border-[rgba(138,149,166,0.18)] bg-[rgba(0,0,0,0.15)] px-2 py-1 text-[10px] font-mono text-[var(--nexus-muted)]"
+            title="Last payload update time"
+          >
+            {loading ? "updating…" : lastUpdateIso ? `last: ${new Date(lastUpdateIso).toLocaleTimeString()}` : "last: —"}
+          </span>
+          {metadata?.run_id ? (
+            <span className="rounded-lg border border-[rgba(138,149,166,0.18)] bg-[rgba(0,0,0,0.15)] px-2 py-1 text-[10px] font-mono text-[var(--nexus-muted)]">
+              run: <span className="text-[rgba(226,232,240,0.92)]">{metadata.run_id}</span>
+            </span>
+          ) : null}
+          <KpiStrip kpis={metadata?.kpis ?? {}} />
         </div>
       </div>
     </header>
