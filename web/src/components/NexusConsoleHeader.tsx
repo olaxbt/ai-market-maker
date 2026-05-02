@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { NexusHeaderNav } from "@/components/NexusHeaderNav";
 import type { Metadata } from "@/types/nexus-payload";
 
@@ -110,7 +110,7 @@ export function NexusConsoleHeader({
             <h1 className="text-sm font-bold tracking-[0.2em] text-[var(--nexus-glow)] nexus-glow-text">
               {title}
             </h1>
-            <p className="mt-0.5 text-[10px] tracking-wide text-[var(--nexus-muted)]">
+            <p className="mt-0.5 min-h-[1.5rem] text-[10px] leading-snug tracking-wide text-[var(--nexus-muted)]">
               {viewMode === "backtest"
                 ? "Replay saved runs, run new backtests, and inspect per-bar agent traces."
                 : viewMode === "supervisor"
@@ -127,13 +127,15 @@ export function NexusConsoleHeader({
         </div>
 
         <div className="w-full mt-2 border-t border-[var(--nexus-rule-soft)] pt-2 flex flex-wrap items-center justify-start gap-3">
-          <NexusHeaderNav
-            active="nexus"
-            variant="console"
-            viewMode={viewMode}
-            onViewModeChange={onViewModeChange}
-            viewModeTitle={viewModeTitle}
-          />
+          <Suspense fallback={<div className="h-10 w-full max-w-md rounded-lg bg-[rgba(6,8,11,0.35)]" />}>
+            <NexusHeaderNav
+              active="nexus"
+              variant="console"
+              viewMode={viewMode}
+              onViewModeChange={onViewModeChange}
+              viewModeTitle={viewModeTitle}
+            />
+          </Suspense>
           <span
             className={`rounded-lg border px-2 py-1 text-[10px] font-mono ${
               wsConnected

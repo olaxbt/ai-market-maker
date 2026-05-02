@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Orbit, Trophy } from "lucide-react";
 
 export type HeaderNavMode = "observe" | "nexus";
@@ -105,10 +105,9 @@ export function NexusHeaderNav({
   viewModeTitle?: string;
 }) {
   const pathname = usePathname() || "/";
-  const leaderboardFocus =
-    typeof window === "undefined" ? "overview" : new URLSearchParams(window.location.search).get("focus") ?? "overview";
-  const consoleView =
-    typeof window === "undefined" ? "" : (new URLSearchParams(window.location.search).get("view") ?? "").trim();
+  const searchParams = useSearchParams();
+  const leaderboardFocus = searchParams.get("focus") === "signals" ? "signals" : "overview";
+  const consoleView = (searchParams.get("view") ?? "").trim();
 
   const isConsoleTopology = pathname === "/console" && !consoleView;
   const isConsoleAgents = pathname === "/console" && consoleView === "grid";

@@ -3,6 +3,9 @@
 @tailwind utilities;
 
 :root {
+  --nexus-input-bg: rgba(13, 15, 20, 0.6);
+  --nexus-input-border: rgba(138, 149, 166, 0.22);
+  --nexus-input-focus-border: rgba(0, 212, 170, 0.35);
   --nexus-bg: #06080b;
   --nexus-surface: #0a0d12;
   --nexus-panel: #0d0f14;
@@ -589,4 +592,55 @@ body {
   50% {
     opacity: 1;
   }
+}
+
+/* Standard input field consistent across themes */
+.nexus-input {
+  background-color: var(--nexus-input-bg);
+  border-color: var(--nexus-input-border);
+  color: var(--nexus-text);
+  caret-color: var(--nexus-glow);
+}
+.nexus-input::placeholder {
+  color: var(--nexus-muted);
+  opacity: 0.9;
+}
+.nexus-input:focus {
+  border-color: var(--nexus-input-focus-border) !important;
+  box-shadow: 0 0 0 1px rgba(0, 212, 170, 0.15) !important;
+  outline: none !important;
+}
+.nexus-input:-webkit-autofill,
+.nexus-input:-webkit-autofill:hover,
+.nexus-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--nexus-text);
+  -webkit-box-shadow: 0 0 0 1000px var(--nexus-input-bg) inset;
+  box-shadow: 0 0 0 1000px var(--nexus-input-bg) inset;
+}
+
+/* Light mode overrides */
+html.light {
+  --nexus-bg: #ffffff;
+  --nexus-surface: #f8fafc;
+  --nexus-panel: #ffffff;
+  --nexus-border: #e2e8f0;
+  --nexus-glow: #3b82f6;
+  --nexus-glow-dim: rgba(59, 130, 246, 0.12);
+  --nexus-text: #0f172a;
+  --nexus-muted: #94a3b8;
+  --nexus-accent: #3b82f6;
+  --nexus-danger: #ef4444;
+  --nexus-success: #22c55e;
+  --nexus-input-bg: #ffffff;
+  --nexus-input-border: #cbd5e1;
+  --nexus-input-focus-border: #3b82f6;
+  --nexus-toggle-shell-bg: rgba(248, 250, 252, 0.8);
+  --nexus-toggle-shell-border: #e2e8f0;
+  --nexus-toggle-active-bg: rgba(59, 130, 246, 0.12);
+  --nexus-toggle-active-fg: #2563eb;
+  --nexus-toggle-active-border: rgba(59, 130, 246, 0.35);
+  --nexus-toggle-active-shadow: 0 0 14px rgba(59, 130, 246, 0.12);
+  --nexus-toggle-idle-fg: #475569;
+  --nexus-toggle-idle-hover-fg: #1e293b;
+  --nexus-toggle-idle-hover-bg: rgba(248, 250, 252, 0.9);
 }
