@@ -41,6 +41,21 @@
    * Defaults to card stroke; set e.g. rgba(0, 212, 170, 0.18) to give CoT a subtle teal read.
    */
   --nexus-cot-rule: var(--nexus-card-stroke);
+  /* Orbital hub: DOM + canvas read these so stars stay legible in both themes */
+  --nexus-hub-canvas-rgb: 34, 211, 238;
+  --nexus-hub-mesh-rgb: 96, 231, 255;
+  --nexus-hub-glow-rgb: 34, 211, 238;
+  --nexus-hub-core-fill: #ffffff;
+  --nexus-agent-shadow-rgb: 0, 212, 170;
+  --nexus-agent-star-idle-bg: #475569;
+  /* Topology edge gradient in NexusStarSystem SVG (dark = starfield / accent) */
+  --nexus-hub-edge-0: #00d4aa;
+  --nexus-hub-edge-1: #00d4aa;
+  /* Ambient ring canvas (AmbientRingsCanvas) — dark uses defaults */
+  --nexus-hub-ring-alpha-scale: 1;
+  --nexus-hub-ring-stroke-alpha: 0.12;
+  --nexus-hub-ring-dot-boost: 0;
+  --nexus-hub-ring-stroke-width: 1;
 }
 
 body {
@@ -330,6 +345,77 @@ body {
   mix-blend-mode: screen;
   filter: blur(0.2px);
   mask-image: radial-gradient(circle at 50% 50%, black 0%, black 58%, transparent 78%);
+}
+
+/* NexusStarSystem inner layers — rgba(var(--nexus-hub-glow-rgb), a) tracks light/dark */
+.nexus-hub-radial-bed {
+  background: radial-gradient(
+    ellipse at 50% 40%,
+    rgba(var(--nexus-hub-glow-rgb), 0.08),
+    transparent 55%
+  );
+}
+.nexus-hub-grid-lines {
+  background-image:
+    linear-gradient(rgba(var(--nexus-hub-glow-rgb), 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--nexus-hub-glow-rgb), 0.035) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.nexus-hub-vignette {
+  opacity: 0.12;
+  mix-blend-mode: overlay;
+  background: radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.15), transparent 50%);
+}
+html.light .nexus-hub-grid-lines {
+  background-image:
+    linear-gradient(rgba(120, 53, 15, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(120, 53, 15, 0.1) 1px, transparent 1px);
+}
+html.light .nexus-hub-vignette {
+  opacity: 0.1;
+  mix-blend-mode: multiply;
+  background: radial-gradient(circle at 22% 32%, rgba(15, 23, 42, 0.07), transparent 52%);
+}
+.nexus-hub-bloom {
+  background-color: rgba(var(--nexus-hub-glow-rgb), 0.2);
+}
+/* Light: corona bloom behind the “sun” */
+html.light .nexus-hub-bloom {
+  background-color: rgba(251, 191, 36, 0.14);
+}
+html.light .nexus-hub-radial-bed {
+  background: radial-gradient(
+    ellipse at 50% 38%,
+    rgba(254, 243, 199, 0.55),
+    rgba(251, 191, 36, 0.08) 42%,
+    transparent 58%
+  );
+}
+html.light .nexus-hub-particle {
+  background-color: rgba(245, 158, 11, 0.92) !important;
+  box-shadow: 0 0 10px 3px rgba(251, 191, 36, 0.45) !important;
+}
+/* Solar hub: rim + outline read on white without replacing inline glow (box-shadow) */
+html.light .nexus-hub-core-disk {
+  border: 2px solid rgba(154, 52, 18, 0.58);
+  outline: 1px solid rgba(255, 247, 237, 0.96);
+  outline-offset: -3px;
+}
+html.light .nexus-hub-orbit-wire {
+  border-color: rgba(154, 52, 18, 0.48) !important;
+}
+
+/* Hub HUD: dark = soft cyan glow text; light = ink brown (was ~42% amber on white) */
+.nexus-hub-hud {
+  color: rgba(var(--nexus-hub-glow-rgb), 0.52);
+}
+html.light .nexus-hub-hud {
+  color: #7c2d12;
+}
+
+/* Slight warm lift off pure white so orbit dots separate from the card */
+html.light .nexus-hub-card {
+  background-color: #f7f5f2 !important;
 }
 
 /* Ray timing is set per-spoke via inline animation-delay in NexusStarSystem */
@@ -623,7 +709,8 @@ html.light {
   --nexus-glow: #3b82f6;
   --nexus-glow-dim: rgba(59, 130, 246, 0.10);
   --nexus-text: #0f172a;
-  --nexus-muted: #64748b;
+  /* Darker than slate-500 so 10px chrome copy stays legible on white */
+  --nexus-muted: #475569;
   --nexus-accent: #3b82f6;
   --nexus-danger: #ef4444;
   --nexus-success: #22c55e;
@@ -660,16 +747,39 @@ html.light {
   --nexus-border-positive: rgba(34, 197, 94, 0.30);
   --nexus-border-cyan: rgba(59, 130, 246, 0.30);
   --nexus-border-muted: rgba(148, 163, 184, 0.15);
-  --nexus-stars-brightness: 0;
+  --nexus-stars-brightness: 1;
+
+  /*
+   * Light hub = solar / orrery metaphor (warm sun + dust rings); dark stays starfield.
+   * Agent selection/active still uses blue (--nexus-agent-shadow-rgb) to match app chrome.
+   */
+  /* Orbit grit: warm burnt-orange (not neutral brown) so the solar disk reads cohesive */
+  --nexus-hub-canvas-rgb: 92, 48, 36;
+  --nexus-hub-mesh-rgb: 132, 70, 48;
+  --nexus-hub-ring-alpha-scale: 1.45;
+  --nexus-hub-ring-stroke-alpha: 0.34;
+  --nexus-hub-ring-dot-boost: 0.55;
+  --nexus-hub-ring-stroke-width: 1.35;
+  --nexus-hub-glow-rgb: 245, 158, 11;
+  /* Deeper than amber-50 so the sun reads on white; ring added in NexusStarSystem + CSS */
+  --nexus-hub-core-fill: #fde68a;
+  --nexus-agent-shadow-rgb: 59, 130, 246;
+  --nexus-agent-star-idle-bg: #44403c;
+  --nexus-hub-edge-0: #b45309;
+  --nexus-hub-edge-1: #d97706;
 
   --nexus-loader-core-bg: rgba(15, 23, 42, 0.06);
   --nexus-loader-core-border: rgba(15, 23, 42, 0.15);
   --nexus-loader-text-color: #64748b;
 }
 
-/* Disable Nexus star field overlay in light mode */
+/* Light: soft corona / ecliptic haze (solar column), not star dust */
 html.light .nexus-star-field {
-  background: var(--nexus-bg);
+  background:
+    radial-gradient(ellipse 100% 92% at 50% 118%, rgba(251, 191, 36, 0.14) 0%, transparent 55%),
+    radial-gradient(ellipse 72% 52% at 78% 22%, rgba(245, 158, 11, 0.06) 0%, transparent 48%),
+    radial-gradient(ellipse 48% 38% at 16% 38%, rgba(180, 83, 9, 0.05) 0%, transparent 46%),
+    var(--nexus-bg);
 }
 
 /* Reduce loader glow/brightness in light mode */
@@ -693,23 +803,60 @@ html.light .nexus-loader-wrap {
   background: #ffffff !important;
 }
 
-/* Tone down hub animations in light mode */
+/* Light hub: gentle heliosphere pulse (solar, not blue nebula) */
 html.light .nexus-hub-wrap {
-  filter: none !important;
-  animation: none !important;
+  filter: drop-shadow(0 0 32px rgba(245, 158, 11, 0.22));
+  animation: nexus-hub-glow-light 5s ease-in-out infinite;
+}
+@keyframes nexus-hub-glow-light {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 26px rgba(251, 191, 36, 0.18));
+  }
+  50% {
+    filter: drop-shadow(0 0 44px rgba(245, 158, 11, 0.3));
+  }
 }
 html.light .nexus-core-star-nucleus {
-  animation: none !important;
-  opacity: 0.5 !important;
+  animation: nexus-core-shine-light 3.2s ease-in-out infinite;
+  opacity: 1 !important;
+}
+@keyframes nexus-core-shine-light {
+  0%,
+  100% {
+    opacity: 0.75;
+    filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.35))
+      drop-shadow(0 0 20px rgba(245, 158, 11, 0.22));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 14px rgba(254, 243, 199, 0.55))
+      drop-shadow(0 0 26px rgba(245, 158, 11, 0.28));
+  }
 }
 html.light .nexus-ambient-rings {
-  opacity: 0.3 !important;
+  opacity: 0.94 !important;
 }
 html.light .nexus-core-aura {
-  opacity: 0.15 !important;
+  background: conic-gradient(
+    from 0deg,
+    rgba(245, 158, 11, 0),
+    rgba(251, 191, 36, 0.2),
+    rgba(180, 83, 9, 0.1),
+    rgba(255, 251, 235, 0.14),
+    rgba(245, 158, 11, 0)
+  );
+  opacity: 0.48 !important;
 }
 html.light .nexus-scan-sweep {
-  opacity: 0 !important;
+  background-image: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0) 0%,
+    rgba(245, 158, 11, 0) 35%,
+    rgba(251, 191, 36, 0.09) 50%,
+    rgba(180, 83, 9, 0.06) 55%,
+    rgba(0, 0, 0, 0) 75%
+  );
 }
 
 /* Text legibility overrides */
@@ -726,86 +873,317 @@ html.light .nexus-bg {
 }
 
 /* ── Light mode: convert hardcoded dark rgba text to light equivalents ── */
-/* Dark text on white bg: #0f172a (slate-900) at various opacities */
+/* 
+  Tailwind JIT escapes arbitrary values: commas → \2c, dots → \.
+  So bg-[rgba(6,8,11,0.32)] generates class: bg-\[rgba\(6\,8\,11\,0\.32\)\]
+  CSS attribute selectors with escaped strings must preserve the \ in the value.
+*/
+
+/* Text colors: all dark slate text becomes slate-900 (#0f172a) in light mode */
 html.light [class*="text-\[rgba(226,232,240,"] {
   color: #0f172a !important;
 }
 html.light [class*="text-\[rgba(138,149,166,"] {
   color: #64748b !important;
 }
-/* Dark surface panels become light gray */
-html.light [class*="bg-\[rgba(6,8,11,"] {
-  background-color: #f1f5f9 !important;
+/* Teal/red text colors become proper light equivalents */
+html.light [class*="text-\[rgba(0,212,170,"] {
+  color: #16a34a !important;
 }
-/* Dark signal card bg */
-html.light [class*="bg-\[rgba(6,8,11,0.32\]"] {
-  background-color: #f8fafc !important;
+html.light [class*="text-\[rgba(242,92,84,"] {
+  color: #dc2626 !important;
 }
-/* Panel overlay backgrounds (opacity on panel color) */
-html.light [class*="bg-\[var(--nexus-panel)\]\/"] {
-  background-color: #ffffff !important;
-}
-/* Error bg */
-html.light [class*="bg-\[rgba(242,92,84,0.08\]"] {
-  background-color: #fef2f2 !important;
-}
-/* Positive bg */
-html.light [class*="bg-\[rgba(0,212,170,0.08\]"] {
-  background-color: #f0fdf4 !important;
-}
-/* Cyan bg */
-html.light [class*="bg-\[rgba(34,211,238,0.08\]"] {
-  background-color: #eff6ff !important;
-}
-/* Muted bg */
-html.light [class*="bg-\[rgba(138,149,166,0.10\]"] {
-  background-color: #f8fafc !important;
-}
-/* Table header bg */
-html.light [class*="bg-\[rgba(6,8,11,0.9\]"] {
-  background-color: #f8fafc !important;
-}
-/* Table border row */
-html.light [class*="border-\[rgba(138,149,166,0.12\]"] {
-  border-color: #e2e8f0 !important;
-}
-/* Card borders */
-html.light [class*="border-\[rgba(138,149,166,0.18\]"] {
-  border-color: #e2e8f0 !important;
-}
-/* Positive border */
-html.light [class*="border-\[rgba(0,212,170,0.22\]"] {
-  border-color: #bbf7d0 !important;
-}
-/* Cyan border */
-html.light [class*="border-\[rgba(34,211,238,0.22\]"] {
-  border-color: #bfdbfe !important;
-}
-/* Error border */
-html.light [class*="border-\[rgba(242,92,84,0.28\]"] {
-  border-color: #fecaca !important;
-}
-/* Teal glow text -> blue glow in light mode */
-html.light .nexus-glow-text {
+html.light [class*="text-\[#22d3ee"] {
   color: #2563eb !important;
 }
-/* Table hover row */
-html.light [class*="hover\:bg-\[rgba(255,255,255,0.02\]"]:hover {
+
+/* Background panels: dark #06080b becomes slate-100 or white */
+html.light [class*="bg-\[rgba(6,8,11,"] {
+  background-color: #f8fafc !important;
+}
+html.light [class*="bg-\[rgba(0,0,0,"] {
   background-color: #f1f5f9 !important;
 }
-/* Hover border teal -> blue */
-html.light [class*="hover\:border-\[rgba(0,212,170"]:hover {
+
+/* Panel/panel overlay BGs */
+html.light [class*="bg-\[var(--nexus-panel)"] {
+  background-color: #ffffff !important;
+}
+
+/* Error background */
+html.light [class*="bg-\[rgba(242,92,84,"] {
+  background-color: #fef2f2 !important;
+}
+/* Positive/teal background */
+html.light [class*="bg-\[rgba(0,212,170,"] {
+  background-color: #f0fdf4 !important;
+}
+/* Cyan/blue background */
+html.light [class*="bg-\[rgba(34,211,238,"] {
+  background-color: #eff6ff !important;
+}
+/* Muted accent background */
+html.light [class*="bg-\[rgba(138,149,166,"] {
+  background-color: #f1f5f9 !important;
+}
+/* Purple accent background */
+html.light [class*="bg-\[rgba(167,139,250,"] {
+  background-color: #f5f3ff !important;
+}
+/* Blue accent background */
+html.light [class*="bg-\[rgba(59,130,246,"] {
+  background-color: #eff6ff !important;
+}
+/* Amber accent background */
+html.light [class*="bg-\[rgba(245,158,11,"] {
+  background-color: #fffbeb !important;
+}
+/* White transparent bg (hover) */
+html.light [class*="bg-\[rgba(255,255,255,"] {
+  background-color: #f1f5f9 !important;
+}
+
+/* Table header sticky bg */
+html.light [class*="bg-\[rgba(6,8,11,0.9"] {
+  background-color: #ffffff !important;
+}
+html.light [class*="bg-\[rgba(6,8,11,0.85"] {
+  background-color: #ffffff !important;
+}
+html.light [class*="bg-\[rgba(6,8,11,0.72"] {
+  background-color: rgba(248, 250, 252, 0.95) !important;
+}
+
+/* Borders */
+html.light [class*="border-\[rgba(138,149,166,"] {
+  border-color: #e2e8f0 !important;
+}
+html.light [class*="border-\[rgba(0,212,170,"] {
   border-color: #bfdbfe !important;
 }
-/* Hover text white -> dark */
+html.light [class*="border-\[rgba(34,211,238,"] {
+  border-color: #bfdbfe !important;
+}
+html.light [class*="border-\[rgba(242,92,84,"] {
+  border-color: #fecaca !important;
+}
+html.light [class*="border-\[rgba(148,163,184,"] {
+  border-color: #e2e8f0 !important;
+}
+
+/* Hover overrides */
+html.light [class*="hover\:bg-\[rgba(255,255,255,"]:hover {
+  background-color: #f1f5f9 !important;
+}
+html.light [class*="hover\:border-\[rgba(0,212,170,"]:hover {
+  border-color: #93c5fd !important;
+}
 html.light [class*="hover\:text-white"]:hover {
   color: #0f172a !important;
 }
-/* Decoration underline teal -> blue */
-html.light [class*="hover\:decoration-\[rgba(0,212,170"]:hover {
+html.light [class*="hover\:decoration-\[rgba(0,212,170,"]:hover {
   text-decoration-color: #93c5fd !important;
 }
-/* Decoration underline muted */
-html.light [class*="decoration-\[rgba(138,149,166,0.35\]"] {
+html.light [class*="hover\:bg-\[rgba(0,212,170,"]:hover {
+  background-color: rgba(59, 130, 246, 0.12) !important;
+}
+
+/* Decoration */
+html.light [class*="decoration-\[rgba(138,149,166,"] {
   text-decoration-color: #cbd5e1 !important;
+}
+
+/* After pseudo-element active indicator */
+html.light [class*="after\:bg-\[rgba(0,212,170,"]::after {
+  background-color: #3b82f6 !important;
+}
+
+/* Rings/borders on monitors */
+html.light [class*="ring-\[rgba(34,211,238,"] {
+  --tw-ring-color: #93c5fd !important;
+}
+
+/* ── Light mode: input overrides ── */
+html.light [class*="bg-\[rgba(13,15,20,"] {
+  background-color: #ffffff !important;
+}
+html.light [class*="focus\:border-\[rgba(0,212,170,"]:focus {
+  border-color: rgba(59, 130, 246, 0.45) !important;
+}
+html.light [class*="focus\:shadow-\[0_0_0_1px_rgba(0,212,170,"]:focus {
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.22) !important;
+}
+html.light [class*="placeholder-\[rgba(138,149,166,"]::placeholder,
+html.light [class*="placeholder-\[rgba(226,232,240,"]::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* Input elements */
+html.light input,
+html.light textarea,
+html.light select {
+  background-color: #ffffff;
+  border-color: #e2e8f0;
+  color: #0f172a;
+}
+html.light input:focus,
+html.light textarea:focus,
+html.light select:focus {
+  border-color: rgba(59, 130, 246, 0.45);
+  outline: none;
+}
+html.light input::placeholder,
+html.light textarea::placeholder {
+  color: #94a3b8;
+}
+
+/* Nexus prompt input */
+html.light .nexus-prompt-input {
+  border-color: #e2e8f0 !important;
+  background-color: #ffffff !important;
+}
+html.light .nexus-prompt-input:focus {
+  border-color: rgba(59, 130, 246, 0.45) !important;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.22) !important;
+}
+
+/* Nexus input (leadpage search) */
+html.light .nexus-input {
+  background-color: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+html.light .nexus-input:focus {
+  border-color: rgba(59, 130, 246, 0.45) !important;
+}
+html.light .nexus-input::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* General input, select, textarea override for any element with these attrs */
+html.light input[type="text"],
+html.light input[type="search"],
+html.light input[type="email"],
+html.light input[type="password"],
+html.light input[type="number"] {
+  background-color: #ffffff;
+  border-color: #e2e8f0;
+  color: #0f172a;
+}
+
+/* Nexus panel/agent card */
+html.light .nexus-panel {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: none !important;
+}
+html.light .nexus-agent-card {
+  background: #ffffff !important;
+  border-color: rgba(148, 163, 184, 0.30) !important;
+  box-shadow: none !important;
+}
+
+/* Datepicker overrides */
+html.light .nexus-datepicker.react-datepicker {
+  background: #ffffff !important;
+  border-color: #e2e8f0 !important;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.08) !important;
+}
+html.light .nexus-datepicker .react-datepicker__header {
+  background: #f8fafc !important;
+  border-bottom-color: #e2e8f0 !important;
+}
+html.light .nexus-datepicker .react-datepicker__navigation-icon::before {
+  border-color: #3b82f6 !important;
+}
+html.light .nexus-datepicker .react-datepicker__navigation:hover {
+  background: rgba(59, 130, 246, 0.08) !important;
+}
+html.light .nexus-datepicker .react-datepicker__day--selected,
+html.light .nexus-datepicker .react-datepicker__day--in-range,
+html.light .nexus-datepicker .react-datepicker__day--keyboard-selected {
+  background: rgba(59, 130, 246, 0.18) !important;
+  color: #2563eb !important;
+  outline-color: rgba(59, 130, 246, 0.45) !important;
+}
+html.light .nexus-datepicker .react-datepicker__month-select,
+html.light .nexus-datepicker .react-datepicker__year-select {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+html.light .nexus-datepicker .react-datepicker__month-select:hover,
+html.light .nexus-datepicker .react-datepicker__year-select:hover {
+  border-color: rgba(59, 130, 246, 0.25) !important;
+  background: rgba(59, 130, 246, 0.06) !important;
+}
+
+/* Flow node active */
+html.light .flow-node-active {
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.22) !important;
+  border-color: #3b82f6 !important;
+}
+
+/* Nexus markdown overrides */
+html.light .nexus-md strong {
+  color: #0f172a !important;
+}
+html.light .nexus-md a {
+  color: #2563eb !important;
+}
+html.light .nexus-md code {
+  background: #f1f5f9 !important;
+  border-color: #cbd5e1 !important;
+  color: #1e293b !important;
+}
+html.light .nexus-md pre {
+  background: #f8fafc !important;
+  border-color: #e2e8f0 !important;
+}
+html.light .nexus-md pre code {
+  background: transparent !important;
+  border: none !important;
+}
+html.light .nexus-md blockquote {
+  border-left-color: rgba(59, 130, 246, 0.25) !important;
+  color: #475569 !important;
+}
+html.light .nexus-md hr {
+  border-top-color: #e2e8f0 !important;
+}
+
+/* Nexus segmented toggle */  
+html.light .nexus-segmented-toggle {
+  border-color: #e2e8f0 !important;
+  background: #f1f5f9 !important;
+}
+html.light .nexus-segment-btn {
+  color: #475569 !important;
+}
+html.light .nexus-segment-btn:hover {
+  color: #1e293b !important;
+  background: #ffffff !important;
+}
+
+/* Hover: border teal patterns */
+html.light [class*="hover\:border-\[rgba(0,212,170,"]:hover {
+  border-color: #93c5fd !important;
+}
+/* Hover: bg white patterns */
+html.light [class*="hover\:bg-white\/\[0\."]:hover {
+  background-color: #f1f5f9 !important;
+}
+/* Hover: bg black patterns */
+html.light [class*="hover\:bg-\[var\(--nexus-surface\)\]"]:hover {
+  background-color: #f1f5f9 !important;
+}
+
+/* Shadows: teal glow -> blue glow */
+html.light [class*="shadow-\[0_0_16px_rgba(0,212,170,"]:hover,
+html.light [class*="shadow-\[0_0_24px_rgba(0,212,170,"],
+html.light [class*="shadow-\[0_0_20px_rgba(0,212,170,"],
+html.light [class*="shadow-\[0_0_0_2px_rgba(0,212,170,"],
+html.light [class*="shadow-\[0_0_0_1px_rgba(0,212,170,"],
+html.light [class*="shadow-\[inset_0_0_0_1px_rgba(0,212,170,"] {
+  box-shadow: none !important;
 }

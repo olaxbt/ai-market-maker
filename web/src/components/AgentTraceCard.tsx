@@ -227,7 +227,7 @@ export function AgentTraceCard({
                       >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="min-w-0">
-                            <div className="font-mono text-[10px] font-semibold uppercase tracking-widest text-slate-200">
+                            <div className="font-mono text-[10px] font-semibold uppercase tracking-widest text-[var(--nexus-text)]">
                               {speaker}
                               {role ? (
                                 <span className="ml-2 font-normal text-[var(--nexus-muted)]">
@@ -260,7 +260,7 @@ export function AgentTraceCard({
                           )}
                         </div>
                         {text ? (
-                          <p className="mt-1 font-mono text-[11px] leading-relaxed text-slate-200/95">
+                          <p className="mt-1 font-mono text-[11px] leading-relaxed text-[var(--nexus-text)]/95">
                             {text}
                           </p>
                         ) : null}

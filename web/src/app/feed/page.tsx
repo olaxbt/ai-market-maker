@@ -6,7 +6,7 @@ export default function Page() {
     const provider = (qs.get("provider") ?? "").trim();
     const next = new URLSearchParams({ focus: "signals" });
     if (provider) next.set("provider", provider);
-    window.location.replace(`/leadpage?${next.toString()}`);
+    window.location.replace(`/leaderboard?${next.toString()}`);
   }
 
   return (

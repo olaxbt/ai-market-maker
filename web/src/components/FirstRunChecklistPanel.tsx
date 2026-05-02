@@ -137,7 +137,7 @@ export function FirstRunChecklistPanel() {
         state: !signedIn ? ("blocked" as const) : followsSomeone ? ("done" as const) : ("todo" as const),
         title: "Follow providers",
         body: "Following routes provider updates into your inbox.",
-        href: "/leadpage",
+        href: "/leaderboard",
         cta: "Browse providers",
       },
       {

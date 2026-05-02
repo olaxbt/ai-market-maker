@@ -75,7 +75,12 @@ function ConsoleInner() {
   );
 
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [traceLoadBannerDismissed, setTraceLoadBannerDismissed] = useState(false);
   const streamRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setTraceLoadBannerDismissed(false);
+  }, [loadError]);
   const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const agentsAutoOpenedRef = useRef(false);
@@ -213,12 +218,21 @@ function ConsoleInner() {
       />
 
       <div className="relative flex min-h-0 flex-1 flex-col">
-        {loadError && !loading ? (
+        {loadError && !loading && !traceLoadBannerDismissed ? (
           <div
-            className="pointer-events-none absolute inset-x-0 top-0 z-20 border-b border-[rgba(242,92,84,0.28)] bg-[rgba(6,8,11,0.72)] px-4 py-2 text-center font-mono text-[11px] text-[rgba(242,92,84,0.95)] backdrop-blur"
+            className="flex shrink-0 items-center justify-center gap-3 border-b border-[color:var(--nexus-border-error)] bg-[color:var(--nexus-surface-error)] px-4 py-2 font-mono text-[11px] text-[var(--nexus-danger)]"
             role="alert"
           >
-            Failed to load traces: {loadError.message}
+            <span className="min-w-0 flex-1 text-center">
+              Failed to load traces: {loadError.message}
+            </span>
+            <button
+              type="button"
+              onClick={() => setTraceLoadBannerDismissed(true)}
+              className="shrink-0 rounded-md border border-[color:var(--nexus-border-error)] bg-[var(--nexus-panel)] px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--nexus-text)] hover:bg-[var(--nexus-surface)]"
+            >
+              Dismiss
+            </button>
           </div>
         ) : null}
 

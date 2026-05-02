@@ -139,7 +139,7 @@ export function InboxPage() {
                     {it.kind}
                   </span>
                   <Link
-                    href={`/leadpage/providers/${encodeURIComponent(it.provider)}`}
+                    href={`/leaderboard/providers/${encodeURIComponent(it.provider)}`}
                     className="text-[11px] text-[rgba(226,232,240,0.9)] hover:text-white"
                   >
                     {it.provider}

@@ -152,7 +152,7 @@ export function AgentsConsoleView({
                     className={`rounded-md border px-2.5 py-1 font-mono text-[10px] uppercase tracking-widest transition-colors ${
                       active
                         ? "border-[var(--nexus-glow)]/50 bg-[var(--nexus-glow)]/10 text-[var(--nexus-glow)]"
-                        : "border-[var(--nexus-border)] bg-[var(--nexus-surface)]/60 text-slate-200 hover:border-[var(--nexus-glow)]/35"
+                        : "border-[var(--nexus-border)] bg-[var(--nexus-surface)]/60 text-[var(--nexus-text)] hover:border-[var(--nexus-glow)]/35"
                     }`}
                   >
                     {label}
@@ -173,7 +173,7 @@ export function AgentsConsoleView({
                   key={row.id}
                   className="rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)]/25 px-3 py-2"
                 >
-                  <div className="font-mono text-[10px] font-semibold uppercase tracking-widest text-slate-200">
+                  <div className="font-mono text-[10px] font-semibold uppercase tracking-widest text-[var(--nexus-text)]">
                     {row.label}
                   </div>
                   <div className="mt-1 font-mono text-[10px] leading-relaxed text-[var(--nexus-muted)]">
@@ -216,10 +216,10 @@ export function AgentsConsoleView({
         ) : (
           <>
             <div className="shrink-0 border-b border-[var(--nexus-border)]/60 px-4 py-2.5 text-center lg:hidden">
-              <p className="text-[10px] text-slate-400">Select an agent.</p>
+              <p className="text-[10px] text-[var(--nexus-muted)]">Select an agent.</p>
             </div>
             <div className="hidden min-h-[200px] flex-1 flex-col items-center justify-center gap-2 bg-[var(--nexus-panel)]/35 p-6 text-center lg:flex">
-              <p className="text-xs font-medium text-slate-200">No agent selected</p>
+              <p className="text-xs font-medium text-[var(--nexus-text)]">No agent selected</p>
               <p className="max-w-[200px] text-[10px] font-mono text-[var(--nexus-muted)]">
                 Detail panel · empty
               </p>
