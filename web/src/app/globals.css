@@ -594,53 +594,218 @@ body {
   }
 }
 
-/* Standard input field consistent across themes */
-.nexus-input {
-  background-color: var(--nexus-input-bg);
-  border-color: var(--nexus-input-border);
-  color: var(--nexus-text);
-  caret-color: var(--nexus-glow);
-}
-.nexus-input::placeholder {
-  color: var(--nexus-muted);
-  opacity: 0.9;
-}
-.nexus-input:focus {
-  border-color: var(--nexus-input-focus-border) !important;
-  box-shadow: 0 0 0 1px rgba(0, 212, 170, 0.15) !important;
-  outline: none !important;
-}
-.nexus-input:-webkit-autofill,
-.nexus-input:-webkit-autofill:hover,
-.nexus-input:-webkit-autofill:focus {
-  -webkit-text-fill-color: var(--nexus-text);
-  -webkit-box-shadow: 0 0 0 1000px var(--nexus-input-bg) inset;
-  box-shadow: 0 0 0 1000px var(--nexus-input-bg) inset;
+/* ── Nexus Surface Vars (for hardcoded rgba colors in components) ── */
+:root {
+  --nexus-surface-bg: rgba(6, 8, 11, 0.32);
+  --nexus-surface-card: rgba(6, 8, 11, 0.35);
+  --nexus-surface-signal: rgba(6, 8, 11, 0.32);
+  --nexus-surface-empty: rgba(6, 8, 11, 0.32);
+  --nexus-surface-panel-accent: rgba(138, 149, 166, 0.10);
+  --nexus-surface-error: rgba(242, 92, 84, 0.08);
+  --nexus-surface-positive: rgba(0, 212, 170, 0.08);
+  --nexus-surface-cyan: rgba(34, 211, 238, 0.08);
+  --nexus-text-surface-base: 226, 232, 240;
+  --nexus-text-surface-muted: 138, 149, 166;
+  --nexus-border-card: rgba(138, 149, 166, 0.18);
+  --nexus-border-error: rgba(242, 92, 84, 0.28);
+  --nexus-border-positive: rgba(0, 212, 170, 0.22);
+  --nexus-border-cyan: rgba(34, 211, 238, 0.22);
+  --nexus-border-muted: rgba(138, 149, 166, 0.12);
+  --nexus-stars-brightness: 1;
 }
 
-/* Light mode overrides */
+/* ── Light mode overrides ── */
 html.light {
   --nexus-bg: #ffffff;
   --nexus-surface: #f8fafc;
   --nexus-panel: #ffffff;
   --nexus-border: #e2e8f0;
   --nexus-glow: #3b82f6;
-  --nexus-glow-dim: rgba(59, 130, 246, 0.12);
+  --nexus-glow-dim: rgba(59, 130, 246, 0.10);
   --nexus-text: #0f172a;
-  --nexus-muted: #94a3b8;
+  --nexus-muted: #64748b;
   --nexus-accent: #3b82f6;
   --nexus-danger: #ef4444;
   --nexus-success: #22c55e;
-  --nexus-input-bg: #ffffff;
-  --nexus-input-border: #cbd5e1;
-  --nexus-input-focus-border: #3b82f6;
-  --nexus-toggle-shell-bg: rgba(248, 250, 252, 0.8);
+  --nexus-rule-strong: rgba(15, 23, 42, 0.10);
+  --nexus-rule-soft: rgba(15, 23, 42, 0.05);
+  --nexus-card-stroke: rgba(148, 163, 184, 0.30);
+  --nexus-hub-frame: rgba(148, 163, 184, 0.30);
+  --nexus-topology-idle-border: rgba(148, 163, 184, 0.30);
+  --nexus-cot-rule: rgba(148, 163, 184, 0.30);
+
+  --nexus-toggle-shell-bg: #f1f5f9;
   --nexus-toggle-shell-border: #e2e8f0;
   --nexus-toggle-active-bg: rgba(59, 130, 246, 0.12);
   --nexus-toggle-active-fg: #2563eb;
   --nexus-toggle-active-border: rgba(59, 130, 246, 0.35);
-  --nexus-toggle-active-shadow: 0 0 14px rgba(59, 130, 246, 0.12);
+  --nexus-toggle-active-shadow: 0 0 14px rgba(59, 130, 246, 0.14);
   --nexus-toggle-idle-fg: #475569;
   --nexus-toggle-idle-hover-fg: #1e293b;
-  --nexus-toggle-idle-hover-bg: rgba(248, 250, 252, 0.9);
+  --nexus-toggle-idle-hover-bg: #f1f5f9;
+
+  /* Surface vars for hardcoded component colors */
+  --nexus-surface-bg: rgba(248, 250, 252, 0.60);
+  --nexus-surface-card: #f1f5f9;
+  --nexus-surface-signal: #f8fafc;
+  --nexus-surface-empty: #f1f5f9;
+  --nexus-surface-panel-accent: rgba(59, 130, 246, 0.06);
+  --nexus-surface-error: rgba(239, 68, 68, 0.06);
+  --nexus-surface-positive: rgba(34, 197, 94, 0.08);
+  --nexus-surface-cyan: rgba(59, 130, 246, 0.08);
+  --nexus-text-surface-base: 15, 23, 42;
+  --nexus-text-surface-muted: 100, 116, 139;
+  --nexus-border-card: rgba(148, 163, 184, 0.25);
+  --nexus-border-error: rgba(239, 68, 68, 0.25);
+  --nexus-border-positive: rgba(34, 197, 94, 0.30);
+  --nexus-border-cyan: rgba(59, 130, 246, 0.30);
+  --nexus-border-muted: rgba(148, 163, 184, 0.15);
+  --nexus-stars-brightness: 0;
+
+  --nexus-loader-core-bg: rgba(15, 23, 42, 0.06);
+  --nexus-loader-core-border: rgba(15, 23, 42, 0.15);
+  --nexus-loader-text-color: #64748b;
+}
+
+/* Disable Nexus star field overlay in light mode */
+html.light .nexus-star-field {
+  background: var(--nexus-bg);
+}
+
+/* Reduce loader glow/brightness in light mode */
+html.light .nexus-loader-dot {
+  background: rgba(15, 23, 42, 0.60) !important;
+  box-shadow: none !important;
+}
+html.light .nexus-loader-core {
+  border-color: rgba(15, 23, 42, 0.15) !important;
+  background: rgba(248, 250, 252, 0.95) !important;
+  box-shadow: none !important;
+}
+html.light .nexus-loader-core::before,
+html.light .nexus-loader-core::after {
+  background: rgba(15, 23, 42, 0.30) !important;
+}
+html.light .nexus-loader-text {
+  color: #64748b !important;
+}
+html.light .nexus-loader-wrap {
+  background: #ffffff !important;
+}
+
+/* Tone down hub animations in light mode */
+html.light .nexus-hub-wrap {
+  filter: none !important;
+  animation: none !important;
+}
+html.light .nexus-core-star-nucleus {
+  animation: none !important;
+  opacity: 0.5 !important;
+}
+html.light .nexus-ambient-rings {
+  opacity: 0.3 !important;
+}
+html.light .nexus-core-aura {
+  opacity: 0.15 !important;
+}
+html.light .nexus-scan-sweep {
+  opacity: 0 !important;
+}
+
+/* Text legibility overrides */
+html.light .nexus-agent-label {
+  text-shadow: none;
+}
+html.light .nexus-glow-text {
+  text-shadow: 0 0 12px rgba(59, 130, 246, 0.30);
+}
+
+/* Remove the dark grid pattern in light mode */
+html.light .nexus-bg {
+  background-image: none;
+}
+
+/* ── Light mode: convert hardcoded dark rgba text to light equivalents ── */
+/* Dark text on white bg: #0f172a (slate-900) at various opacities */
+html.light [class*="text-\[rgba(226,232,240,"] {
+  color: #0f172a !important;
+}
+html.light [class*="text-\[rgba(138,149,166,"] {
+  color: #64748b !important;
+}
+/* Dark surface panels become light gray */
+html.light [class*="bg-\[rgba(6,8,11,"] {
+  background-color: #f1f5f9 !important;
+}
+/* Dark signal card bg */
+html.light [class*="bg-\[rgba(6,8,11,0.32\]"] {
+  background-color: #f8fafc !important;
+}
+/* Panel overlay backgrounds (opacity on panel color) */
+html.light [class*="bg-\[var(--nexus-panel)\]\/"] {
+  background-color: #ffffff !important;
+}
+/* Error bg */
+html.light [class*="bg-\[rgba(242,92,84,0.08\]"] {
+  background-color: #fef2f2 !important;
+}
+/* Positive bg */
+html.light [class*="bg-\[rgba(0,212,170,0.08\]"] {
+  background-color: #f0fdf4 !important;
+}
+/* Cyan bg */
+html.light [class*="bg-\[rgba(34,211,238,0.08\]"] {
+  background-color: #eff6ff !important;
+}
+/* Muted bg */
+html.light [class*="bg-\[rgba(138,149,166,0.10\]"] {
+  background-color: #f8fafc !important;
+}
+/* Table header bg */
+html.light [class*="bg-\[rgba(6,8,11,0.9\]"] {
+  background-color: #f8fafc !important;
+}
+/* Table border row */
+html.light [class*="border-\[rgba(138,149,166,0.12\]"] {
+  border-color: #e2e8f0 !important;
+}
+/* Card borders */
+html.light [class*="border-\[rgba(138,149,166,0.18\]"] {
+  border-color: #e2e8f0 !important;
+}
+/* Positive border */
+html.light [class*="border-\[rgba(0,212,170,0.22\]"] {
+  border-color: #bbf7d0 !important;
+}
+/* Cyan border */
+html.light [class*="border-\[rgba(34,211,238,0.22\]"] {
+  border-color: #bfdbfe !important;
+}
+/* Error border */
+html.light [class*="border-\[rgba(242,92,84,0.28\]"] {
+  border-color: #fecaca !important;
+}
+/* Teal glow text -> blue glow in light mode */
+html.light .nexus-glow-text {
+  color: #2563eb !important;
+}
+/* Table hover row */
+html.light [class*="hover\:bg-\[rgba(255,255,255,0.02\]"]:hover {
+  background-color: #f1f5f9 !important;
+}
+/* Hover border teal -> blue */
+html.light [class*="hover\:border-\[rgba(0,212,170"]:hover {
+  border-color: #bfdbfe !important;
+}
+/* Hover text white -> dark */
+html.light [class*="hover\:text-white"]:hover {
+  color: #0f172a !important;
+}
+/* Decoration underline teal -> blue */
+html.light [class*="hover\:decoration-\[rgba(0,212,170"]:hover {
+  text-decoration-color: #93c5fd !important;
+}
+/* Decoration underline muted */
+html.light [class*="decoration-\[rgba(138,149,166,0.35\]"] {
+  text-decoration-color: #cbd5e1 !important;
 }
