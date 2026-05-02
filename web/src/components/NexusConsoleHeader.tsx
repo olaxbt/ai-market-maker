@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { NexusHeaderNav } from "@/components/NexusHeaderNav";
 import type { Metadata } from "@/types/nexus-payload";
 
@@ -110,7 +110,7 @@ export function NexusConsoleHeader({
             <h1 className="text-sm font-bold tracking-[0.2em] text-[var(--nexus-glow)] nexus-glow-text">
               {title}
             </h1>
-            <p className="mt-0.5 text-[10px] tracking-wide text-[var(--nexus-muted)]">
+            <p className="mt-0.5 min-h-[1.5rem] text-[10px] leading-snug tracking-wide text-[var(--nexus-muted)]">
               {viewMode === "backtest"
                 ? "Replay saved runs, run new backtests, and inspect per-bar agent traces."
                 : viewMode === "supervisor"
@@ -127,32 +127,34 @@ export function NexusConsoleHeader({
         </div>
 
         <div className="w-full mt-2 border-t border-[var(--nexus-rule-soft)] pt-2 flex flex-wrap items-center justify-start gap-3">
-          <NexusHeaderNav
-            active="nexus"
-            variant="console"
-            viewMode={viewMode}
-            onViewModeChange={onViewModeChange}
-            viewModeTitle={viewModeTitle}
-          />
+          <Suspense fallback={<div className="h-10 w-full max-w-md rounded-lg bg-[var(--nexus-surface)]" />}>
+            <NexusHeaderNav
+              active="nexus"
+              variant="console"
+              viewMode={viewMode}
+              onViewModeChange={onViewModeChange}
+              viewModeTitle={viewModeTitle}
+            />
+          </Suspense>
           <span
             className={`rounded-lg border px-2 py-1 text-[10px] font-mono ${
               wsConnected
-                ? "border-[rgba(0,212,170,0.22)] bg-[rgba(0,212,170,0.08)] text-[rgba(226,232,240,0.92)]"
-                : "border-[rgba(138,149,166,0.22)] bg-[rgba(138,149,166,0.10)] text-[rgba(226,232,240,0.86)]"
+                ? "border-[rgba(0,212,170,0.22)] bg-[rgba(0,212,170,0.08)] text-[var(--nexus-text)]"
+                : "border-[var(--nexus-border)] bg-[var(--nexus-surface)] text-[var(--nexus-muted)]"
             }`}
             title="WebSocket stream connection"
           >
             {wsConnected ? "stream: connected" : "stream: offline"}
           </span>
           <span
-            className="rounded-lg border border-[rgba(138,149,166,0.18)] bg-[rgba(0,0,0,0.15)] px-2 py-1 text-[10px] font-mono text-[var(--nexus-muted)]"
+            className="rounded-lg border border-[var(--nexus-border)] bg-[var(--nexus-surface)] px-2 py-1 text-[10px] font-mono text-[var(--nexus-muted)]"
             title="Last payload update time"
           >
             {loading ? "updating…" : lastUpdateIso ? `last: ${new Date(lastUpdateIso).toLocaleTimeString()}` : "last: —"}
           </span>
           {metadata?.run_id ? (
-            <span className="rounded-lg border border-[rgba(138,149,166,0.18)] bg-[rgba(0,0,0,0.15)] px-2 py-1 text-[10px] font-mono text-[var(--nexus-muted)]">
-              run: <span className="text-[rgba(226,232,240,0.92)]">{metadata.run_id}</span>
+            <span className="rounded-lg border border-[var(--nexus-border)] bg-[var(--nexus-surface)] px-2 py-1 text-[10px] font-mono text-[var(--nexus-muted)]">
+              run: <span className="text-[var(--nexus-text)]">{metadata.run_id}</span>
             </span>
           ) : null}
           <KpiStrip kpis={metadata?.kpis ?? {}} />

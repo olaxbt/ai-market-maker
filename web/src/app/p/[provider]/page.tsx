@@ -109,13 +109,13 @@ export default function PublicProviderPage({ params }: { params: { provider: str
           </div>
           <div className="flex items-center gap-2">
             <Link
-              href={`/leadpage/providers/${encodeURIComponent(provider)}`}
+              href={`/leaderboard/providers/${encodeURIComponent(provider)}`}
               className="rounded-xl border border-[rgba(138,149,166,0.18)] bg-[rgba(6,8,11,0.35)] px-3 py-2 text-[11px] text-[rgba(226,232,240,0.88)] hover:border-[rgba(0,212,170,0.32)] hover:text-white"
             >
               Full profile
             </Link>
             <Link
-              href="/leadpage?focus=signals"
+              href="/leaderboard?focus=signals"
               className="rounded-xl border border-[rgba(138,149,166,0.18)] bg-[rgba(6,8,11,0.35)] px-3 py-2 text-[11px] text-[rgba(226,232,240,0.88)] hover:border-[rgba(0,212,170,0.32)] hover:text-white"
             >
               Feed

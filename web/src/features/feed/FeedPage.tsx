@@ -74,7 +74,7 @@ export function FeedPage() {
           <div className="flex flex-wrap items-center gap-2">
             <div className="inline-flex rounded-xl nexus-segmented-toggle p-1">
               <Link
-                href="/leadpage"
+                href="/leaderboard"
                 className="nexus-segment-btn rounded-lg px-3 py-1.5 text-[11px] transition"
               >
                 Results
@@ -90,7 +90,7 @@ export function FeedPage() {
                     provider: {providerParam}
                   </span>
                   <Link
-                    href="/leadpage?focus=signals"
+                    href="/leaderboard?focus=signals"
                     className="text-[10px] text-[var(--nexus-muted)] underline hover:text-white"
                     title="Clear provider filter"
                   >
@@ -148,7 +148,7 @@ export function FeedPage() {
                     {s.kind}
                   </span>
                   <Link
-                    href={`/leadpage/providers/${encodeURIComponent(s.provider)}`}
+                    href={`/leaderboard/providers/${encodeURIComponent(s.provider)}`}
                     className="text-[11px] text-[rgba(226,232,240,0.9)] hover:text-white"
                   >
                     {s.provider}

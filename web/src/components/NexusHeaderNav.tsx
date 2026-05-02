@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Orbit, Trophy } from "lucide-react";
 
 export type HeaderNavMode = "observe" | "nexus";
@@ -22,7 +22,7 @@ function SecondaryTab({
   onClick?: () => void;
 }) {
   const cls = `relative px-3 py-2 text-[11px] transition ${
-    active ? "text-[rgba(226,232,240,0.98)]" : "text-[rgba(226,232,240,0.78)] hover:text-white"
+    active ? "text-[var(--nexus-text)]" : "text-[var(--nexus-muted)] hover:text-[var(--nexus-text)]"
   } ${
     active
       ? "after:content-[''] after:absolute after:left-2 after:right-2 after:-bottom-[1px] after:h-[3px] after:rounded-full after:bg-[rgba(0,212,170,0.75)]"
@@ -52,9 +52,9 @@ function SecondaryBar({
   label?: string;
 }) {
   return (
-    <div className="w-full rounded-2xl border border-[rgba(138,149,166,0.16)] bg-[rgba(6,8,11,0.22)] px-2 py-1">
+    <div className="w-full rounded-2xl border border-[var(--nexus-card-stroke)] bg-[var(--nexus-surface)]/95 px-2 py-1">
       {label ? (
-        <div className="px-2 pt-1 text-[9px] uppercase tracking-[0.22em] text-[rgba(138,149,166,0.85)]">
+        <div className="px-2 pt-1 text-[9px] uppercase tracking-[0.22em] text-[var(--nexus-muted)]">
           {label}
         </div>
       ) : null}
@@ -82,8 +82,8 @@ function PrimaryTab({
       title={title}
       className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-[11px] font-semibold tracking-wide transition ${
         active
-          ? "border-[rgba(0,212,170,0.35)] bg-[rgba(0,212,170,0.14)] text-[rgba(226,232,240,0.98)]"
-          : "border-[rgba(138,149,166,0.16)] bg-[rgba(6,8,11,0.28)] text-[rgba(226,232,240,0.86)] hover:border-[rgba(0,212,170,0.28)] hover:text-white"
+          ? "border-[color:var(--nexus-toggle-active-border)] bg-[color:var(--nexus-toggle-active-bg)] text-[var(--nexus-text)] shadow-[var(--nexus-toggle-active-shadow)]"
+          : "border-[color:var(--nexus-border)] bg-[var(--nexus-surface)] text-[var(--nexus-muted)] hover:border-[color:var(--nexus-border-positive)] hover:text-[var(--nexus-text)]"
       }`}
     >
       {icon}
@@ -105,10 +105,9 @@ export function NexusHeaderNav({
   viewModeTitle?: string;
 }) {
   const pathname = usePathname() || "/";
-  const leaderboardFocus =
-    typeof window === "undefined" ? "overview" : new URLSearchParams(window.location.search).get("focus") ?? "overview";
-  const consoleView =
-    typeof window === "undefined" ? "" : (new URLSearchParams(window.location.search).get("view") ?? "").trim();
+  const searchParams = useSearchParams();
+  const leaderboardFocus = searchParams.get("focus") === "signals" ? "signals" : "overview";
+  const consoleView = (searchParams.get("view") ?? "").trim();
 
   const isConsoleTopology = pathname === "/console" && !consoleView;
   const isConsoleAgents = pathname === "/console" && consoleView === "grid";
@@ -122,7 +121,7 @@ export function NexusHeaderNav({
     <div className="w-full">
       <div className="flex flex-wrap items-center gap-2">
         <PrimaryTab
-          href="/leadpage"
+          href="/leaderboard"
           active={active === "observe"}
           title="Leaderboard: results + signals"
           icon={<Trophy className="h-4 w-4 opacity-85" />}
@@ -142,15 +141,15 @@ export function NexusHeaderNav({
         {active === "observe" ? (
           <SecondaryBar label="Leaderboard">
             <SecondaryTab
-              href="/leadpage"
+              href="/leaderboard"
               label="Overview"
-              active={(pathname === "/leadpage" || pathname.startsWith("/leadpage/")) && leaderboardFocus !== "signals"}
+              active={(pathname === "/leaderboard" || pathname.startsWith("/leaderboard/")) && leaderboardFocus !== "signals"}
               title="Leaderboard results"
             />
             <SecondaryTab
-              href="/leadpage?focus=signals"
+              href="/leaderboard?focus=signals"
               label="Signals"
-              active={pathname === "/leadpage" && leaderboardFocus === "signals"}
+              active={pathname === "/leaderboard" && leaderboardFocus === "signals"}
               title="Signals feed (inside Leaderboard)"
             />
           </SecondaryBar>

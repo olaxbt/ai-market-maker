@@ -1,10 +1,24 @@
 "use client";
 
 import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from "framer-motion";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { TopologyEdge, TopologyNode } from "@/types/nexus-payload";
 
 /** Rotating 3D-like sphere field + Framer orbital layout for the canonical hub. */
+
+/** Light theme uses a solar / orrery read; dark stays starfield (see globals `html.light` hub vars). */
+function useNexusHubHelioVisual(): boolean {
+  return useSyncExternalStore(
+    (onStoreChange) => {
+      const el = document.documentElement;
+      const obs = new MutationObserver(() => onStoreChange());
+      obs.observe(el, { attributes: true, attributeFilter: ["class"] });
+      return () => obs.disconnect();
+    },
+    () => document.documentElement.classList.contains("light"),
+    () => false,
+  );
+}
 
 type Pt = { x: number; y: number };
 type Dot3D = {
@@ -92,6 +106,19 @@ function orbitPositions(
   });
 }
 
+function readHubRgbTriplet(name: "--nexus-hub-canvas-rgb" | "--nexus-hub-mesh-rgb", fallback: string): string {
+  if (typeof document === "undefined") return fallback;
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+
+function readHubCssNumber(name: string, fallback: number): number {
+  if (typeof document === "undefined") return fallback;
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const n = Number.parseFloat(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function AmbientRingsCanvas({ width, height }: { width: number; height: number }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const size = Math.max(0, Math.min(width, height));
@@ -103,40 +130,53 @@ function AmbientRingsCanvas({ width, height }: { width: number; height: number }
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const dpr = Math.min(2, typeof window !== "undefined" ? window.devicePixelRatio : 1);
-    canvas.width = width * dpr;
-    canvas.height = height * dpr;
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
-    ctx.scale(dpr, dpr);
+    const paint = () => {
+      const rgb = readHubRgbTriplet("--nexus-hub-canvas-rgb", "34, 211, 238");
+      const alphaScale = readHubCssNumber("--nexus-hub-ring-alpha-scale", 1);
+      const strokeAlpha = readHubCssNumber("--nexus-hub-ring-stroke-alpha", 0.12);
+      const dotBoost = readHubCssNumber("--nexus-hub-ring-dot-boost", 0);
+      const strokeW = readHubCssNumber("--nexus-hub-ring-stroke-width", 1);
+      const dpr = Math.min(2, typeof window !== "undefined" ? window.devicePixelRatio : 1);
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(dpr, dpr);
 
-    const cx = width / 2;
-    const cy = height / 2;
-    ctx.clearRect(0, 0, width, height);
+      const cx = width / 2;
+      const cy = height / 2;
+      ctx.clearRect(0, 0, width, height);
 
-    for (let ring = 0; ring < BASE_RADIUS.length; ring++) {
-      const count = DOTS_PER_RING[ring];
-      const rad = rs[ring];
-      for (let i = 0; i < count; i++) {
-        const a = (i / count) * Math.PI * 2;
-        const x = cx + Math.cos(a) * rad;
-        const y = cy + Math.sin(a) * rad;
-        const dot = 1.1 + ring * 0.1;
-        const alpha = 0.42 + ring * 0.03;
-        ctx.beginPath();
-        ctx.arc(x, y, dot, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(34, 211, 238, ${alpha})`;
-        ctx.fill();
+      for (let ring = 0; ring < BASE_RADIUS.length; ring++) {
+        const count = DOTS_PER_RING[ring];
+        const rad = rs[ring];
+        for (let i = 0; i < count; i++) {
+          const a = (i / count) * Math.PI * 2;
+          const x = cx + Math.cos(a) * rad;
+          const y = cy + Math.sin(a) * rad;
+          const dot = 1.1 + ring * 0.1 + dotBoost;
+          const alpha = Math.min(0.92, (0.42 + ring * 0.03) * alphaScale);
+          ctx.beginPath();
+          ctx.arc(x, y, dot, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(${rgb}, ${alpha})`;
+          ctx.fill();
+        }
       }
-    }
 
-    ctx.strokeStyle = "rgba(34, 211, 238, 0.12)";
-    ctx.lineWidth = 1;
-    for (let ring = 0; ring < BASE_RADIUS.length; ring++) {
-      ctx.beginPath();
-      ctx.arc(cx, cy, rs[ring], 0, Math.PI * 2);
-      ctx.stroke();
-    }
+      ctx.strokeStyle = `rgba(${rgb}, ${strokeAlpha})`;
+      ctx.lineWidth = strokeW;
+      for (let ring = 0; ring < BASE_RADIUS.length; ring++) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, rs[ring], 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    };
+
+    paint();
+    const obs = new MutationObserver(paint);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
   }, [width, height, size, rs]);
 
   return (
@@ -205,6 +245,8 @@ function RotatingSphereCanvas({
 
     const draw = (tMs: number) => {
       const t = tMs * 0.001;
+      const rgbStr = readHubRgbTriplet("--nexus-hub-canvas-rgb", "34, 211, 238");
+      const meshRgb = readHubRgbTriplet("--nexus-hub-mesh-rgb", "96, 231, 255");
       ctx.clearRect(0, 0, width, height);
 
       const spinY = t * 0.18;
@@ -289,7 +331,7 @@ function RotatingSphereCanvas({
         const shimmer = 0.5 + 0.5 * Math.sin(t * 1.4 + (ia + ib) * 0.013);
         const alpha =
           Math.max(0.02, 0.16 - dist / (size * 2.7)) * (0.45 + depth * 0.55) * shimmer * burstFade;
-        ctx.strokeStyle = `rgba(96, 231, 255, ${alpha})`;
+        ctx.strokeStyle = `rgba(${meshRgb}, ${alpha})`;
         ctx.lineWidth = 0.48;
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
@@ -306,11 +348,7 @@ function RotatingSphereCanvas({
         const alpha = Math.max(0, glow * pulse * burstFade);
         const r = Math.max(0.5, p.dot.baseSize * (0.65 + p.depth * 1.05));
 
-        const tint = p.dot.bright
-          ? "rgba(205, 225, 255,"
-          : p.depth > 0.66
-            ? "rgba(198, 255, 250,"
-            : "rgba(150, 238, 255,";
+        const tint = `rgba(${rgbStr},`;
 
         // 1) Soft atmospheric halo around the star.
         const haloR = r * (p.dot.bright ? 5.4 : 3.1);
@@ -336,7 +374,7 @@ function RotatingSphereCanvas({
         // 3) Strict 4-point cross flare (no diagonals).
         const spike = p.dot.spike * (p.dot.bright ? 3.4 : 1.2) * (0.65 + p.depth * 1.05);
         const spikeAlpha = alpha * (p.dot.bright ? 0.95 : 0.62);
-        ctx.strokeStyle = `rgba(220, 240, 255, ${spikeAlpha})`;
+        ctx.strokeStyle = `rgba(${rgbStr}, ${spikeAlpha})`;
         ctx.lineWidth = Math.max(0.25, r * (p.dot.bright ? 0.32 : 0.2));
         ctx.beginPath();
         ctx.moveTo(p.x - spike, p.y);
@@ -363,7 +401,16 @@ function clamp01(x: number): number {
   return Math.max(0, Math.min(1, x));
 }
 
-function CentralStar({ energy, variant }: { energy: number; variant: "hub" | "loading" }) {
+function CentralStar({
+  energy,
+  variant,
+  solarHub = false,
+}: {
+  energy: number;
+  variant: "hub" | "loading";
+  /** Light solar theme: stronger rim / glow so the sun reads on white */
+  solarHub?: boolean;
+}) {
   if (variant === "loading") {
     return (
       <div className="relative flex items-center justify-center">
@@ -382,6 +429,11 @@ function CentralStar({ energy, variant }: { energy: number; variant: "hub" | "lo
   const e = clamp01(energy);
   const glow = 0.22 + e * 0.55;
   const pulseDur = 6 - e * 3.2; // energetic = faster
+  const orbitBorderA = solarHub ? 0.34 : 0.14;
+  const outerGlowA = solarHub ? 0.72 + e * 0.26 : 0.55 + e * 0.35;
+  const wireGlowA = solarHub ? 0.16 + e * 0.2 : 0.08 + e * 0.12;
+  const nucleusA = solarHub ? 0.48 : 0.28;
+  const innerRingA = solarHub ? 0.32 : 0.14;
   return (
     <div className="relative flex items-center justify-center">
       <motion.div
@@ -390,7 +442,7 @@ function CentralStar({ energy, variant }: { energy: number; variant: "hub" | "lo
           opacity: [0.28 + e * 0.12, 0.62 + e * 0.2, 0.28 + e * 0.12],
         }}
         transition={{ duration: pulseDur, repeat: Infinity, ease: "easeInOut" }}
-        className="absolute h-32 w-32 rounded-full bg-cyan-500/20 blur-3xl sm:h-40 sm:w-40"
+        className="nexus-hub-bloom absolute h-32 w-32 rounded-full blur-3xl sm:h-40 sm:w-40"
       />
 
       {/* Rotating aura ring */}
@@ -403,28 +455,36 @@ function CentralStar({ energy, variant }: { energy: number; variant: "hub" | "lo
 
       {/* Thin orbital wireframe ring */}
       <motion.div
-        className="absolute z-10 h-44 w-44 rounded-full border border-cyan-200/10 sm:h-52 sm:w-52"
+        className="nexus-hub-orbit-wire absolute z-10 h-44 w-44 rounded-full border border-transparent sm:h-52 sm:w-52"
         animate={{ rotate: -360 }}
         transition={{ duration: 36 - e * 14, repeat: Infinity, ease: "linear" }}
         style={{
-          boxShadow: `0 0 ${24 + e * 22}px rgba(34,211,238,${0.08 + e * 0.12})`,
+          borderColor: `rgba(var(--nexus-hub-glow-rgb), ${orbitBorderA})`,
+          boxShadow: `0 0 ${24 + e * 22}px rgba(var(--nexus-hub-glow-rgb), ${wireGlowA})`,
         }}
         aria-hidden
       />
 
       <div
-        className="relative z-20 h-11 w-11 rounded-full bg-white sm:h-14 sm:w-14"
+        className="nexus-hub-core-disk relative z-20 h-11 w-11 rounded-full sm:h-14 sm:w-14"
         style={{
-          boxShadow: `0 0 50px 20px rgba(34,211,238,${0.55 + e * 0.35})`,
+          background: "var(--nexus-hub-core-fill)",
+          boxShadow: `0 0 50px 20px rgba(var(--nexus-hub-glow-rgb), ${outerGlowA})`,
         }}
       >
         <div
-          className="absolute inset-0 rounded-full bg-cyan-300/30 nexus-core-star-nucleus"
-          style={{ opacity: 0.18 + e * 0.18 }}
+          className="absolute inset-0 rounded-full nexus-core-star-nucleus"
+          style={{
+            opacity: 0.18 + e * 0.18,
+            backgroundColor: `rgba(var(--nexus-hub-glow-rgb), ${nucleusA})`,
+          }}
         />
         <div
-          className="absolute -inset-2 rounded-full border border-cyan-200/10"
-          style={{ boxShadow: `0 0 22px rgba(34,211,238,${glow})` }}
+          className="absolute -inset-2 rounded-full border border-transparent"
+          style={{
+            borderColor: `rgba(var(--nexus-hub-glow-rgb), ${innerRingA})`,
+            boxShadow: `0 0 22px rgba(var(--nexus-hub-glow-rgb), ${solarHub ? glow * 1.15 : glow})`,
+          }}
           aria-hidden
         />
       </div>
@@ -446,15 +506,24 @@ function AgentStar({
   position: Pt;
 }) {
   const dotClass = pipelineActive
-    ? "scale-125 bg-[var(--nexus-glow)] shadow-[0_0_14px_6px_rgba(0,212,170,0.5)]"
+    ? "scale-125 bg-[var(--nexus-glow)]"
     : selected
-      ? "scale-110 bg-[var(--nexus-glow)] shadow-[0_0_0_2px_rgba(0,212,170,0.28),0_0_12px_4px_rgba(0,212,170,0.45)]"
-      : "scale-100 bg-slate-600 shadow-none";
+      ? "scale-110 bg-[var(--nexus-glow)]"
+      : "scale-100 bg-[var(--nexus-agent-star-idle-bg)] shadow-none";
+  const dotGlow =
+    pipelineActive || selected
+      ? pipelineActive
+        ? { boxShadow: "0 0 14px 6px rgba(var(--nexus-agent-shadow-rgb), 0.5)" }
+        : {
+            boxShadow:
+              "0 0 0 2px rgba(var(--nexus-agent-shadow-rgb), 0.28), 0 0 12px 4px rgba(var(--nexus-agent-shadow-rgb), 0.45)",
+          }
+      : undefined;
   const labelClass = pipelineActive
     ? "text-[var(--nexus-glow)]"
     : selected
       ? "text-[var(--nexus-glow)] font-semibold"
-      : "text-slate-500";
+      : "text-[var(--nexus-muted)]";
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -462,7 +531,10 @@ function AgentStar({
       style={{ left: `${position.x}%`, top: `${position.y}%` }}
       className="absolute z-20 flex flex-col items-center gap-2 -translate-x-1/2 -translate-y-1/2"
     >
-      <div className={`h-3 w-3 rounded-full transition-all duration-500 ${dotClass}`} />
+      <div
+        className={`h-3 w-3 rounded-full transition-all duration-500 ${dotClass}`}
+        style={dotGlow}
+      />
       <span
         className={`max-w-[140px] text-center font-mono text-[9px] uppercase tracking-widest ${labelClass}`}
       >
@@ -478,7 +550,7 @@ function StarParticle({ start, end }: { start: Pt; end: Pt }) {
       initial={{ left: `${start.x}%`, top: `${start.y}%`, opacity: 1, scale: 0.5 }}
       animate={{ left: `${end.x}%`, top: `${end.y}%`, opacity: 0, scale: 1.2 }}
       transition={{ duration: 1.5, ease: "easeOut" }}
-      className="pointer-events-none absolute z-10 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white shadow-[0_0_8px_2px_rgba(255,255,255,0.6)]"
+      className="nexus-hub-particle pointer-events-none absolute z-10 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--nexus-glow)] shadow-[0_0_8px_2px_rgba(var(--nexus-hub-glow-rgb),0.45)]"
     />
   );
 }
@@ -508,6 +580,7 @@ export function NexusStarSystem({
   playIntro = true,
   frameless = false,
 }: NexusStarSystemProps) {
+  const helioVisual = useNexusHubHelioVisual();
   const edgeGradId = useId().replace(/:/g, "");
   const containerRef = useRef<HTMLDivElement>(null);
   const prevSignalRef = useRef(0);
@@ -699,8 +772,8 @@ export function NexusStarSystem({
       ref={containerRef}
       className={
         frameless
-          ? "relative h-full w-full overflow-hidden bg-transparent"
-          : "relative h-full min-h-[min(480px,70vh)] w-full overflow-hidden rounded-3xl border border-[color:var(--nexus-hub-frame)] bg-[var(--nexus-bg)] shadow-inner"
+          ? "nexus-star-system relative h-full w-full overflow-hidden bg-transparent"
+          : "nexus-hub-card nexus-star-system relative h-full min-h-[min(480px,70vh)] w-full overflow-hidden rounded-3xl border border-[color:var(--nexus-hub-frame)] bg-[var(--nexus-bg)] shadow-inner"
       }
     >
       {/* Micro-parallax / depth wrapper */}
@@ -714,11 +787,9 @@ export function NexusStarSystem({
           willChange: "transform",
         }}
       >
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_40%,rgba(34,211,238,0.08),transparent_55%)]" />
-        {hubPhase === "done" && (
-          <div className="absolute inset-0 bg-[linear-gradient(rgba(34,211,238,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(34,211,238,0.035)_1px,transparent_1px)] bg-[length:24px_24px]" />
-        )}
-        <div className="absolute inset-0 opacity-[0.12] mix-blend-overlay bg-[radial-gradient(circle_at_20%_30%,rgba(255,255,255,0.15),transparent_50%)]" />
+        <div className="nexus-hub-radial-bed absolute inset-0" />
+        {hubPhase === "done" && <div className="nexus-hub-grid-lines absolute inset-0" />}
+        <div className="nexus-hub-vignette absolute inset-0" />
 
         {box.w > 0 && box.h > 0 && hubPhase !== "done" && (
           <RotatingSphereCanvas
@@ -758,8 +829,8 @@ export function NexusStarSystem({
           >
             <defs>
               <linearGradient id={edgeGradId} x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="rgba(34, 211, 238, 0.25)" />
-                <stop offset="100%" stopColor="rgba(34, 211, 238, 0.08)" />
+                <stop offset="0%" stopColor="var(--nexus-hub-edge-0)" stopOpacity={helioVisual ? 0.28 : 0.32} />
+                <stop offset="100%" stopColor="var(--nexus-hub-edge-1)" stopOpacity={helioVisual ? 0.12 : 0.1} />
               </linearGradient>
             </defs>
             {edges.map((e, i) => {
@@ -783,7 +854,11 @@ export function NexusStarSystem({
         )}
 
         <div className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
-          <CentralStar energy={energy} variant={frameless ? "loading" : "hub"} />
+          <CentralStar
+            energy={energy}
+            variant={frameless ? "loading" : "hub"}
+            solarHub={!frameless && helioVisual}
+          />
         </div>
 
         {hubPhase === "done" &&
@@ -804,10 +879,12 @@ export function NexusStarSystem({
         </AnimatePresence>
 
         {hubPhase === "done" && (
-          <div className="absolute bottom-6 left-6 z-20 font-mono text-[10px] text-cyan-500/50">
+          <div className="nexus-hub-hud absolute bottom-6 left-6 z-20 font-mono text-[10px]">
             SYSTEM_CLOCK: {clock}
             <br />
-            MESH_SYNC: STABLE // ENTROPY: 0.031
+            {helioVisual
+              ? "HELIOSYNC: LOCKED // ORRERY: NOMINAL // EPHEMERIS: 0.031"
+              : "MESH_SYNC: STABLE // ENTROPY: 0.031"}
           </div>
         )}
       </motion.div>

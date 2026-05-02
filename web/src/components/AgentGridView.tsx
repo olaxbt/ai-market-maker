@@ -24,10 +24,10 @@ interface AgentGridViewProps {
 }
 
 const statusBadge: Record<string, string> = {
-  RUNNING: "border-emerald-300/70 text-emerald-100 bg-emerald-500/25",
-  HOT: "border-cyan-200/80 text-cyan-100 bg-cyan-500/28",
-  WARM: "border-amber-200/70 text-amber-100 bg-amber-500/22",
-  STANDBY: "border-slate-500/70 text-slate-200 bg-slate-700/45",
+  RUNNING: "border-emerald-500/40 text-[var(--nexus-success)] bg-emerald-500/18",
+  HOT: "border-[var(--nexus-glow)]/40 text-[var(--nexus-glow)] bg-cyan-500/15",
+  WARM: "border-amber-500/40 text-amber-700 bg-amber-500/18",
+  STANDBY: "border-[var(--nexus-border)] text-[var(--nexus-muted)] bg-[var(--nexus-surface)]",
 };
 
 const runtimeAvatarBorder: Record<string, string> = {
@@ -38,10 +38,10 @@ const runtimeAvatarBorder: Record<string, string> = {
 };
 
 const runtimeNowPill: Record<string, string> = {
-  RUNNING: "bg-emerald-500/12 border-emerald-300/30 text-emerald-100",
-  HOT: "bg-cyan-500/12 border-cyan-200/30 text-cyan-100",
-  WARM: "bg-amber-500/12 border-amber-200/30 text-amber-100",
-  STANDBY: "bg-slate-700/25 border-slate-500/30 text-slate-200",
+  RUNNING: "bg-emerald-500/12 border-emerald-500/35 text-[var(--nexus-success)]",
+  HOT: "bg-cyan-500/12 border-[var(--nexus-glow)]/35 text-[var(--nexus-glow)]",
+  WARM: "bg-amber-500/12 border-amber-500/35 text-amber-700",
+  STANDBY: "bg-[var(--nexus-surface)] border-[var(--nexus-border)] text-[var(--nexus-text)]",
 };
 
 function promptRowFor(
@@ -172,7 +172,7 @@ export function AgentGridView({
                         selected
                           ? "text-[var(--nexus-glow)] nexus-glow-text"
                           : isRunning
-                            ? "text-emerald-200/95"
+                            ? "text-[var(--nexus-success)]"
                             : "text-[var(--nexus-text)]"
                       }`}
                     >
@@ -195,7 +195,7 @@ export function AgentGridView({
                     className={`rounded-md border px-2 py-1 font-mono text-[9px] font-semibold uppercase leading-none tracking-wide ${
                       applies
                         ? "border-[var(--nexus-glow)]/40 bg-[var(--nexus-glow)]/10 text-[var(--nexus-glow)]"
-                        : "border-[var(--nexus-border)] bg-[var(--nexus-surface)]/50 text-slate-200"
+                        : "border-[var(--nexus-border)] bg-[var(--nexus-surface)]/50 text-[var(--nexus-text)]"
                     }`}
                     title={
                       applies
@@ -209,7 +209,7 @@ export function AgentGridView({
                     className={`inline-flex rounded-md p-1 transition-colors ${
                       selected
                         ? "bg-[var(--nexus-glow)]/15 text-[var(--nexus-glow)]"
-                        : "text-slate-500 opacity-80 group-hover:opacity-100 group-hover:text-slate-300"
+                        : "text-[var(--nexus-muted)] opacity-80 group-hover:opacity-100 group-hover:text-[var(--nexus-text)]"
                     }`}
                     aria-hidden
                   >
@@ -247,7 +247,7 @@ export function AgentGridView({
                     <div className="text-[9px] font-semibold uppercase tracking-widest text-[var(--nexus-muted)]">
                       Context
                     </div>
-                    <p className="mt-1 truncate whitespace-nowrap font-mono text-[10px] leading-tight text-slate-300">
+                    <p className="mt-1 truncate whitespace-nowrap font-mono text-[10px] leading-tight text-[var(--nexus-text)]">
                       {n.summary ?? "—"}
                     </p>
                   </div>
@@ -255,7 +255,7 @@ export function AgentGridView({
                     <div className="text-[9px] font-semibold uppercase tracking-widest text-[var(--nexus-muted)]">
                       Next
                     </div>
-                    <p className="mt-1 truncate whitespace-nowrap font-mono text-[10px] leading-tight text-slate-300">
+                    <p className="mt-1 truncate whitespace-nowrap font-mono text-[10px] leading-tight text-[var(--nexus-text)]">
                       {nextHop ? (
                         <>→ {nextHop}</>
                       ) : sink && edges.length > 0 ? (

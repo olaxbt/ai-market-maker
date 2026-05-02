@@ -184,7 +184,7 @@ export function AgentDetailPanel({
             <button
               type="button"
               onClick={onClose}
-              className="shrink-0 rounded border border-[var(--nexus-border)] bg-[var(--nexus-surface)]/80 px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-widest text-slate-200 hover:border-[var(--nexus-glow)]/50"
+              className="shrink-0 rounded border border-[var(--nexus-border)] bg-[var(--nexus-surface)]/80 px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-widest text-[var(--nexus-text)] hover:border-[var(--nexus-glow)]/50"
             >
               Close
             </button>
@@ -296,7 +296,7 @@ export function AgentDetailPanel({
                 <button
                   type="button"
                   onClick={() => setShowAdvanced((v) => !v)}
-                  className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--nexus-border)] bg-[var(--nexus-surface)]/80 px-2.5 font-mono text-[9px] uppercase tracking-wide text-slate-200 transition-colors hover:border-[var(--nexus-glow)]/45"
+                  className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--nexus-border)] bg-[var(--nexus-surface)]/80 px-2.5 font-mono text-[9px] uppercase tracking-wide text-[var(--nexus-text)] transition-colors hover:border-[var(--nexus-glow)]/45"
                 >
                   {showAdvanced ? "Hide" : "Advanced"}
                 </button>
@@ -326,7 +326,7 @@ export function AgentDetailPanel({
                         <button
                           type="button"
                           onClick={resetPromptsFromPayload}
-                          className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--nexus-border)] bg-[var(--nexus-surface)]/90 px-2.5 font-mono text-[9px] uppercase tracking-wide text-slate-200 transition-colors hover:border-[var(--nexus-glow)]/45"
+                          className="inline-flex h-7 items-center gap-1.5 rounded-md border border-[var(--nexus-border)] bg-[var(--nexus-surface)]/90 px-2.5 font-mono text-[9px] uppercase tracking-wide text-[var(--nexus-text)] transition-colors hover:border-[var(--nexus-glow)]/45"
                         >
                           <RotateCcw className="h-3 w-3" aria-hidden />
                           Reset

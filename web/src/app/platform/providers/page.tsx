@@ -16,7 +16,7 @@ function CurlBlock({
 }) {
   const target = useMemo(
     () =>
-      `${baseUrl.replace(/\/$/, "")}/leadpage/providers/${encodeURIComponent(provider)}/results`,
+      `${baseUrl.replace(/\/$/, "")}/leaderboard/providers/${encodeURIComponent(provider)}/results`,
     [baseUrl, provider],
   );
   const body = useMemo(
@@ -258,7 +258,7 @@ export default function ProviderAdmin() {
                         Auto-exec: {autoExecute[p] ? "ON" : "OFF"}
                       </button>
                       <Link
-                        href={`/leadpage/providers/${encodeURIComponent(p)}`}
+                        href={`/leaderboard/providers/${encodeURIComponent(p)}`}
                         className="rounded-xl border border-[rgba(138,149,166,0.18)] bg-[rgba(6,8,11,0.35)] px-3 py-2 text-[11px] text-[rgba(226,232,240,0.88)] hover:border-[rgba(0,212,170,0.32)] hover:text-white"
                       >
                         View

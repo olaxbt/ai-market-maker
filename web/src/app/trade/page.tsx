@@ -59,7 +59,7 @@ export default function TradePage() {
               Open Nexus console
             </Link>
             <Link
-              href="/leadpage"
+              href="/leaderboard"
               className="rounded-xl border border-[rgba(138,149,166,0.18)] bg-[rgba(6,8,11,0.35)] px-3 py-2 text-[11px] text-[rgba(226,232,240,0.88)] hover:border-[rgba(0,212,170,0.32)] hover:text-white"
             >
               Open Leaderboard
@@ -83,13 +83,13 @@ export default function TradePage() {
           <Tile
             title="Results"
             body="Compare performance across local runs and published providers."
-            href="/leadpage"
+            href="/leaderboard"
             cta="Open Results"
           />
           <Tile
             title="Signals"
             body="Read provider strategy notes and ops updates (global or provider-filtered)."
-            href="/leadpage?focus=signals"
+            href="/leaderboard?focus=signals"
             cta="Open Signals"
           />
         </div>
