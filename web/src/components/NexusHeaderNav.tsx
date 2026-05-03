@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Orbit, Trophy } from "lucide-react";
+import { Orbit, Trophy, FlaskConical } from "lucide-react";
 
-export type HeaderNavMode = "observe" | "nexus";
+export type HeaderNavMode = "observe" | "nexus" | "studio";
 
 export type NexusViewMode = "nexus" | "grid" | "backtest" | "supervisor" | "monitor" | "research";
 
@@ -117,9 +117,21 @@ export function NexusHeaderNav({
   const isNexusPaper = pathname === "/paper";
   const isNexusPublishing = pathname === "/platform/providers";
 
+  const isStudioHome = pathname === "/studio";
+  const isStudioStrategies = pathname === "/studio/strategies";
+  const isStudioPaper = pathname === "/studio/paper";
+
   return (
     <div className="w-full">
       <div className="flex flex-wrap items-center gap-2">
+        <PrimaryTab
+          href="/studio"
+          active={active === "studio"}
+          title="Strategy Studio: build, backtest, deploy"
+          icon={<FlaskConical className="h-4 w-4 opacity-85" />}
+          label="Studio"
+        />
+
         <PrimaryTab
           href="/leaderboard"
           active={active === "observe"}
@@ -138,7 +150,9 @@ export function NexusHeaderNav({
       </div>
 
       <div className="mt-2 w-full">
-        {active === "observe" ? (
+        {active === "studio" ? (
+          <StudioSecondaryBar pathname={pathname} />
+        ) : active === "observe" ? (
           <SecondaryBar label="Leaderboard">
             <SecondaryTab
               href="/leaderboard"
@@ -204,6 +218,20 @@ export function NexusHeaderNav({
         ) : null}
       </div>
     </div>
+  );
+}
+
+function StudioSecondaryBar({ pathname }: { pathname: string }) {
+  const isStudioHome = pathname === "/studio";
+  const isStudioStrategies = pathname === "/studio/strategies";
+  const isStudioPaper = pathname === "/studio/paper";
+
+  return (
+    <SecondaryBar label="Studio">
+      <SecondaryTab href="/studio" label="Create" active={isStudioHome} title="Build a new strategy" />
+      <SecondaryTab href="/studio/strategies" label="My Strategies" active={isStudioStrategies} title="Saved strategies" />
+      <SecondaryTab href="/studio/paper" label="Paper Trading" active={isStudioPaper} title="Paper trading history" />
+    </SecondaryBar>
   );
 }
 
