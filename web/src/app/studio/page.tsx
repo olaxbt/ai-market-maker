@@ -131,7 +131,7 @@ export default function StudioPage() {
           </Suspense>
         )}
         {activePanel === "strategies" && (
-          <MyStrategiesPanel onLoad={handleLoadStrategy} />
+          <MyStrategiesPanel onLoad={handleLoadStrategy} onDeployToPaper={(s) => { handleLoadStrategy(s); setActivePanel("paper"); }} />
         )}
         {activePanel === "paper" && <PaperTradingPanel />}
       </div>
@@ -139,7 +139,7 @@ export default function StudioPage() {
   );
 }
 
-function MyStrategiesPanel({ onLoad }: { onLoad: (s: SavedStrategy) => void }) {
+function MyStrategiesPanel({ onLoad, onDeployToPaper }: { onLoad: (s: SavedStrategy) => void; onDeployToPaper?: (s: SavedStrategy) => void }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -233,14 +233,7 @@ function MyStrategiesPanel({ onLoad }: { onLoad: (s: SavedStrategy) => void }) {
                   <Play className="h-3 w-3" />
                 </button>
                 <button
-                  onClick={() => {
-                    onLoad(s);
-                    setTimeout(() => {
-                      // Navigate to paper tab after a short delay
-                      const paperBtn = document.querySelector('[data-panel="paper"]') as HTMLButtonElement;
-                      paperBtn?.click();
-                    }, 100);
-                  }}
+                  onClick={() => onDeployToPaper?.(s)}
                   title="Deploy to paper trading"
                   className="rounded-lg border border-[rgba(99,102,241,0.12)] bg-[rgba(99,102,241,0.06)] p-1.5 text-[rgba(99,102,241,0.7)] hover:bg-[rgba(99,102,241,0.12)]"
                 >
