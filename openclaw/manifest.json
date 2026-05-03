@@ -75,7 +75,7 @@
   ],
   "agents": {
     "topology_node_prefix": "n",
-    "count": 9,
+    "count": 14,
     "persona_glob": "docs/personas/*.md"
   },
   "documentation": [
