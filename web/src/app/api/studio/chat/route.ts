@@ -121,25 +121,28 @@ export async function POST(request: NextRequest) {
 
     messages.push({ role: "user", content: message });
 
-    // Call DeepSeek API via server-side env var
-    const apiKey = process.env.DEEPSEEK_API_KEY || process.env.AIMM_LLM_KEY;
+    // Call LLM via server-side env var (OpenAI-compatible)
+    const apiKey = process.env.OPENAI_API_KEY || process.env.DEEPSEEK_API_KEY || process.env.AIMM_LLM_KEY;
+    const baseUrl = process.env.OPENAI_BASE_URL || "https://api.deepseek.com/v1";
+    const model = process.env.OPENAI_MODEL || "deepseek-chat";
+
     if (!apiKey) {
       // Fallback: basic keyword parsing when no LLM key is available
       return NextResponse.json({
         action: "configure",
         config: parseStrategyKeywords(message),
-        message: "Basic configuration applied. To unlock AI parsing, set DEEPSEEK_API_KEY.",
+        message: "Basic configuration applied. To unlock AI parsing, set OPENAI_API_KEY or DEEPSEEK_API_KEY in your .env.",
       });
     }
 
-    const llmRes = await fetch("https://api.deepseek.com/v1/chat/completions", {
+    const llmRes = await fetch(`${baseUrl.replace(/\/+$/, "")}/chat/completions`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: "deepseek-chat",
+        model,
         messages,
         temperature: 0.1,
         max_tokens: 800,

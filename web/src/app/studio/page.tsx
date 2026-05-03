@@ -1,18 +1,7 @@
 "use client";
 
-import { useState, lazy, Suspense, useCallback, useMemo } from "react";
-import {
-  MessageSquare,
-  Layers,
-  FlaskConical,
-  BarChart3,
-  Play,
-  Save,
-  Trash2,
-  Settings2,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
+import { useState, lazy, Suspense, useMemo } from "react";
+import { FlaskConical, Layers, BarChart3, Save, Trash2 } from "lucide-react";
 
 const StrategyStudio = lazy(() => import("@/features/trade/StrategyStudio"));
 
@@ -26,38 +15,20 @@ const PANELS: { id: StudioPanel; label: string; icon: React.ReactNode }[] = [
 
 export default function StudioPage() {
   const [activePanel, setActivePanel] = useState<StudioPanel>("workspace");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   return (
     <div className="flex h-[calc(100vh-48px)]">
       {/* ── Left Sidebar ── */}
-      <aside
-        className={`flex flex-col border-r border-[rgba(138,149,166,0.10)] bg-[rgba(6,8,11,0.35)] transition-all duration-150 ${
-          sidebarCollapsed ? "w-[48px]" : "w-[200px]"
-        }`}
-      >
-        {/* Collapse toggle */}
-        <button
-          onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-          className="flex items-center gap-2 border-b border-[rgba(138,149,166,0.08)] px-3 py-3 text-[10px] text-[rgba(138,149,166,0.4)] hover:text-white"
-        >
-          {sidebarCollapsed ? (
-            <ChevronRight className="h-3.5 w-3.5" />
-          ) : (
-            <>
-              <ChevronLeft className="h-3.5 w-3.5" />
-              <span>Toolbox</span>
-            </>
-          )}
-        </button>
+      <aside className="flex w-[200px] flex-col border-r border-[rgba(138,149,166,0.10)] bg-[rgba(6,8,11,0.35)]">
+        <div className="flex items-center border-b border-[rgba(138,149,166,0.08)] px-3 py-3 text-[10px] text-[rgba(138,149,166,0.4)]">
+          <span>Toolbox</span>
+        </div>
 
-        {/* Panel nav */}
         <nav className="flex-1 space-y-0.5 px-1.5 py-3">
           {PANELS.map((p) => (
             <button
               key={p.id}
               onClick={() => setActivePanel(p.id)}
-              title={sidebarCollapsed ? p.label : undefined}
               className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-[11px] transition-colors ${
                 activePanel === p.id
                   ? "bg-[rgba(0,212,170,0.10)] text-[rgba(0,212,170,0.9)]"
@@ -65,24 +36,21 @@ export default function StudioPage() {
               }`}
             >
               {p.icon}
-              {!sidebarCollapsed && <span>{p.label}</span>}
+              <span>{p.label}</span>
             </button>
           ))}
         </nav>
 
-        {/* Bottom actions */}
-        {!sidebarCollapsed && (
-          <div className="border-t border-[rgba(138,149,166,0.08)] px-3 py-3 space-y-1.5">
-            <button className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[10px] text-[rgba(138,149,166,0.5)] hover:bg-[rgba(138,149,166,0.06)] hover:text-[rgba(226,232,240,0.7)]">
-              <Save className="h-3 w-3" />
-              Save Draft
-            </button>
-            <button className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[10px] text-[rgba(138,149,166,0.5)] hover:bg-[rgba(138,149,166,0.06)] hover:text-[rgba(226,232,240,0.7)]">
-              <Trash2 className="h-3 w-3" />
-              Reset
-            </button>
-          </div>
-        )}
+        <div className="border-t border-[rgba(138,149,166,0.08)] px-3 py-3 space-y-1.5">
+          <button className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[10px] text-[rgba(138,149,166,0.5)] hover:bg-[rgba(138,149,166,0.06)] hover:text-[rgba(226,232,240,0.7)]">
+            <Save className="h-3 w-3" />
+            Save Draft
+          </button>
+          <button className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[10px] text-[rgba(138,149,166,0.5)] hover:bg-[rgba(138,149,166,0.06)] hover:text-[rgba(226,232,240,0.7)]">
+            <Trash2 className="h-3 w-3" />
+            Reset
+          </button>
+        </div>
       </aside>
 
       {/* ── Main content ── */}
@@ -95,7 +63,7 @@ export default function StudioPage() {
               </div>
             }
           >
-            <StrategyStudio sidebarCollapsed={sidebarCollapsed} />
+            <StrategyStudio />
           </Suspense>
         )}
         {activePanel === "strategies" && <MyStrategiesPanel />}
@@ -105,7 +73,6 @@ export default function StudioPage() {
   );
 }
 
-/* ── My Strategies Panel ── */
 function MyStrategiesPanel() {
   const mockStrategies = useMemo(
     () => [
@@ -148,7 +115,6 @@ function MyStrategiesPanel() {
   );
 }
 
-/* ── Paper Trading Panel ── */
 function PaperTradingPanel() {
   return (
     <div className="flex h-full items-center justify-center">
