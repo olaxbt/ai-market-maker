@@ -223,14 +223,12 @@ export function NexusHeaderNav({
 
 function StudioSecondaryBar({ pathname }: { pathname: string }) {
   const isStudioHome = pathname === "/studio";
-  const isStudioStrategies = pathname === "/studio/strategies";
-  const isStudioPaper = pathname === "/studio/paper";
 
   return (
     <SecondaryBar label="Studio">
-      <SecondaryTab href="/studio" label="Workspace" active={isStudioHome} title="Build a new strategy" />
-      <SecondaryTab href="/studio/strategies" label="Strategies" active={isStudioStrategies} title="Saved strategies" />
-      <SecondaryTab href="/studio/paper" label="Paper Trading" active={isStudioPaper} title="Paper trading history" />
+      <SecondaryTab href="/studio" label="Workspace" active={isStudioHome} title="Strategy workspace" />
+      <SecondaryTab href="/studio?panel=strategies" label="Strategies" active={pathname === "/studio/strategies"} title="Saved strategies" />
+      <SecondaryTab href="/studio?panel=paper" label="Paper Trading" active={pathname === "/studio/paper"} title="Paper trading" />
     </SecondaryBar>
   );
 }
