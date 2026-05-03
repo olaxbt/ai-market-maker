@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, lazy, Suspense, useMemo } from "react";
-import { FlaskConical, Layers, BarChart3, Save, Trash2 } from "lucide-react";
+import React, { useCallback, useState, lazy, Suspense, useMemo, useEffect } from "react";
+import { FlaskConical, Layers, BarChart3, Save, Trash2, Edit2, Play, Check, X } from "lucide-react";
+import { listStrategies, deleteStrategy, renameStrategy } from "@/lib/strategyStorage";
+import type { SavedStrategy } from "@/lib/strategyStorage";
 
 const StrategyStudio = lazy(() => import("@/features/trade/StrategyStudio"));
 
@@ -15,6 +17,12 @@ const PANELS: { id: StudioPanel; label: string; icon: React.ReactNode }[] = [
 
 export default function StudioPage() {
   const [activePanel, setActivePanel] = useState<StudioPanel>("workspace");
+  const [loadedStrategy, setLoadedStrategy] = useState<SavedStrategy | null>(null);
+
+  const handleLoadStrategy = useCallback((s: SavedStrategy) => {
+    setLoadedStrategy(s);
+    setActivePanel("workspace");
+  }, []);
 
   return (
     <div className="flex h-[calc(100vh-48px)]">
@@ -63,51 +71,127 @@ export default function StudioPage() {
               </div>
             }
           >
-            <StrategyStudio />
+            <StrategyStudio initialStrategy={loadedStrategy} key={loadedStrategy?.id ?? "default"} />
           </Suspense>
         )}
-        {activePanel === "strategies" && <MyStrategiesPanel />}
+        {activePanel === "strategies" && (
+          <MyStrategiesPanel onLoad={handleLoadStrategy} />
+        )}
         {activePanel === "paper" && <PaperTradingPanel />}
       </div>
     </div>
   );
 }
 
-function MyStrategiesPanel() {
-  const mockStrategies = useMemo(
-    () => [
-      { id: "s1", name: "BTC Trend Follow", asset: "BTC/USDT", created: "2026-04-28", return: 23.4, trades: 247 },
-      { id: "s2", name: "ETH Mean Reversion", asset: "ETH/USDT", created: "2026-04-25", return: 15.2, trades: 189 },
-      { id: "s3", name: "SOL Momentum", asset: "SOL/USDT", created: "2026-04-20", return: -4.1, trades: 312 },
-    ],
-    [],
-  );
+function MyStrategiesPanel({ onLoad }: { onLoad: (s: SavedStrategy) => void }) {
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  const strategies = useMemo(() => listStrategies(), [refreshKey]);
+
+  const handleDelete = useCallback((id: string) => {
+    deleteStrategy(id);
+    setRefreshKey((k) => k + 1);
+  }, []);
+
+  const handleRename = useCallback((id: string) => {
+    if (renameValue.trim()) renameStrategy(id, renameValue.trim());
+    setRenaming(null);
+    setRefreshKey((k) => k + 1);
+  }, [renameValue]);
+
+  if (strategies.length === 0) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-center">
+          <Layers className="mx-auto h-8 w-8 text-[rgba(138,149,166,0.3)]" />
+          <div className="mt-3 text-[11px] text-[rgba(138,149,166,0.5)]">No saved strategies yet</div>
+          <div className="mt-1 text-[10px] text-[rgba(138,149,166,0.35)]">
+            Run a backtest in Workspace and click &quot;Save Strategy&quot;.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-6">
-      <div className="mb-4 text-[10px] uppercase tracking-[0.16em] text-[rgba(138,149,166,0.5)]">
-        My Strategies
+    <div className="p-6 overflow-y-auto h-full">
+      <div className="mb-4 flex items-center justify-between">
+        <div className="text-[10px] uppercase tracking-[0.16em] text-[rgba(138,149,166,0.5)]">
+          My Strategies ({strategies.length})
+        </div>
+        <button
+          onClick={() => setRefreshKey((k) => k + 1)}
+          className="rounded-lg border border-[rgba(138,149,166,0.12)] px-2 py-1 text-[9px] text-[rgba(138,149,166,0.5)] hover:text-white"
+        >
+          Refresh
+        </button>
       </div>
       <div className="space-y-2">
-        {mockStrategies.map((s) => (
+        {strategies.map((s) => (
           <div
             key={s.id}
             className="flex items-center justify-between rounded-xl border border-[rgba(138,149,166,0.10)] bg-[rgba(6,8,11,0.2)] px-4 py-3"
           >
-            <div>
-              <div className="text-[12px] font-semibold text-[rgba(226,232,240,0.9)]">{s.name}</div>
-              <div className="mt-0.5 text-[10px] text-[rgba(138,149,166,0.5)]">
-                {s.asset} · {s.created} · {s.trades} trades
+            <div className="flex-1 min-w-0">
+              {renaming === s.id ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    autoFocus
+                    className="flex-1 rounded-lg border border-[rgba(0,212,170,0.3)] bg-[rgba(6,8,11,0.4)] px-2 py-1 text-[11px] text-white outline-none"
+                    onKeyDown={(e) => e.key === "Enter" && handleRename(s.id)}
+                  />
+                  <button onClick={() => handleRename(s.id)} className="text-[rgba(0,212,170,0.8)]"><Check className="h-3.5 w-3.5" /></button>
+                  <button onClick={() => setRenaming(null)} className="text-[rgba(138,149,166,0.5)]"><X className="h-3.5 w-3.5" /></button>
+                </div>
+              ) : (
+                <div>
+                  <div className="text-[12px] font-semibold text-[rgba(226,232,240,0.9)]">{s.name}</div>
+                  <div className="mt-0.5 text-[10px] text-[rgba(138,149,166,0.5)] truncate">
+                    {s.config.ticker} · {s.config.agent_ids.length} agents · {new Date(s.updatedAt).toLocaleDateString()}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {renaming !== s.id && (
+              <div className="flex items-center gap-2 shrink-0 ml-3">
+                {s.summary && (
+                  <div className={`text-[11px] font-bold tabular-nums mr-2 ${
+                    (s.summary.total_return_pct ?? 0) >= 0
+                      ? "text-[rgba(0,212,170,0.92)]"
+                      : "text-[rgba(242,92,84,0.95)]"
+                  }`}>
+                    {(s.summary.total_return_pct ?? 0) >= 0 ? "+" : ""}
+                    {s.summary.total_return_pct?.toFixed(1)}%
+                  </div>
+                )}
+                <button
+                  onClick={() => onLoad(s)}
+                  title="Load into workspace"
+                  className="rounded-lg border border-[rgba(0,212,170,0.15)] bg-[rgba(0,212,170,0.08)] p-1.5 text-[rgba(0,212,170,0.8)] hover:bg-[rgba(0,212,170,0.14)]"
+                >
+                  <Play className="h-3 w-3" />
+                </button>
+                <button
+                  onClick={() => { setRenaming(s.id); setRenameValue(s.name); }}
+                  title="Rename"
+                  className="rounded-lg border border-[rgba(138,149,166,0.10)] p-1.5 text-[rgba(138,149,166,0.5)] hover:border-[rgba(138,149,166,0.25)] hover:text-white"
+                >
+                  <Edit2 className="h-3 w-3" />
+                </button>
+                <button
+                  onClick={() => handleDelete(s.id)}
+                  title="Delete"
+                  className="rounded-lg border border-[rgba(138,149,166,0.10)] p-1.5 text-[rgba(138,149,166,0.45)] hover:border-[rgba(242,92,84,0.3)] hover:text-[rgba(242,92,84,0.8)]"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
               </div>
-            </div>
-            <div
-              className={`text-[13px] font-bold tabular-nums ${
-                s.return >= 0 ? "text-[rgba(0,212,170,0.92)]" : "text-[rgba(242,92,84,0.95)]"
-              }`}
-            >
-              {s.return >= 0 ? "+" : ""}
-              {s.return}%
-            </div>
+            )}
           </div>
         ))}
       </div>
