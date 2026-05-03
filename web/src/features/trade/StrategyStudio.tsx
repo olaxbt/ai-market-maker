@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { BacktestRunResult } from "@/types/backtest";
-import { BacktestEquityChart } from "@/components/backtest/BacktestEquityChart";
+import type { BacktestRunResult, TradeRow, EquityPoint } from "@/types/backtest";
+import { BacktestEquityChart } from "@/features/backtest/components/BacktestEquityChart";
 import { BacktestTradesTable } from "@/components/backtest/BacktestTradesTable";
 import { getFlowApiOrigin } from "@/lib/flowApiOrigin";
 
@@ -70,7 +70,7 @@ const TEMPLATES = [
 
 export default function StrategyStudio() {
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: "system", text: "Describe your strategy idea in plain language. I'll configure the agents and run a backtest for you." },
+    { role: "system", text: "Describe your strategy idea in plain language." },
   ]);
   const [chatInput, setChatInput] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -78,6 +78,8 @@ export default function StrategyStudio() {
   const [emotionIndex, setEmotionIndex] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<BacktestRunResult | null>(null);
+  const [equityPoints, setEquityPoints] = useState<EquityPoint[]>([]);
+  const [trades, setTrades] = useState<TradeRow[]>([]);
   const [viewTab, setViewTab] = useState<"metrics" | "trades">("metrics");
   const [error, setError] = useState<string | null>(null);
 
@@ -91,95 +93,17 @@ export default function StrategyStudio() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  /* ── Send chat message to API ── */
-  const handleChatSubmit = useCallback(async () => {
-    const text = chatInput.trim();
-    if (!text || isRunning) return;
-    setChatInput("");
-
-    const userMsg: ChatMessage = { role: "user", text };
-    setMessages((prev) => [...prev, userMsg]);
-
-    // Check for run/reset commands first
-    if (/^(run|backtest|start|execute|go)\b/i.test(text)) {
-      await runBacktest();
-      return;
-    }
-    if (/^(stop|cancel|reset)\b/i.test(text)) {
-      setConfig(DEFAULT_CONFIG);
-      setResult(null);
-      setError(null);
-      setMessages((prev) => [...prev, { role: "system", text: "Reset complete. Describe a new strategy." }]);
-      return;
-    }
-
-    // Call the LLM parsing endpoint
-    try {
-      const res = await fetch("/api/studio/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text,
-          conversation: messages.slice(-10).map((m) => ({ role: m.role, text: m.text })),
-        }),
-      });
-
-      if (!res.ok) throw new Error(`API error: ${res.status}`);
-
-      const data = await res.json();
-
-      if (data.action === "configure" && data.config) {
-        const c = data.config;
-        const newConfig: StrategyConfig = {
-          ticker: c.ticker || config.ticker,
-          agent_ids: c.agent_ids || config.agent_ids,
-          interval_sec: c.interval_sec || config.interval_sec,
-          n_bars: c.n_bars || config.n_bars,
-          fee_bps: c.fee_bps ?? config.fee_bps,
-          initial_cash: c.initial_cash || config.initial_cash,
-          description: text,
-        };
-        setConfig(newConfig);
-
-        const agentList = newConfig.agent_ids
-          .map((id) => `  • ${id} — ${AGENT_NAMES[id] || id}`)
-          .join("\n");
-
-        const reply = c.reasoning
-          ? `**Strategy blueprint**\nPair: \`${newConfig.ticker}\`\nAgents:\n${agentList}\n\n📝 *${c.reasoning}*\n\nSay "run backtest" to execute.`
-          : `**Strategy blueprint**\nPair: \`${newConfig.ticker}\`\nAgents:\n${agentList}\n\nSay "run backtest" to execute.`;
-
-        setMessages((prev) => [...prev, { role: "assistant", text: reply }]);
-      } else if (data.message) {
-        setMessages((prev) => [...prev, { role: "assistant", text: data.message }]);
-      }
-    } catch (err: any) {
-      // Fallback: basic inline parsing
-      const tickerMatch = text.match(/(BTC|ETH|SOL|BNB|XRP|ADA|DOGE|AVAX|DOT|LINK|MATIC|ARB|OP|SUI|APT)/i);
-      const ticker = tickerMatch ? `${tickerMatch[1].toUpperCase()}/USDT` : config.ticker;
-      const isTrend = /trend|follow/i.test(text);
-      const isReversion = /revert|reversal|mean/i.test(text);
-      const agent_ids = isReversion ? ["n6", "n11", "n9"] : isTrend ? ["n4", "n9", "n12"] : config.agent_ids;
-      const newConfig = { ...config, ticker, agent_ids };
-      setConfig(newConfig);
-
-      const agentList = agent_ids.map((id) => `  • ${id} — ${AGENT_NAMES[id] || id}`).join("\n");
-      setMessages((prev) => [...prev, {
-        role: "assistant",
-        text: `**Strategy blueprint** (offline)\nPair: \`${ticker}\`\nAgents:\n${agentList}\n\nSay "run backtest" to execute.`,
-      }]);
-    }
-  }, [chatInput, isRunning, config, messages]);
-
-  /* ── Run backtest ── */
   const runBacktest = useCallback(async () => {
     setIsRunning(true);
     setError(null);
     setResult(null);
+    setEquityPoints([]);
+    setTrades([]);
+    setViewTab("metrics");
 
     setMessages((prev) => [...prev, {
       role: "assistant",
-      text: `Running backtest on ${config.ticker} with ${config.agent_ids.length} agents (${config.n_bars} bars, ${config.interval_sec}s intervals)…`,
+      text: `Running backtest on ${config.ticker} (${config.agent_ids.length} agents, ${config.n_bars} bars)…`,
     }]);
 
     try {
@@ -205,14 +129,42 @@ export default function StrategyStudio() {
 
       const btResult: BacktestRunResult = await res.json();
       setResult(btResult);
-      const s = btResult.summary;
+
+      // Fetch equity curve and trades separately
+      try {
+        const flowOrigin2 = getFlowApiOrigin();
+        const eqRes = await fetch(`${flowOrigin2}/api/backtests/${btResult.run_id}/equity`);
+        if (eqRes.ok) {
+          const eqData = await eqRes.json();
+          setEquityPoints(eqData.points ?? []);
+        }
+      } catch { /* ignore */ }
+
+      try {
+        const flowOrigin2 = getFlowApiOrigin();
+        const trRes = await fetch(`${flowOrigin2}/api/backtests/${btResult.run_id}/trades`);
+        if (trRes.ok) {
+          const trData = await trRes.json();
+          setTrades(trData.trades ?? []);
+        }
+      } catch { /* ignore */ }
+
+      const m = btResult.metrics;
+      const retPct = btResult.evaluation?.total_return_pct
+        ?? (m ? ((m.final_equity / m.initial_cash) - 1) * 100 : 0);
+      const tradeCount = btResult.trade_count ?? btResult.evaluation?.trade_count ?? 0;
+
       setMessages((prev) => [...prev, {
         role: "assistant",
         text:
           `**✅ Backtest complete — ${config.ticker}**\n\n` +
-          `Return: \`${fmtPct(s.total_return_pct)}\`  Sharpe: \`${fmtN(s.sharpe, 2)}\`  DD: \`${fmtPct(s.max_drawdown_pct)}\`\n` +
-          `Trades: \`${s.total_trades}\`  Win Rate: \`${fmtN(s.win_rate, 1)}%\`  PF: \`${fmtN(s.profit_factor, 2)}\`\n\n` +
-          `View full metrics and trade list in the panel below. Ask me to optimize.`,
+          `Return: \`${fmtPct(retPct)}\`  ` +
+          `Sharpe: \`${fmtN(m?.sharpe, 2)}\`  ` +
+          `DD: \`${fmtPct(m?.max_drawdown)}\`\n` +
+          `Trades: \`${tradeCount}\`  ` +
+          `Win Rate: \`${fmtN(m?.win_rate, 1)}%\`  ` +
+          `PF: \`${fmtN(m?.profit_factor, 2)}\`\n\n` +
+          `View full metrics and trade list below.`,
       }]);
     } catch (err: any) {
       setMessages((prev) => [...prev, { role: "assistant", text: `❌ Error: ${err.message}` }]);
@@ -221,6 +173,77 @@ export default function StrategyStudio() {
       setIsRunning(false);
     }
   }, [config]);
+
+  const handleChatSubmit = useCallback(async () => {
+    const text = chatInput.trim();
+    if (!text || isRunning) return;
+    setChatInput("");
+
+    setMessages((prev) => [...prev, { role: "user", text }]);
+
+    if (/^(run|backtest|start|execute|go)\b/i.test(text)) {
+      await runBacktest();
+      return;
+    }
+    if (/^(stop|cancel|reset)\b/i.test(text)) {
+      setConfig(DEFAULT_CONFIG);
+      setResult(null);
+      setEquityPoints([]);
+      setTrades([]);
+      setError(null);
+      setMessages((prev) => [...prev, { role: "system", text: "Reset complete." }]);
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/studio/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: text,
+          conversation: messages.slice(-10).map((m) => ({ role: m.role, text: m.text })),
+        }),
+      });
+
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      const data = await res.json();
+
+      if (data.action === "configure" && data.config) {
+        const c = data.config;
+        const newConfig: StrategyConfig = {
+          ticker: c.ticker || config.ticker,
+          agent_ids: c.agent_ids || config.agent_ids,
+          interval_sec: c.interval_sec || config.interval_sec,
+          n_bars: c.n_bars || config.n_bars,
+          fee_bps: c.fee_bps ?? config.fee_bps,
+          initial_cash: c.initial_cash || config.initial_cash,
+          description: text,
+        };
+        setConfig(newConfig);
+
+        const agentList = newConfig.agent_ids.map((id) => `  • ${id}`).join("\n");
+        const reply = c.reasoning
+          ? `**Strategy blueprint**\nPair: \`${newConfig.ticker}\`\nAgents:\n${agentList}\n\n📝 ${c.reasoning}\n\nSay "run backtest" to execute.`
+          : `**Strategy blueprint**\nPair: \`${newConfig.ticker}\`\nAgents:\n${agentList}\n\nSay "run backtest" to execute.`;
+
+        setMessages((prev) => [...prev, { role: "assistant", text: reply }]);
+      } else if (data.message) {
+        setMessages((prev) => [...prev, { role: "assistant", text: data.message }]);
+      }
+    } catch {
+      const tickerMatch = text.match(/(BTC|ETH|SOL|BNB|XRP|ADA|DOGE|AVAX|DOT|LINK|MATIC|ARB|OP|SUI|APT)/i);
+      const ticker = tickerMatch ? `${tickerMatch[1].toUpperCase()}/USDT` : config.ticker;
+      const isTrend = /trend|follow/i.test(text);
+      const isReversion = /revert|reversal|mean/i.test(text);
+      const agent_ids = isReversion ? ["n6", "n11", "n9"] : isTrend ? ["n4", "n9", "n12"] : config.agent_ids;
+      const newConfig = { ...config, ticker, agent_ids };
+      setConfig(newConfig);
+      setMessages((prev) => [...prev, {
+        role: "assistant",
+        text: `**Strategy blueprint** (offline)\nPair: \`${ticker}\`\nAgents:\n${agent_ids.map((id) => `  • ${id}`).join("\n")}\n\nSay "run backtest" to execute.`,
+      }]);
+    }
+  }, [chatInput, isRunning, config, messages, runBacktest]);
 
   const toggleAgent = useCallback((id: string) => {
     setConfig((prev) => ({
@@ -234,27 +257,28 @@ export default function StrategyStudio() {
   const loadTemplate = useCallback((t: typeof TEMPLATES[0]) => {
     setConfig(t.config);
     setResult(null);
-    setMessages((prev) => [...prev, { role: "system", text: `Template loaded: **${t.name}** — ${t.desc}` }]);
+    setEquityPoints([]);
+    setTrades([]);
+    setMessages((prev) => [...prev, { role: "system", text: `Template loaded: **${t.name}**` }]);
   }, []);
 
-  const summary = useMemo(() => result?.summary ?? null, [result]);
-  const trades = useMemo(() => result?.trades ?? [], [result]);
+  const metrics = useMemo(() => result?.metrics ?? null, [result]);
+  const totalReturn = useMemo(() => {
+    if (result?.evaluation?.total_return_pct) return result.evaluation.total_return_pct;
+    if (metrics) return ((metrics.final_equity / metrics.initial_cash) - 1) * 100;
+    return null;
+  }, [result, metrics]);
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex flex-1 gap-0 overflow-hidden">
-        {/* ── Left: Chat panel ── */}
+        {/* Left: Chat */}
         <div className="flex w-[360px] min-w-[300px] flex-col border-r border-[rgba(138,149,166,0.12)]">
           <div className="flex items-center justify-between border-b border-[rgba(138,149,166,0.12)] px-4 py-2">
             <span className="text-[11px] font-semibold tracking-[0.12em] text-[rgba(226,232,240,0.75)]">CHAT</span>
-            <button
-              onClick={() => { setMessages([{ role: "system", text: "Describe your strategy idea in plain language." }]); setResult(null); setError(null); }}
-              className="rounded-lg border border-[rgba(138,149,166,0.15)] px-2 py-1 text-[10px] text-[rgba(226,232,240,0.55)] hover:border-[rgba(0,212,170,0.3)] hover:text-white"
-            >
-              Clear
-            </button>
+            <button onClick={() => { setMessages([{ role: "system", text: "Describe your strategy idea in plain language." }]); setResult(null); setEquityPoints([]); setTrades([]); setError(null); }}
+              className="rounded-lg border border-[rgba(138,149,166,0.15)] px-2 py-1 text-[10px] text-[rgba(226,232,240,0.55)] hover:border-[rgba(0,212,170,0.3)] hover:text-white">Clear</button>
           </div>
-
           <div className="flex-1 overflow-y-auto p-3 space-y-2">
             {messages.map((msg, i) => (
               <div key={i} className={`rounded-xl px-3 py-2 text-[11px] leading-relaxed ${
@@ -275,32 +299,21 @@ export default function StrategyStudio() {
             )}
             <div ref={chatEndRef} />
           </div>
-
           <div className="border-t border-[rgba(138,149,166,0.12)] p-3">
             <div className="flex gap-2">
-              <input
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
+              <input value={chatInput} onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleChatSubmit()}
-                placeholder="Describe your strategy…"
-                disabled={isRunning}
-                className="flex-1 rounded-xl border border-[rgba(138,149,166,0.18)] bg-[rgba(6,8,11,0.45)] px-3 py-2 text-[12px] text-white placeholder-[rgba(226,232,240,0.3)] outline-none focus:border-[rgba(0,212,170,0.35)]"
-              />
-              <button
-                onClick={handleChatSubmit}
-                disabled={isRunning || !chatInput.trim()}
-                className="rounded-xl bg-[rgba(0,212,170,0.15)] px-3 py-2 text-[11px] font-semibold text-[rgba(0,215,170,0.95)] disabled:opacity-30 hover:bg-[rgba(0,212,170,0.22)]"
-              >
-                Send
-              </button>
+                placeholder="Describe your strategy…" disabled={isRunning}
+                className="flex-1 rounded-xl border border-[rgba(138,149,166,0.18)] bg-[rgba(6,8,11,0.45)] px-3 py-2 text-[12px] text-white placeholder-[rgba(226,232,240,0.3)] outline-none focus:border-[rgba(0,212,170,0.35)]" />
+              <button onClick={handleChatSubmit} disabled={isRunning || !chatInput.trim()}
+                className="rounded-xl bg-[rgba(0,212,170,0.15)] px-3 py-2 text-[11px] font-semibold text-[rgba(0,215,170,0.95)] disabled:opacity-30 hover:bg-[rgba(0,212,170,0.22)]">Send</button>
             </div>
           </div>
         </div>
 
-        {/* ── Right: Canvas ── */}
+        {/* Right: Canvas */}
         <div className="flex flex-1 flex-col overflow-hidden">
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
-
             {/* Templates */}
             <section>
               <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-[rgba(138,149,166,0.5)]">Templates</div>
@@ -317,9 +330,7 @@ export default function StrategyStudio() {
 
             {/* Agents */}
             <section>
-              <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-[rgba(138,149,166,0.5)]">
-                Agents ({config.agent_ids.length}/14)
-              </div>
+              <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-[rgba(138,149,166,0.5)]">Agents ({config.agent_ids.length}/14)</div>
               <div className="flex flex-wrap gap-1.5">
                 {Object.entries(AGENT_NAMES).map(([id, name]) => {
                   const active = config.agent_ids.includes(id);
@@ -329,9 +340,7 @@ export default function StrategyStudio() {
                         active
                           ? "border border-[rgba(0,212,170,0.25)] bg-[rgba(0,212,170,0.10)] text-[rgba(0,215,170,0.9)]"
                           : "border border-[rgba(138,149,166,0.10)] bg-[rgba(6,8,11,0.2)] text-[rgba(138,149,166,0.6)] hover:border-[rgba(138,149,166,0.25)]"
-                      }`}>
-                      {id}:{name.split(" ")[0]}
-                    </button>
+                      }`}>{id}:{name.split(" ")[0]}</button>
                   );
                 })}
               </div>
@@ -361,46 +370,32 @@ export default function StrategyStudio() {
             </button>
 
             {/* Results */}
-            {result && summary && (
+            {result && metrics && (
               <section className="rounded-2xl border border-[rgba(138,149,166,0.15)] bg-[rgba(6,8,11,0.3)] p-4">
                 <div className="mb-3 flex items-center justify-between">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-[rgba(138,149,166,0.5)]">
-                    Backtest Results — {config.ticker}
-                  </div>
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-[rgba(138,149,166,0.5)]">Backtest Results — {config.ticker}</div>
                   <div className="flex gap-1">
                     <button onClick={() => setViewTab("metrics")}
-                      className={`rounded-lg px-2 py-1 text-[10px] font-medium ${
-                        viewTab === "metrics" ? "bg-[rgba(0,212,170,0.12)] text-[rgba(0,212,170,0.9)]" : "text-[rgba(138,149,166,0.5)] hover:text-white"
-                      }`}>Metrics</button>
+                      className={`rounded-lg px-2 py-1 text-[10px] font-medium ${viewTab === "metrics" ? "bg-[rgba(0,212,170,0.12)] text-[rgba(0,212,170,0.9)]" : "text-[rgba(138,149,166,0.5)] hover:text-white"}`}>Metrics</button>
                     <button onClick={() => setViewTab("trades")}
-                      className={`rounded-lg px-2 py-1 text-[10px] font-medium ${
-                        viewTab === "trades" ? "bg-[rgba(0,212,170,0.12)] text-[rgba(0,212,170,0.9)]" : "text-[rgba(138,149,166,0.5)] hover:text-white"
-                      }`}>Trades ({trades.length})</button>
+                      className={`rounded-lg px-2 py-1 text-[10px] font-medium ${viewTab === "trades" ? "bg-[rgba(0,212,170,0.12)] text-[rgba(0,212,170,0.9)]" : "text-[rgba(138,149,166,0.5)] hover:text-white"}`}>Trades ({trades.length})</button>
                   </div>
                 </div>
 
                 {viewTab === "metrics" ? (
                   <div className="space-y-4">
                     <div className="grid grid-cols-5 gap-2">
-                      <MetricCard label="Return" value={fmtPct(summary.total_return_pct)} color={(summary.total_return_pct ?? 0) >= 0 ? "text-[rgba(0,212,170,0.92)]" : "text-[rgba(242,92,84,0.95)]"} />
-                      <MetricCard label="Sharpe" value={fmtN(summary.sharpe, 2)} color={(summary.sharpe ?? 0) >= 1 ? "text-[rgba(0,212,170,0.92)]" : "text-[rgba(242,92,84,0.95)]"} />
-                      <MetricCard label="Max DD" value={fmtPct(summary.max_drawdown_pct)} color="text-[rgba(242,92,84,0.8)]" />
-                      <MetricCard label="Win Rate" value={`${fmtN(summary.win_rate, 1)}%`} color="text-[rgba(226,232,240,0.88)]" />
-                      <MetricCard label="PF" value={fmtN(summary.profit_factor, 2)} color="text-[rgba(226,232,240,0.88)]" />
+                      <MetricCard label="Return" value={fmtPct(totalReturn)} color={(totalReturn ?? 0) >= 0 ? "text-[rgba(0,212,170,0.92)]" : "text-[rgba(242,92,84,0.95)]"} />
+                      <MetricCard label="Sharpe" value={fmtN(metrics.sharpe, 2)} color={(metrics.sharpe ?? 0) >= 1 ? "text-[rgba(0,212,170,0.92)]" : "text-[rgba(242,92,84,0.95)]"} />
+                      <MetricCard label="Max DD" value={fmtPct(metrics.max_drawdown)} color="text-[rgba(242,92,84,0.8)]" />
+                      <MetricCard label="Win Rate" value={`${fmtN(metrics.win_rate, 1)}%`} color="text-[rgba(226,232,240,0.88)]" />
+                      <MetricCard label="PF" value={fmtN(metrics.profit_factor, 2)} color="text-[rgba(226,232,240,0.88)]" />
                     </div>
-                    {result.equityCurve && result.equityCurve.length > 0 && (
-                      <div className="h-[200px]"><BacktestEquityChart equityCurve={result.equityCurve} buyHoldCurve={result.buyHoldCurve} /></div>
+                    {equityPoints.length > 0 && (
+                      <div className="h-[200px]">
+                        <BacktestEquityChart points={equityPoints} initialCash={config.initial_cash} trades={trades} />
+                      </div>
                     )}
-                    <div className="grid grid-cols-2 gap-3 text-[11px] text-[rgba(226,232,240,0.7)]">
-                      <div className="rounded-xl border border-[rgba(138,149,166,0.06)] bg-[rgba(6,8,11,0.2)] px-3 py-2">
-                        <div className="text-[rgba(138,149,166,0.5)]">Total Trades</div>
-                        <div className="font-bold tabular-nums">{summary.total_trades ?? "—"}</div>
-                      </div>
-                      <div className="rounded-xl border border-[rgba(138,149,166,0.06)] bg-[rgba(6,8,11,0.2)] px-3 py-2">
-                        <div className="text-[rgba(138,149,166,0.5)]">Avg Profit / Loss</div>
-                        <div className="font-bold tabular-nums">{fmtN(summary.avg_profit, 2)} / {fmtN(summary.avg_loss, 2)}</div>
-                      </div>
-                    </div>
                   </div>
                 ) : (
                   <BacktestTradesTable trades={trades} />
@@ -439,7 +434,6 @@ function MetricCard({ label, value, color }: { label: string; value: string; col
   );
 }
 
-/* ── Helpers ── */
 function fmtPct(v: number | null | undefined): string {
   if (v == null) return "—";
   return `${v >= 0 ? "+" : ""}${v.toFixed(2)}%`;
