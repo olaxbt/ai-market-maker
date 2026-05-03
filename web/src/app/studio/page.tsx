@@ -1,12 +1,21 @@
 "use client";
 
-import React, { useCallback, useState, lazy, Suspense, useMemo, useEffect } from "react";
-import { FlaskConical, Layers, BarChart3, Save, Trash2, Edit2, Play, Check, X } from "lucide-react";
-import { listStrategies, deleteStrategy, renameStrategy } from "@/lib/strategyStorage";
+import React, { useCallback, useRef, useState, lazy, Suspense, useMemo } from "react";
+import {
+  FlaskConical, Layers, BarChart3, Save, Trash2, Edit2, Play, Check, X,
+} from "lucide-react";
+import { listStrategies, deleteStrategy, renameStrategy, saveStrategy } from "@/lib/strategyStorage";
 import type { SavedStrategy } from "@/lib/strategyStorage";
 import PaperTradingPanel from "@/features/studio/PaperTradingPanel";
 
 const StrategyStudio = lazy(() => import("@/features/trade/StrategyStudio"));
+
+/* ── Workspace ref handle — StrategyStudio can set this ── */
+export interface WorkspaceHandle {
+  triggerSave: (name: string) => void;
+  triggerReset: () => void;
+  getSessionConfig: () => any;
+}
 
 type StudioPanel = "workspace" | "strategies" | "paper";
 
@@ -19,10 +28,31 @@ const PANELS: { id: StudioPanel; label: string; icon: React.ReactNode }[] = [
 export default function StudioPage() {
   const [activePanel, setActivePanel] = useState<StudioPanel>("workspace");
   const [loadedStrategy, setLoadedStrategy] = useState<SavedStrategy | null>(null);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const workspaceRef = useRef<WorkspaceHandle | null>(null);
 
   const handleLoadStrategy = useCallback((s: SavedStrategy) => {
     setLoadedStrategy(s);
     setActivePanel("workspace");
+  }, []);
+
+  const handleWorkspaceSave = useCallback(() => {
+    const h = workspaceRef.current;
+    if (!h) return;
+    const cfg = h.getSessionConfig();
+    if (!cfg) return;
+    const defaultName = cfg.description
+      ? cfg.description.slice(0, 60)
+      : `${cfg.ticker} – ${cfg.agent_ids.length} agents`;
+    const s = saveStrategy(defaultName, cfg);
+    setSaveMsg(`Saved as "${s.name}"`);
+    setTimeout(() => setSaveMsg(null), 2500);
+  }, []);
+
+  const handleWorkspaceReset = useCallback(() => {
+    const h = workspaceRef.current;
+    if (h) h.triggerReset();
+    setLoadedStrategy(null);
   }, []);
 
   return (
@@ -37,7 +67,7 @@ export default function StudioPage() {
           {PANELS.map((p) => (
             <button
               key={p.id}
-              onClick={() => setActivePanel(p.id)}
+              onClick={() => setActivePanel(p.id)} data-panel={p.id}
               className={`flex w-full items-center gap-2 rounded-lg px-2 py-2 text-[11px] transition-colors ${
                 activePanel === p.id
                   ? "bg-[rgba(0,212,170,0.10)] text-[rgba(0,212,170,0.9)]"
@@ -51,15 +81,30 @@ export default function StudioPage() {
         </nav>
 
         <div className="border-t border-[rgba(138,149,166,0.08)] px-3 py-3 space-y-1.5">
-          <button className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[10px] text-[rgba(138,149,166,0.5)] hover:bg-[rgba(138,149,166,0.06)] hover:text-[rgba(226,232,240,0.7)]">
+          <button
+            onClick={handleWorkspaceSave}
+            disabled={activePanel !== "workspace"}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[10px] text-[rgba(138,149,166,0.5)] hover:bg-[rgba(138,149,166,0.06)] hover:text-[rgba(226,232,240,0.7)] disabled:opacity-30"
+          >
             <Save className="h-3 w-3" />
             Save Draft
           </button>
-          <button className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[10px] text-[rgba(138,149,166,0.5)] hover:bg-[rgba(138,149,166,0.06)] hover:text-[rgba(226,232,240,0.7)]">
+          <button
+            onClick={handleWorkspaceReset}
+            disabled={activePanel !== "workspace"}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-[10px] text-[rgba(138,149,166,0.5)] hover:bg-[rgba(138,149,166,0.06)] hover:text-[rgba(226,232,240,0.7)] disabled:opacity-30"
+          >
             <Trash2 className="h-3 w-3" />
             Reset
           </button>
         </div>
+
+        {/* Toast message inside sidebar */}
+        {saveMsg && (
+          <div className="border-t border-[rgba(0,212,170,0.15)] bg-[rgba(0,212,170,0.08)] px-3 py-2 text-[10px] text-[rgba(0,212,170,0.9)]">
+            {saveMsg}
+          </div>
+        )}
       </aside>
 
       {/* ── Main content ── */}
@@ -72,7 +117,11 @@ export default function StudioPage() {
               </div>
             }
           >
-            <StrategyStudio initialStrategy={loadedStrategy} key={loadedStrategy?.id ?? "default"} />
+            <StrategyStudio
+              initialStrategy={loadedStrategy}
+              key={loadedStrategy?.id ?? "default"}
+              workspaceRef={workspaceRef}
+            />
           </Suspense>
         )}
         {activePanel === "strategies" && (
@@ -178,6 +227,20 @@ function MyStrategiesPanel({ onLoad }: { onLoad: (s: SavedStrategy) => void }) {
                   <Play className="h-3 w-3" />
                 </button>
                 <button
+                  onClick={() => {
+                    onLoad(s);
+                    setTimeout(() => {
+                      // Navigate to paper tab after a short delay
+                      const paperBtn = document.querySelector('[data-panel="paper"]') as HTMLButtonElement;
+                      paperBtn?.click();
+                    }, 100);
+                  }}
+                  title="Deploy to paper trading"
+                  className="rounded-lg border border-[rgba(99,102,241,0.12)] bg-[rgba(99,102,241,0.06)] p-1.5 text-[rgba(99,102,241,0.7)] hover:bg-[rgba(99,102,241,0.12)]"
+                >
+                  <BarChart3 className="h-3 w-3" />
+                </button>
+                <button
                   onClick={() => { setRenaming(s.id); setRenameValue(s.name); }}
                   title="Rename"
                   className="rounded-lg border border-[rgba(138,149,166,0.10)] p-1.5 text-[rgba(138,149,166,0.5)] hover:border-[rgba(138,149,166,0.25)] hover:text-white"
@@ -200,3 +263,4 @@ function MyStrategiesPanel({ onLoad }: { onLoad: (s: SavedStrategy) => void }) {
   );
 }
 
+export type { StudioPanel };
