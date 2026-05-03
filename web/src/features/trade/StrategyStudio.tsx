@@ -5,6 +5,9 @@ import type { BacktestRunResult, TradeRow, EquityPoint } from "@/types/backtest"
 import { BacktestEquityChart } from "@/features/backtest/components/BacktestEquityChart";
 import { BacktestTradesTable } from "@/components/backtest/BacktestTradesTable";
 import { getFlowApiOrigin } from "@/lib/flowApiOrigin";
+import { saveStrategy, deleteStrategy, renameStrategy } from "@/lib/strategyStorage";
+import type { StrategyConfig } from "@/lib/strategyStorage";
+import { Save, Trash2, Check, X } from "lucide-react";
 
 /* ──────────────────────────────────────────────
    Strategy Studio — AI-powered chat + backtest
@@ -30,16 +33,6 @@ const AGENT_NAMES: Record<string, string> = {
 interface ChatMessage {
   role: "user" | "assistant" | "system";
   text: string;
-}
-
-interface StrategyConfig {
-  ticker: string;
-  interval_sec: number;
-  n_bars: number;
-  fee_bps: number;
-  initial_cash: number;
-  agent_ids: string[];
-  description: string;
 }
 
 const DEFAULT_CONFIG: StrategyConfig = {
@@ -68,13 +61,14 @@ const TEMPLATES = [
   { name: "Full 14-Agent", desc: "all agents — max deliberation", config: { ...DEFAULT_CONFIG, agent_ids: Object.keys(AGENT_NAMES).filter(k => k !== "n13") } },
 ];
 
-export default function StrategyStudio() {
+export default function StrategyStudio({ initialStrategy }: { initialStrategy?: any }) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: "system", text: "Describe your strategy idea in plain language." },
   ]);
   const [chatInput, setChatInput] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const [config, setConfig] = useState<StrategyConfig>(DEFAULT_CONFIG);
+  const savedConfig = useMemo(() => initialStrategy ? initialStrategy.config : null, [initialStrategy]);
+  const [config, setConfig] = useState<StrategyConfig>(savedConfig ?? DEFAULT_CONFIG);
   const [emotionIndex, setEmotionIndex] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<BacktestRunResult | null>(null);
@@ -82,6 +76,9 @@ export default function StrategyStudio() {
   const [trades, setTrades] = useState<TradeRow[]>([]);
   const [viewTab, setViewTab] = useState<"metrics" | "trades">("metrics");
   const [error, setError] = useState<string | null>(null);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     if (!isRunning) return;
@@ -262,6 +259,29 @@ export default function StrategyStudio() {
     setMessages((prev) => [...prev, { role: "system", text: `Template loaded: **${t.name}**` }]);
   }, []);
 
+  const handleSave = useCallback(() => {
+    if (saved) return;
+    // Default name: template of the strategy
+    const defaultName = config.description
+      ? config.description.slice(0, 60)
+      : `${config.ticker} - ${config.agent_ids.length} agents`;
+    setSaveName(defaultName);
+    setShowSaveDialog(true);
+  }, [config, saved]);
+
+  const confirmSave = useCallback(() => {
+    const s = saveStrategy(saveName || `Strategy ${Date.now()}`, config, result?.metrics ?? null);
+    setSaved(true);
+    setShowSaveDialog(false);
+    // Brief flash feedback
+    setTimeout(() => setSaved(false), 2000);
+  }, [saveName, config, result]);
+
+  const handleDelete = useCallback((id: string) => {
+    deleteStrategy(id);
+    setMessages((prev) => [...prev, { role: "system", text: "Strategy deleted." }]);
+  }, []);
+
   const metrics = useMemo(() => result?.metrics ?? null, [result]);
   const totalReturn = useMemo(() => {
     if (result?.evaluation?.total_return_pct) return result.evaluation.total_return_pct;
@@ -396,6 +416,20 @@ export default function StrategyStudio() {
                         <BacktestEquityChart points={equityPoints} initialCash={config.initial_cash} trades={trades} />
                       </div>
                     )}
+
+                    {/* Save action */}
+                    <div className="flex gap-2">
+                      <button onClick={handleSave} disabled={saved}
+                        className="flex items-center gap-1.5 rounded-xl border border-[rgba(0,212,170,0.2)] bg-[rgba(0,212,170,0.08)] px-3 py-2 text-[10px] font-medium text-[rgba(0,212,170,0.9)] hover:bg-[rgba(0,212,170,0.14)] disabled:opacity-40">
+                        <Save className="h-3 w-3" />
+                        {saved ? "Saved ✓" : "Save Strategy"}
+                      </button>
+                      <button onClick={() => { setResult(null); setEquityPoints([]); setTrades([]); }}
+                        className="flex items-center gap-1.5 rounded-xl border border-[rgba(138,149,166,0.12)] px-3 py-2 text-[10px] text-[rgba(138,149,166,0.6)] hover:border-[rgba(242,92,84,0.3)] hover:text-[rgba(242,92,84,0.8)]">
+                        <Trash2 className="h-3 w-3" />
+                        Clear
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <BacktestTradesTable trades={trades} />
