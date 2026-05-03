@@ -7,6 +7,7 @@ import { BacktestTradesTable } from "@/components/backtest/BacktestTradesTable";
 import { getFlowApiOrigin } from "@/lib/flowApiOrigin";
 import { saveStrategy, deleteStrategy, renameStrategy } from "@/lib/strategyStorage";
 import type { StrategyConfig } from "@/lib/strategyStorage";
+import type { WorkspaceHandle } from "@/app/studio/page";
 import { Save, Trash2, Check, X } from "lucide-react";
 
 /* ──────────────────────────────────────────────
@@ -61,7 +62,13 @@ const TEMPLATES = [
   { name: "Full 14-Agent", desc: "all agents — max deliberation", config: { ...DEFAULT_CONFIG, agent_ids: Object.keys(AGENT_NAMES).filter(k => k !== "n13") } },
 ];
 
-export default function StrategyStudio({ initialStrategy }: { initialStrategy?: any }) {
+export default function StrategyStudio({
+  initialStrategy,
+  workspaceRef,
+}: {
+  initialStrategy?: any;
+  workspaceRef?: React.MutableRefObject<WorkspaceHandle | null>;
+}) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: "system", text: "Describe your strategy idea in plain language." },
   ]);
@@ -79,6 +86,32 @@ export default function StrategyStudio({ initialStrategy }: { initialStrategy?: 
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [saveName, setSaveName] = useState("");
   const [saved, setSaved] = useState(false);
+
+  // Expose workspace handle to parent sidebar
+  const sessionConfig = useMemo(() => config, [config]);
+  useEffect(() => {
+    if (workspaceRef) {
+      workspaceRef.current = {
+        triggerSave: (name: string) => {
+          const s = saveStrategy(name || config.description || `${config.ticker}`, config, result?.metrics ?? null);
+          setSaved(true);
+          setTimeout(() => setSaved(false), 2000);
+        },
+        triggerReset: () => {
+          setConfig(DEFAULT_CONFIG);
+          setResult(null);
+          setEquityPoints([]);
+          setTrades([]);
+          setError(null);
+          setMessages([{ role: "system", text: "Describe your strategy idea in plain language." }]);
+        },
+        getSessionConfig: () => sessionConfig,
+      };
+    }
+    return () => {
+      if (workspaceRef) workspaceRef.current = null;
+    };
+  }, [workspaceRef, config, result, sessionConfig]);
 
   useEffect(() => {
     if (!isRunning) return;
