@@ -228,8 +228,8 @@ function StudioSecondaryBar({ pathname }: { pathname: string }) {
 
   return (
     <SecondaryBar label="Studio">
-      <SecondaryTab href="/studio" label="Create" active={isStudioHome} title="Build a new strategy" />
-      <SecondaryTab href="/studio/strategies" label="My Strategies" active={isStudioStrategies} title="Saved strategies" />
+      <SecondaryTab href="/studio" label="Workspace" active={isStudioHome} title="Build a new strategy" />
+      <SecondaryTab href="/studio/strategies" label="Strategies" active={isStudioStrategies} title="Saved strategies" />
       <SecondaryTab href="/studio/paper" label="Paper Trading" active={isStudioPaper} title="Paper trading history" />
     </SecondaryBar>
   );

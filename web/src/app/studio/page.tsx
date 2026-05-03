@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useCallback, useRef, useState, lazy, Suspense, useMemo } from "react";
+import React, { useCallback, useEffect, useRef, useState, lazy, Suspense, useMemo } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   FlaskConical, Layers, BarChart3, Save, Trash2, Edit2, Play, Check, X,
 } from "lucide-react";
@@ -26,7 +27,12 @@ const PANELS: { id: StudioPanel; label: string; icon: React.ReactNode }[] = [
 ];
 
 export default function StudioPage() {
-  const [activePanel, setActivePanel] = useState<StudioPanel>("workspace");
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const urlPanel = searchParams.get("panel") as StudioPanel | null;
+  const pathPanel: StudioPanel | null = pathname === "/studio/strategies" ? "strategies" : pathname === "/studio/paper" ? "paper" : null;
+  const initialPanel: StudioPanel = pathPanel ?? urlPanel ?? "workspace";
+  const [activePanel, setActivePanel] = useState<StudioPanel>(initialPanel);
   const [loadedStrategy, setLoadedStrategy] = useState<SavedStrategy | null>(null);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const workspaceRef = useRef<WorkspaceHandle | null>(null);
