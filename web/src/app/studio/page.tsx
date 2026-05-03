@@ -4,6 +4,7 @@ import React, { useCallback, useState, lazy, Suspense, useMemo, useEffect } from
 import { FlaskConical, Layers, BarChart3, Save, Trash2, Edit2, Play, Check, X } from "lucide-react";
 import { listStrategies, deleteStrategy, renameStrategy } from "@/lib/strategyStorage";
 import type { SavedStrategy } from "@/lib/strategyStorage";
+import PaperTradingPanel from "@/features/studio/PaperTradingPanel";
 
 const StrategyStudio = lazy(() => import("@/features/trade/StrategyStudio"));
 
@@ -199,18 +200,3 @@ function MyStrategiesPanel({ onLoad }: { onLoad: (s: SavedStrategy) => void }) {
   );
 }
 
-function PaperTradingPanel() {
-  return (
-    <div className="flex h-full items-center justify-center">
-      <div className="text-center">
-        <BarChart3 className="mx-auto h-8 w-8 text-[rgba(138,149,166,0.3)]" />
-        <div className="mt-3 text-[11px] text-[rgba(138,149,166,0.5)]">
-          Paper trading forward tests
-        </div>
-        <div className="mt-1 text-[10px] text-[rgba(138,149,166,0.35)]">
-          Deploy a strategy first to start paper trading.
-        </div>
-      </div>
-    </div>
-  );
-}
