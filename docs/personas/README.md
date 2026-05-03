@@ -6,7 +6,7 @@ This directory documents the **14 persona agents** in the OlaXBT multi-agent hed
 
 ```
                     ┌──────────────────────┐
-                    │  Policy Orchestrator  │  (n0) — config/preset
+                    │  Policy Orchestrator │  (n0) — config/preset
                     └──────────┬───────────┘
                                │
           ┌────────────────────┼────────────────────┐
