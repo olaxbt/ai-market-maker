@@ -98,11 +98,10 @@ class BacktestEngine:
 
         c = self._cfg
         run_id = run_id or f"bt_{int(time.time())}"
-        runs_dir = runs_dir or (
-            Path(c.get("runs_dir", ".runs"))
-            if not isinstance(c.get("runs_dir"), Path)
-            else c["runs_dir"]
-        )
+        cfg_rd = c.get("runs_dir")
+        if cfg_rd is None:
+            cfg_rd = ".runs"
+        runs_dir = runs_dir or (cfg_rd if isinstance(cfg_rd, Path) else Path(cfg_rd))
         self._init_logging(run_id, runs_dir)
 
         perp_cfg = {

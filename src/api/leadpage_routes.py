@@ -14,13 +14,24 @@ import hashlib
 import hmac
 import json
 import os
+import secrets
 import time
 from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
+from api.leadpage_validation import validate_result
+from api.wallet_auth import (
+    generate_provider_key,
+    make_challenge,
+    verify_wallet_signature,
+    wallet_to_email,
+)
+from config.leaderboard_submit import load_leaderboard_submit_config, mask_key
+from storage.leadpage_db import LeadpageProvider, LeadpageUser
 from storage.leadpage_db import (
     active_provider_secret_digest as _db_active_secret_digest,
 )
@@ -152,12 +163,11 @@ def _auth_provider_db_or_env_or_401(request: Request, provider: str) -> None:
         raise HTTPException(status_code=401, detail="missing provider key header")
     if _db_url():
         digest = _db_active_secret_digest(provider)
-        if not digest:
-            raise HTTPException(status_code=401, detail=f"unknown provider: {provider}")
-        presented_digest = hashlib.sha256(presented.encode("utf-8")).hexdigest()
-        if not hmac.compare_digest(presented_digest, digest):
-            raise HTTPException(status_code=401, detail="unauthorized")
-        return
+        if digest:
+            presented_digest = hashlib.sha256(presented.encode("utf-8")).hexdigest()
+            if not hmac.compare_digest(presented_digest, digest):
+                raise HTTPException(status_code=401, detail="unauthorized")
+            return
     _auth_provider_or_401(request, provider)
 
 
@@ -397,6 +407,14 @@ async def post_external_result(result: ExternalResult, request: Request) -> dict
             await _auth_signed_or_401(request, provider=result.provider, body_bytes=body)
         else:
             _auth_provider_db_or_env_or_401(request, result.provider)
+
+    # ── Fraud protection: validate result before storing ──
+    val_errors = validate_result(result.model_dump() if hasattr(result, "model_dump") else {})
+    if val_errors:
+        raise HTTPException(
+            status_code=422, detail=f"Result validation failed: {'; '.join(val_errors)}"
+        )
+
     row = {
         "source": "external",
         "ts": int(time.time()),
@@ -477,6 +495,124 @@ async def post_provider_result(
     else:
         _append_jsonl(EXTERNAL_RESULTS_JSONL, row)
     return {"ok": True, "stored": row}
+
+
+@router.post("/leadpage/external_result")
+async def post_external_result_leaderboard_submit(request: Request) -> dict[str, Any]:
+    """Canonical leaderboard ingest (AIMM submitter & OpenAPI `/leadpage/external_result`).
+
+    Accepts summarized backtest/live/paper scan payloads; maps into `LeadpageResult` / JSONL.
+    """
+    body_bytes = await request.body()
+    try:
+        payload = json.loads(body_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="invalid JSON body") from exc
+
+    provider = str(payload.get("provider") or "").strip()
+    ticker = str(payload.get("ticker") or "").strip()
+    if not provider or not ticker:
+        raise HTTPException(status_code=422, detail="provider and ticker are required")
+
+    if _signed_required():
+        await _auth_signed_or_401(request, provider=provider, body_bytes=body_bytes)
+    else:
+        sig, ts, nonce = _presented_signature(request)
+        if sig or ts is not None or nonce:
+            await _auth_signed_or_401(request, provider=provider, body_bytes=body_bytes)
+        else:
+            _auth_provider_db_or_env_or_401(request, provider)
+
+    val_errors = validate_result(payload if isinstance(payload, dict) else {})
+    if val_errors:
+        raise HTTPException(status_code=422, detail={"errors": val_errors})
+
+    summary_raw = payload.get("summary") or {}
+    summary = summary_raw if isinstance(summary_raw, dict) else {}
+
+    result_type_raw = payload.get("result_type", "")
+    result_type_str = (
+        result_type_raw if isinstance(result_type_raw, str) else str(result_type_raw or "")
+    )
+    submitted_at_raw = payload.get("submitted_at")
+    submitted_at = (
+        int(submitted_at_raw) if isinstance(submitted_at_raw, (int, float)) else int(time.time())
+    )
+    run_id = f"{result_type_str}_{submitted_at}_{secrets.token_hex(4)}"
+
+    title = (
+        f"{result_type_str} · {ticker}".strip()
+        if result_type_str
+        else f"external · {ticker}".strip()
+    )
+
+    meta: dict[str, Any] = {"result_type": result_type_str, "summary": summary}
+
+    stored_row: dict[str, Any]
+
+    tr_raw = summary.get("total_return_pct")
+    total_return_pct_f: float | None = float(tr_raw) if isinstance(tr_raw, (int, float)) else None
+    sharpe_v_raw = (
+        summary.get("sharpe_ratio")
+        if summary.get("sharpe_ratio") is not None
+        else summary.get("sharpe")
+    )
+    sharpe_f: float | None = float(sharpe_v_raw) if isinstance(sharpe_v_raw, (int, float)) else None
+    md_raw = (
+        summary.get("max_drawdown_pct")
+        if summary.get("max_drawdown_pct") is not None
+        else summary.get("max_drawdown")
+    )
+    max_dd_f: float | None = float(md_raw) if isinstance(md_raw, (int, float)) else None
+    trades_v = summary.get("total_trades")
+    trade_count = int(trades_v) if isinstance(trades_v, (int, float)) else None
+
+    if _db_url():
+        stored = _db_insert_result(
+            provider=provider,
+            run_id=run_id,
+            schema_version=1,
+            title=title,
+            ticker=ticker,
+            total_return_pct=total_return_pct_f,
+            sharpe=sharpe_f,
+            max_drawdown_pct=max_dd_f,
+            trade_count=trade_count,
+            meta=meta,
+        )
+        stored_row = {
+            "source": "external",
+            "ts": stored.ts,
+            "schema_version": stored.schema_version,
+            "provider": stored.provider,
+            "run_id": stored.run_id,
+            "title": stored.title,
+            "ticker": stored.ticker,
+            "total_return_pct": stored.total_return_pct,
+            "sharpe": stored.sharpe,
+            "max_drawdown_pct": stored.max_drawdown_pct,
+            "trade_count": stored.trade_count,
+            "meta": stored.meta or {},
+        }
+    else:
+        ts = submitted_at if isinstance(submitted_at_raw, (int, float)) else int(time.time())
+        stored_row = {
+            "source": "external",
+            "ts": ts,
+            "schema_version": 1,
+            "provider": provider,
+            "run_id": run_id,
+            "title": title,
+            "ticker": ticker,
+            "total_return_pct": total_return_pct_f,
+            "sharpe": sharpe_f,
+            "max_drawdown_pct": max_dd_f,
+            "trade_count": trade_count,
+            "meta": meta,
+        }
+        _append_jsonl(EXTERNAL_RESULTS_JSONL, stored_row)
+
+    return {"ok": True, "run_id": run_id, "provider": provider}
 
 
 @router.get("/leadpage/providers")
@@ -671,3 +807,137 @@ def delete_external_results(confirm: bool = Query(False)) -> dict[str, Any]:
     except OSError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
     return {"ok": True}
+
+
+# ── Opt-in Config Endpoint ──
+
+
+@router.get("/leadpage/submit-config")
+def get_leaderboard_submit_config() -> dict[str, Any]:
+    """Return the current leaderboard submission configuration.
+
+    This endpoint is informational: it reflects the local env settings so
+    that the UI or operators can see the current submission state.
+    """
+    cfg = load_leaderboard_submit_config()
+    return {
+        "enabled": cfg.enabled,
+        "submit_backtests": cfg.submit_backtests,
+        "submit_scans": cfg.submit_scans,
+        "leaderboard_url": cfg.leaderboard_url,
+        "provider": cfg.provider,
+        "provider_key_hint": mask_key(cfg.provider_key) if cfg.provider_key else "",
+        "local_fallback": cfg.local_fallback,
+    }
+
+
+# ── Wallet Auth Endpoints ──
+
+
+LEADPAGE_NONCE_STORE: dict[str, dict] = {}  # simple in-memory; TODO: persist
+
+
+@router.get("/leadpage/auth/wallet/challenge")
+def wallet_challenge(
+    wallet: str = Query(..., description="Ethereum wallet address"),
+) -> dict[str, Any]:
+    """Generate a challenge message for wallet-based auth.
+
+    The agent signs this message with its wallet private key and sends
+    the signature back to /leadpage/auth/wallet/login.
+    """
+    nonce = secrets.token_hex(12)
+    challenge = make_challenge(wallet, nonce=nonce)
+    LEADPAGE_NONCE_STORE[nonce] = {"wallet": wallet.lower(), "created": int(time.time())}
+    return {"challenge": challenge, "nonce": nonce, "wallet": wallet}
+
+
+@router.post("/leadpage/auth/wallet/login")
+def wallet_login(body: dict[str, str]) -> dict[str, Any]:
+    """Authenticate with a wallet signature.
+
+    Body: { wallet, challenge, signature }
+
+    Verifies the signature, then creates or logs in the wallet user.
+    Returns a session token + provider info.
+    """
+    from storage.leadpage_db import (
+        create_provider,
+        create_provider_secret,
+        create_user,
+        get_session,
+    )
+
+    wallet = body.get("wallet", "").strip()
+    challenge = body.get("challenge", "").strip()
+    signature = body.get("signature", "").strip()
+
+    if not wallet or not challenge or not signature:
+        return {"ok": False, "error": "Missing wallet, challenge, or signature"}
+
+    # Verify
+    if not verify_wallet_signature(wallet=wallet, challenge=challenge, signature=signature):
+        return {"ok": False, "error": "Signature verification failed"}
+
+    email = wallet_to_email(wallet)
+
+    with get_session() as session:
+        user = session.execute(
+            select(LeadpageUser).where(LeadpageUser.email == email)
+        ).scalar_one_or_none()
+
+        if user is None:
+            # Create new user + default provider
+            pwh = hashlib.sha256(wallet.encode()).hexdigest()  # wallet never reveals password
+            user = create_user(email=email, password_hash=pwh)
+            provider_slug = f"wallet-{wallet[-6:].lower()}"
+            create_provider(provider=provider_slug, owner_user_id=user.id)
+            key = generate_provider_key()
+            create_provider_secret(provider=provider_slug, secret=key)
+            provider_key = key
+            is_new = True
+        else:
+            # Existing user — look up their providers
+            providers = (
+                session.execute(
+                    select(LeadpageProvider).where(LeadpageProvider.owner_user_id == user.id)
+                )
+                .scalars()
+                .all()
+            )
+            provider_key = None
+            provider_slug = providers[0].provider if providers else None
+            is_new = False
+
+    session_token = secrets.token_hex(24)
+    return {
+        "ok": True,
+        "token": session_token,
+        "user": {"id": user.id, "wallet": wallet, "email": email, "is_new": is_new},
+        "provider": provider_slug,
+        "provider_key_hint": (provider_key[:8] + "...") if provider_key else None,
+    }
+
+
+@router.get("/leadpage/validate")
+def validate_submission(
+    ticker: str = Query(...),
+    total_return_pct: float = Query(0),
+    sharpe_ratio: float = Query(0, alias="sharpe_ratio"),
+    submit_start_time: str | None = Query(None, alias="start_time"),
+) -> dict[str, Any]:
+    """Client-side validation endpoint. Returns expected issues before submitting.
+
+    Useful for the submitter to check if its data will be accepted.
+    """
+    payload = {
+        "ticker": ticker,
+        "result_type": "backtest",
+        "summary": {
+            "total_return_pct": total_return_pct,
+            "sharpe_ratio": sharpe_ratio,
+            "start_time": submit_start_time,
+        },
+    }
+    errors = validate_result(payload)
+    return {"valid": len(errors) == 0, "errors": errors}
