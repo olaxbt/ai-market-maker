@@ -1,0 +1,61 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: aimm
+      POSTGRES_USER: aimm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aimm}
+    volumes:
+      - lb_pgdata:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aimm -d aimm"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://aimm:aimm@db:5432/aimm}
+      AIMM_DB_AUTOCREATE: "1"
+      LEADPAGE_PROVIDER_KEYS: ${LEADPAGE_PROVIDER_KEYS:-}
+      LEADPAGE_REQUIRE_KEYS: ${LEADPAGE_REQUIRE_KEYS:-1}
+      LEADPAGE_REQUIRE_SIGNED: ${LEADPAGE_REQUIRE_SIGNED:-0}
+      AIMM_CORS_ORIGINS: ${AIMM_CORS_ORIGINS:-*}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${LEADERBOARD_PORT:-8001}:8001"
+    volumes:
+      - lb_runs:/app/.runs
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    environment:
+      FLOW_API_BASE_URL: ${FLOW_API_BASE_URL:-http://api:8001}
+      NODE_ENV: production
+    depends_on:
+      - api
+    ports:
+      - "${LEADERBOARD_WEB_PORT:-3000}:3000"
+    profiles:
+      - full
+      - web
+    restart: unless-stopped
+
+volumes:
+  lb_pgdata:
+  lb_runs:

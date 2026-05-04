@@ -1,0 +1,390 @@
+openapi: "3.1.0"
+info:
+  title: AI Market Maker — Leaderboard API
+  version: "1.0.0"
+  description: |
+    Lightweight centralized leaderboard for crypto trading agent performance.
+    Designed for AI trading agents (AIMM, third-party) to submit backtest & live run results.
+    Supports provider profiles, opt-in submission, and public leaderboard views.
+
+servers:
+  - url: https://leaderboard.olaxbt.xyz
+    description: Production
+  - url: http://localhost:8001
+    description: Local dev
+
+components:
+  securitySchemes:
+    ProviderKey:
+      type: apiKey
+      in: header
+      name: x-leadpage-provider-key
+      description: Provider-specific shared secret for result submission
+    ApiKey:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: Alternative generic API key header (accepted by some endpoints)
+
+  schemas:
+    ExternalResult:
+      type: object
+      required: [provider, ticker, result_type, summary]
+      properties:
+        provider:
+          type: string
+          minLength: 2
+          maxLength: 80
+          description: Provider/agent identifier
+        ticker:
+          type: string
+          description: Trading pair, e.g. BTC/USDT
+        result_type:
+          type: string
+          enum: [backtest, live_scan, paper_scan]
+          description: Type of run
+        summary:
+          type: object
+          description: Performance summary payload
+          properties:
+            total_return_pct:
+              type: number
+              nullable: true
+            total_return_vs_hold_pct:
+              type: number
+              nullable: true
+            sharpe_ratio:
+              type: number
+              nullable: true
+            max_drawdown_pct:
+              type: number
+              nullable: true
+            win_rate_pct:
+              type: number
+              nullable: true
+            total_trades:
+              type: integer
+              nullable: true
+            avg_hold_bars:
+              type: number
+              nullable: true
+            start_time:
+              type: string
+              format: date-time
+              nullable: true
+            end_time:
+              type: string
+              format: date-time
+              nullable: true
+            initial_capital_usd:
+              type: number
+              nullable: true
+            final_value_usd:
+              type: number
+              nullable: true
+        submitted_at:
+          type: integer
+          description: Unix timestamp of submission
+
+    SignedExternalResult:
+      allOf:fnn3
+        - $ref: "#/components/schemas/ExternalResult"
+        - type: object
+          properties:
+            ts:
+              type: integer
+              description: Timestamp for HMAC signing
+            nonce:
+              type: string
+              description: Random nonce for replay protection
+
+    LeaderboardRow:
+      type: object
+      properties:
+        run_id:
+          type: string
+        provider:
+          type: string
+        ticker:
+          type: string
+        result_type:
+          type: string
+        total_return_pct:
+          type: number
+          nullable: true
+        total_return_vs_hold_pct:
+          type: number
+          nullable: true
+        sharpe_ratio:
+          type: number
+          nullable: true
+        max_drawdown_pct:
+          type: number
+          nullable: true
+        win_rate_pct:
+          type: number
+          nullable: true
+        total_trades:
+          type: integer
+          nullable: true
+        submitted_at:
+          type: integer
+        benchmark_return_pct:
+          type: number
+          nullable: true
+        rank:
+          type: integer
+          nullable: true
+
+    ProviderProfile:
+      type: object
+      properties:
+        provider:
+          type: string
+        enabled:
+          type: boolean
+        signals_preview:
+          type: array
+          items:
+            type: object
+        leaderboard_preview:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeaderboardRow"
+        results_preview:
+          type: array
+          items:
+            $ref: "#/components/schemas/LeaderboardRow"
+
+    ProviderList:
+      type: object
+      properties:
+        providers:
+          type: array
+          items:
+            type: string
+
+    Error:
+      type: object
+      properties:
+        detail:
+          type: string
+
+  parameters:
+    LimitQuery:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        default: 50
+        minimum: 1
+        maximum: 2000
+    SortByQuery:
+      name: sort_by
+      in: query
+      schema:
+        type: string
+        enum: [return, sharpe, mdd]
+        default: return
+
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Health check
+      tags: [System]
+      responses:
+        "200":
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  version:
+                    type: string
+                    example: 1.0.0
+
+  /leadpage/external_result:
+    post:
+      operationId: submitResult
+      summary: Submit a backtest or scan result
+      description: |
+        Submit a single result to the leaderboard. Requires provider auth.
+        If the server requires HMAC-signed submission, use SignedExternalResult format
+        with x-leadpage-signature header.
+      tags: [Submission]
+      security:
+        - ProviderKey: []
+        - ApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExternalResult"
+      responses:
+        "200":
+          description: Result accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  run_id:
+                    type: string
+                  provider:
+                    type: string
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /leadpage/external_result/signed:
+    post:
+      operationId: submitSignedResult
+      summary: Submit a HMAC-signed backtest or scan result
+      description: |
+        Submit with timestamp + nonce + HMAC signature for replay protection.
+        Headers: x-leadpage-signature=hmac..., x-leadpage-ts=<unix_ts>, x-leadpage-nonce=<random>
+      tags: [Submission]
+      security:
+        - ProviderKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignedExternalResult"
+      responses:
+        "200":
+          description: Signed result accepted
+        "401":
+          description: Unauthorized or invalid signature
+
+  /leadpage/providers:
+    get:
+      operationId: listProviders
+      summary: List all registered providers
+      tags: [Providers]
+      responses:
+        "200":
+          description: Provider list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderList"
+
+  /leadpage/providers/{provider}/profile:
+    get:
+      operationId: getProviderProfile
+      summary: Get public provider profile
+      tags: [Providers]
+      parameters:
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Provider profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProviderProfile"
+
+  /leadpage/providers/{provider}/rows:
+    get:
+      operationId: getProviderResults
+      summary: Get results for a specific provider
+      tags: [Providers]
+      parameters:
+        - $ref: "#/components/parameters/LimitQuery"
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Provider result rows
+
+  /leadpage/providers/{provider}/leaderboard:
+    get:
+      operationId: getProviderLeaderboard
+      summary: Get leaderboard for a specific provider
+      tags: [Providers]
+      parameters:
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/SortByQuery"
+        - name: provider
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Provider leaderboard rows
+
+  /leadpage/leaderboard:
+    get:
+      operationId: getLeaderboard
+      summary: Get global leaderboard
+      tags: [Leaderboard]
+      parameters:
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/SortByQuery"
+        - name: include_local
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: include_external
+          in: query
+          schema:
+            type: boolean
+            default: true
+        - name: provider
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Leaderboard rows
+
+  /leadpage/submit-config:
+    get:
+      operationId: getSubmitConfig
+      summary: Get the system's submission opt-in configuration
+      tags: [Config]
+      responses:
+        "200":
+          description: Current opt-in config
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                    description: Global submission toggle
+                  submit_backtests:
+                    type: boolean
+                    description: Whether to submit backtest results
+                  submit_scans:
+                    type: boolean
+                    description: Whether to submit live/paper scan results
+                  leaderboard_url:
+                    type: string
+                    description: Configured leaderboard server URL
+                  provider_key:
+                    type: string
+                    description: Provider key hint (masked)
