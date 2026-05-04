@@ -27,6 +27,7 @@ dependencies = [
     "yfinance>=0.2.0",
     "futu-api>=9.0.0",
     "fastapi>=0.117.0",
+    "eth-account>=0.13.0",
     "sqlalchemy>=2.0.0",
     "psycopg[binary]>=3.2.0",
     "passlib[bcrypt]>=1.7.4",
