@@ -83,6 +83,13 @@ from backtest.loop import run_multi_step_backtest
 from backtest.ohlcv_csv_cache import ensure_bars_cached, load_bars_csv_only
 from config.app_settings import load_app_settings
 
+try:
+    from config.leaderboard_submit import load_leaderboard_submit_config
+    from leaderboard_submitter import submit_backtest_result
+except ImportError:  # optional in some stripped-down builds
+    load_leaderboard_submit_config = None  # type: ignore[assignment]
+    submit_backtest_result = None  # type: ignore[assignment]
+
 
 def _infer_interval_sec_from_bars(bars: list[list[float]]) -> int:
     if len(bars) < 2:
@@ -471,6 +478,46 @@ def execute_run_demo(args: argparse.Namespace, parser: argparse.ArgumentParser) 
     if sym_list:
         out["multi_asset"] = True
         out["universe"] = list(sym_list)
+
+    # ── Auto-submit to leaderboard if enabled ──
+    try:
+        if load_leaderboard_submit_config is None or submit_backtest_result is None:
+            raise ImportError("leaderboard submitter not available")
+
+        lb_cfg = load_leaderboard_submit_config()
+        if lb_cfg.enabled and lb_cfg.submit_backtests:
+            summary = {
+                "total_return_pct": out.get("total_return_pct"),
+                "total_return_vs_hold_pct": (
+                    (out.get("total_return_pct") or 0)
+                    - (out.get("benchmark", {}).get("total_return_pct") or 0)
+                    if isinstance(out.get("benchmark"), dict)
+                    else None
+                ),
+                "sharpe_ratio": out.get("metrics", {}).get("sharpe")
+                if isinstance(out.get("metrics"), dict)
+                else None,
+                "max_drawdown_pct": out.get("metrics", {}).get("max_drawdown_pct")
+                if isinstance(out.get("metrics"), dict)
+                else out.get("metrics", {}).get("max_drawdown"),
+                "win_rate_pct": out.get("metrics", {}).get("win_rate_pct")
+                if isinstance(out.get("metrics"), dict)
+                else None,
+                "total_trades": out.get("metrics", {}).get("n_trades")
+                if isinstance(out.get("metrics"), dict)
+                else None,
+                "initial_capital_usd": out.get("initial_cash_usd"),
+                "final_value_usd": out.get("final_equity_usd"),
+            }
+            ticker = (args.ticker or "").strip() if hasattr(args, "ticker") else ""
+            if not ticker and hasattr(args, "ticker_list") and args.ticker_list:
+                ticker = args.ticker_list[0] if isinstance(args.ticker_list, list) else ""
+            submit_backtest_result(ticker=ticker or "multi-asset", summary=summary, config=lb_cfg)
+    except ImportError:
+        pass  # leaderboard submitter not available
+    except Exception:
+        pass
+
     return out
 
 
