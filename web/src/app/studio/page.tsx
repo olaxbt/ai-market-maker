@@ -28,11 +28,16 @@ const PANELS: { id: StudioPanel; label: string; icon: React.ReactNode }[] = [
   { id: "leaderboard", label: "Leaderboard", icon: <Trophy className="h-3.5 w-3.5" /> },
 ];
 
-export default function StudioPage() {
+function StudioPageInner() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const urlPanel = searchParams.get("panel") as StudioPanel | null;
-  const pathPanel: StudioPanel | null = pathname === "/studio/strategies" ? "strategies" : pathname === "/studio/paper" ? "paper" : null;
+  const pathPanel: StudioPanel | null =
+    pathname === "/studio/strategies"
+      ? "strategies"
+      : pathname === "/studio/paper"
+        ? "paper"
+        : null;
   const initialPanel: StudioPanel = pathPanel ?? urlPanel ?? "workspace";
   const [activePanel, setActivePanel] = useState<StudioPanel>(initialPanel);
   const [loadedStrategy, setLoadedStrategy] = useState<SavedStrategy | null>(null);
@@ -150,6 +155,20 @@ export default function StudioPage() {
         {activePanel === "leaderboard" && <LeaderboardPanel />}
       </div>
     </div>
+  );
+}
+
+export default function StudioPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-[calc(100vh-48px)] items-center justify-center text-[11px] text-[rgba(138,149,166,0.5)]">
+          Loading studio…
+        </div>
+      }
+    >
+      <StudioPageInner />
+    </Suspense>
   );
 }
 

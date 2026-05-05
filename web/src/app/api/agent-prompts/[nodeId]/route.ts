@@ -5,9 +5,13 @@ function flowBase(): string {
   return process.env.FLOW_API_BASE_URL ?? "http://127.0.0.1:8001";
 }
 
-export async function GET(_req: Request, { params }: { params: { nodeId: string } }) {
+export async function GET(
+  _req: Request,
+  ctx: { params: Promise<{ nodeId: string }> },
+) {
   const base = flowBase();
-  const nodeId = decodeURIComponent(params.nodeId);
+  const { nodeId: nodeIdRaw } = await ctx.params;
+  const nodeId = decodeURIComponent(nodeIdRaw);
   const res = await fetch(`${base}/agent-prompts/${encodeURIComponent(nodeId)}`, {
     cache: "no-store",
     headers: { ...flowAuthHeaders() },
@@ -19,9 +23,13 @@ export async function GET(_req: Request, { params }: { params: { nodeId: string 
   });
 }
 
-export async function PUT(req: Request, { params }: { params: { nodeId: string } }) {
+export async function PUT(
+  req: Request,
+  ctx: { params: Promise<{ nodeId: string }> },
+) {
   const base = flowBase();
-  const nodeId = decodeURIComponent(params.nodeId);
+  const { nodeId: nodeIdRaw } = await ctx.params;
+  const nodeId = decodeURIComponent(nodeIdRaw);
   const body = await req.text();
   const res = await fetch(`${base}/agent-prompts/${encodeURIComponent(nodeId)}`, {
     method: "PUT",
