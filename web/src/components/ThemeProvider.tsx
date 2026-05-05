@@ -35,7 +35,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       {mounted && (
         <button
           onClick={toggle}
-          className="fixed top-4 right-4 z-[9999] flex h-9 w-9 items-center justify-center rounded-xl border border-[var(--nexus-card-stroke)] bg-[var(--nexus-panel)] text-[var(--nexus-muted)] shadow-md transition-all hover:scale-105 hover:text-[var(--nexus-text)]"
+          className="fixed bottom-4 right-4 z-50 flex h-8 w-8 items-center justify-center rounded-xl border border-[var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/80 text-[var(--nexus-muted)] shadow-md backdrop-blur-sm transition-all hover:scale-105 hover:text-[var(--nexus-text)]"
           title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
           aria-label="Toggle color theme"
         >
