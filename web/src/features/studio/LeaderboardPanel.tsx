@@ -141,12 +141,7 @@ export default function LeaderboardPanel() {
             Signals
           </button>
         </div>
-        <a
-          href="/leaderboard"
-          className="text-[10px] text-[rgba(0,212,170,0.7)] hover:text-[rgba(0,212,170,0.95)] transition-colors"
-        >
-          View full leaderboard →
-        </a>
+        <span className="text-[9px] tracking-[0.2em] text-[rgba(138,149,166,0.35)] uppercase">Ranked runs &amp; signals</span>
       </div>
 
       {/* Content */}
@@ -204,7 +199,7 @@ export default function LeaderboardPanel() {
                         {fmtNum(r.sharpe, 2)}
                       </td>
                       <td className="py-2 pr-2 text-right font-mono tabular-nums text-[rgba(242,92,84,0.7)]">
-                        {fmtNum(r.max_drawdown_pct, 1)}
+                        {fmtNum((r as any).max_drawdown_pct ?? (r as any).max_drawdown ?? 0, 1)}
                       </td>
                       <td className="py-2 text-right font-mono tabular-nums text-[rgba(226,232,240,0.65)]">
                         {fmtInt(r.trade_count)}
