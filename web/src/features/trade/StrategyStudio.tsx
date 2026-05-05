@@ -8,11 +8,47 @@ import { getFlowApiOrigin } from "@/lib/flowApiOrigin";
 import { saveStrategy, deleteStrategy, renameStrategy } from "@/lib/strategyStorage";
 import type { StrategyConfig } from "@/lib/strategyStorage";
 import type { WorkspaceHandle } from "@/app/studio/page";
-import { Save, Trash2, Check, X } from "lucide-react";
+import {
+  Save, Trash2, Check, X,
+  Search, BarChart3, Shield, Activity, Brain, TrendingUp,
+  Layers, Terminal, HelpCircle, MapPin,
+} from "lucide-react";
 
 /* ──────────────────────────────────────────────
    Strategy Studio — AI-powered chat + backtest
    ────────────────────────────────────────────── */
+
+// ── New message types ──
+
+type ChatMsg =
+  | { role: "user" | "system"; text: string }
+  | { role: "assistant"; text: string }
+  | { role: "tool_call"; tool: string; status: "pending" | "running" | "done" | "error"; text: string };
+
+// ── Tool icon registry ──
+
+const TOOL_ICONS: Record<string, { icon: React.ReactNode; label: string }> = {
+  parse_input:     { icon: <Brain className="h-3 w-3" />,            label: "Parse Input" },
+  select_agents:   { icon: <Layers className="h-3 w-3" />,            label: "Agent Selection" },
+  market_data:     { icon: <BarChart3 className="h-3 w-3" />,         label: "Market Data" },
+  analyze_market:  { icon: <TrendingUp className="h-3 w-3" />,       label: "Market Analysis" },
+  backtest:        { icon: <Activity className="h-3 w-3" />,          label: "Backtest" },
+  navigate:        { icon: <MapPin className="h-3 w-3" />,            label: "Navigate" },
+  save:            { icon: <Save className="h-3 w-3" />,              label: "Save" },
+  help:            { icon: <HelpCircle className="h-3 w-3" />,        label: "Help" },
+  risk:            { icon: <Shield className="h-3 w-3" />,            label: "Risk Check" },
+  console:         { icon: <Terminal className="h-3 w-3" />,          label: "Console" },
+};
+const DEFAULT_TOOL_ICON = <Activity className="h-3 w-3" />;
+
+// ── Status dot colors ──
+
+const STATUS_COLORS: Record<string, string> = {
+  pending: "bg-[rgba(138,149,166,0.4)]",
+  running: "bg-[rgba(99,102,241,0.9)]",
+  done:    "bg-[rgba(0,212,170,0.9)]",
+  error:   "bg-[rgba(242,92,84,0.9)]",
+};
 
 const AGENT_NAMES: Record<string, string> = {
   n0: "Policy Orchestrator",
@@ -30,11 +66,6 @@ const AGENT_NAMES: Record<string, string> = {
   n12: "Portfolio Proposal",
   n13: "Agent OI Positioning",
 };
-
-interface ChatMessage {
-  role: "user" | "assistant" | "system";
-  text: string;
-}
 
 const DEFAULT_CONFIG: StrategyConfig = {
   ticker: "BTC/USDT",
@@ -62,14 +93,18 @@ const TEMPLATES = [
   { name: "Full 14-Agent", desc: "all agents — max deliberation", config: { ...DEFAULT_CONFIG, agent_ids: Object.keys(AGENT_NAMES).filter(k => k !== "n13") } },
 ];
 
+const STEP_DELAY_MS = 350;
+
 export default function StrategyStudio({
   initialStrategy,
   workspaceRef,
+  onNavigate,
 }: {
   initialStrategy?: any;
   workspaceRef?: React.MutableRefObject<WorkspaceHandle | null>;
+  onNavigate?: (path: string) => void;
 }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([
+  const [messages, setMessages] = useState<ChatMsg[]>([
     { role: "system", text: "Describe your strategy idea in plain language." },
   ]);
   const [chatInput, setChatInput] = useState("");
@@ -86,6 +121,8 @@ export default function StrategyStudio({
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [saveName, setSaveName] = useState("");
   const [saved, setSaved] = useState(false);
+  const [animating, setAnimating] = useState(false);
+  const abortRef = useRef(false);
 
   // Expose workspace handle to parent sidebar
   const sessionConfig = useMemo(() => config, [config]);
@@ -122,6 +159,109 @@ export default function StrategyStudio({
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // ── Step animator ──
+  // Processes a list of steps sequentially with delays, adding messages
+  const animateSteps = useCallback(async (steps: any[]) => {
+    if (!steps || steps.length === 0) return;
+
+    abortRef.current = false;
+    setAnimating(true);
+
+    for (const step of steps) {
+      if (abortRef.current) break;
+
+      if (step.action === "tool_call") {
+        // Add pending, then flip to running
+        const tool = step.tool || "unknown";
+        setMessages((prev) => [
+          ...prev,
+          { role: "tool_call" as const, tool, status: "pending" as const, text: step.text },
+        ]);
+        // Re-render with pending, then flip to running
+        await sleep(50);
+        if (abortRef.current) break;
+        setMessages((prev) => {
+          const copy = [...prev];
+          const last = copy[copy.length - 1];
+          if (last?.role === "tool_call" && last.status === "pending") {
+            (last as any).status = "running";
+          }
+          return copy;
+        });
+      } else if (step.action === "tool_result") {
+        // Add as done tool_call
+        setMessages((prev) => [
+          ...prev,
+          { role: "tool_call" as const, tool: step.tool, status: "done" as const, text: step.text },
+        ]);
+      } else if (step.action === "update_config" && step.config) {
+        const c = step.config;
+        const newConfig: StrategyConfig = {
+          ticker: c.ticker || config.ticker,
+          agent_ids: c.agent_ids || config.agent_ids,
+          interval_sec: c.interval_sec || config.interval_sec,
+          n_bars: c.n_bars || config.n_bars,
+          fee_bps: c.fee_bps ?? config.fee_bps,
+          initial_cash: c.initial_cash || config.initial_cash,
+          description: c.description || '',
+        };
+        setConfig(newConfig);
+      } else if (step.action === "message") {
+        // Hide tool_call "pending" and transition the last tool_call to "done" if it was still running
+        setMessages((prev) => {
+          const copy = [...prev];
+          const last = copy[copy.length - 1];
+          if (last?.role === "tool_call" && last.status === "running") {
+            (last as any).status = "done";
+          }
+          return copy;
+        });
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant" as const, text: step.text },
+        ]);
+      } else if (step.action === "navigate") {
+        if (onNavigate && step.path) {
+          onNavigate(step.path);
+        }
+      } else if (step.action === "run_backtest") {
+        // Execute backtest after the current animation chain
+        // The tool_call status needs to be set to "done" first
+        setMessages((prev) => {
+          const copy = [...prev];
+          const last = copy[copy.length - 1];
+          if (last?.role === "tool_call" && last.status === "running") {
+            (last as any).status = "done";
+          }
+          return copy;
+        });
+        await sleep(50);
+        if (!abortRef.current) {
+          runBacktest();
+        }
+        return; // runBacktest handles its own messages
+      } else if (step.action === "reset") {
+        setConfig(DEFAULT_CONFIG);
+        setResult(null);
+        setEquityPoints([]);
+        setTrades([]);
+        setError(null);
+        // Don't clear messages here, add a system message
+        setMessages((prev) => [...prev, { role: "system", text: "Workspace reset. Describe a new strategy." }]);
+      }
+
+      await sleep(STEP_DELAY_MS);
+    }
+
+    setAnimating(false);
+  }, [config, onNavigate]);
+
+  // Capture text for update_config reference
+  const textRef = useRef("");
+  useEffect(() => {
+    textRef.current = chatInput;
+  }, [chatInput]);
 
   const runBacktest = useCallback(async () => {
     setIsRunning(true);
@@ -204,13 +344,17 @@ export default function StrategyStudio({
     }
   }, [config]);
 
+  // ── Chat submit (rewritten for agentic steps) ──
+
   const handleChatSubmit = useCallback(async () => {
     const text = chatInput.trim();
-    if (!text || isRunning) return;
+    if (!text || isRunning || animating) return;
     setChatInput("");
 
+    // Add user message
     setMessages((prev) => [...prev, { role: "user", text }]);
 
+    // Short-circuit: explicit run backtest / reset
     if (/^(run|backtest|start|execute|go)\b/i.test(text)) {
       await runBacktest();
       return;
@@ -225,42 +369,28 @@ export default function StrategyStudio({
       return;
     }
 
+    // Call API for step-based response
     try {
       const res = await fetch("/api/studio/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: text,
-          conversation: messages.slice(-10).map((m) => ({ role: m.role, text: m.text })),
+          conversation: messages.slice(-10).map((m) => ({ role: m.role, text: "text" in m ? m.text : "" })),
         }),
       });
 
       if (!res.ok) throw new Error(`API error: ${res.status}`);
+
       const data = await res.json();
 
-      if (data.action === "configure" && data.config) {
-        const c = data.config;
-        const newConfig: StrategyConfig = {
-          ticker: c.ticker || config.ticker,
-          agent_ids: c.agent_ids || config.agent_ids,
-          interval_sec: c.interval_sec || config.interval_sec,
-          n_bars: c.n_bars || config.n_bars,
-          fee_bps: c.fee_bps ?? config.fee_bps,
-          initial_cash: c.initial_cash || config.initial_cash,
-          description: text,
-        };
-        setConfig(newConfig);
-
-        const agentList = newConfig.agent_ids.map((id) => `  • ${id}`).join("\n");
-        const reply = c.reasoning
-          ? `**Strategy blueprint**\nPair: \`${newConfig.ticker}\`\nAgents:\n${agentList}\n\n📝 ${c.reasoning}\n\nSay "run backtest" to execute.`
-          : `**Strategy blueprint**\nPair: \`${newConfig.ticker}\`\nAgents:\n${agentList}\n\nSay "run backtest" to execute.`;
-
-        setMessages((prev) => [...prev, { role: "assistant", text: reply }]);
+      if (data.steps && Array.isArray(data.steps)) {
+        await animateSteps(data.steps);
       } else if (data.message) {
         setMessages((prev) => [...prev, { role: "assistant", text: data.message }]);
       }
     } catch {
+      // Fallback: basic offline parsing
       const tickerMatch = text.match(/(BTC|ETH|SOL|BNB|XRP|ADA|DOGE|AVAX|DOT|LINK|MATIC|ARB|OP|SUI|APT)/i);
       const ticker = tickerMatch ? `${tickerMatch[1].toUpperCase()}/USDT` : config.ticker;
       const isTrend = /trend|follow/i.test(text);
@@ -268,12 +398,18 @@ export default function StrategyStudio({
       const agent_ids = isReversion ? ["n6", "n11", "n9"] : isTrend ? ["n4", "n9", "n12"] : config.agent_ids;
       const newConfig = { ...config, ticker, agent_ids };
       setConfig(newConfig);
-      setMessages((prev) => [...prev, {
-        role: "assistant",
-        text: `**Strategy blueprint** (offline)\nPair: \`${ticker}\`\nAgents:\n${agent_ids.map((id) => `  • ${id}`).join("\n")}\n\nSay "run backtest" to execute.`,
-      }]);
+
+      // Create fallback steps
+      await animateSteps([
+        { action: "tool_call", tool: "parse_input", text: "Parsing strategy description (offline mode)..." },
+        { action: "tool_result", tool: "parse_input", text: `Intent: strategy configuration for ${ticker}` },
+        { action: "tool_call", tool: "select_agents", text: "Selecting agent ensemble..." },
+        { action: "tool_result", tool: "select_agents", text: `Selected: ${agent_ids.join(", ")}` },
+        { action: "update_config", config: newConfig },
+        { action: "message", text: `**Strategy blueprint** (offline)\nPair: \`${ticker}\`\nAgents:\n${agent_ids.map((id: string) => `  • ${id}`).join("\n")}\n\nSay "run backtest" to execute.` },
+      ]);
     }
-  }, [chatInput, isRunning, config, messages, runBacktest]);
+  }, [chatInput, isRunning, animating, config, messages, runBacktest, animateSteps]);
 
   const toggleAgent = useCallback((id: string) => {
     setConfig((prev) => ({
@@ -294,7 +430,6 @@ export default function StrategyStudio({
 
   const handleSave = useCallback(() => {
     if (saved) return;
-    // Default name: template of the strategy
     const defaultName = config.description
       ? config.description.slice(0, 60)
       : `${config.ticker} - ${config.agent_ids.length} agents`;
@@ -306,7 +441,6 @@ export default function StrategyStudio({
     const s = saveStrategy(saveName || `Strategy ${Date.now()}`, config, result?.metrics ?? null);
     setSaved(true);
     setShowSaveDialog(false);
-    // Brief flash feedback
     setTimeout(() => setSaved(false), 2000);
   }, [saveName, config, result]);
 
@@ -334,17 +468,9 @@ export default function StrategyStudio({
           </div>
           <div className="flex-1 overflow-y-auto p-3 space-y-2">
             {messages.map((msg, i) => (
-              <div key={i} className={`rounded-xl px-3 py-2 text-[11px] leading-relaxed ${
-                msg.role === "user"
-                  ? "ml-6 bg-[rgba(0,212,170,0.10)] border border-[rgba(0,212,170,0.18)] text-[rgba(226,232,240,0.9)]"
-                  : msg.role === "system"
-                    ? "bg-[rgba(138,149,166,0.06)] text-[rgba(226,232,240,0.55)] italic"
-                    : "mr-6 bg-[rgba(99,102,241,0.08)] border border-[rgba(99,102,241,0.15)] text-[rgba(226,232,240,0.88)]"
-              }`}>
-                <div className="whitespace-pre-wrap">{msg.text}</div>
-              </div>
+              <ChatMessageBubble key={i} msg={msg} isAnimating={animating && isLastToolRunning(messages, i)} />
             ))}
-            {isRunning && (
+            {isRunning && !animating && (
               <div className="mr-6 rounded-xl bg-[rgba(99,102,241,0.08)] border border-[rgba(99,102,241,0.15)] px-3 py-2 text-[11px] text-[rgba(226,232,240,0.7)]">
                 <span className="inline-block w-4 mr-1">{EMOTIONS[emotionIndex].icon}</span>
                 {EMOTIONS[emotionIndex].label}…
@@ -356,9 +482,10 @@ export default function StrategyStudio({
             <div className="flex gap-2">
               <input value={chatInput} onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleChatSubmit()}
-                placeholder="Describe your strategy…" disabled={isRunning}
-                className="flex-1 rounded-xl border border-[rgba(138,149,166,0.18)] bg-[rgba(6,8,11,0.45)] px-3 py-2 text-[12px] text-white placeholder-[rgba(226,232,240,0.3)] outline-none focus:border-[rgba(0,212,170,0.35)]" />
-              <button onClick={handleChatSubmit} disabled={isRunning || !chatInput.trim()}
+                placeholder={animating ? "Agent working..." : "Describe your strategy…"}
+                disabled={isRunning || animating}
+                className="flex-1 rounded-xl border border-[rgba(138,149,166,0.18)] bg-[rgba(6,8,11,0.45)] px-3 py-2 text-[12px] text-white placeholder-[rgba(226,232,240,0.3)] outline-none focus:border-[rgba(0,212,170,0.35)] disabled:opacity-40" />
+              <button onClick={handleChatSubmit} disabled={isRunning || animating || !chatInput.trim()}
                 className="rounded-xl bg-[rgba(0,212,170,0.15)] px-3 py-2 text-[11px] font-semibold text-[rgba(0,215,170,0.95)] disabled:opacity-30 hover:bg-[rgba(0,212,170,0.22)]">Send</button>
             </div>
           </div>
@@ -412,12 +539,17 @@ export default function StrategyStudio({
             </section>
 
             {/* Run */}
-            <button onClick={handleChatSubmit} disabled={isRunning}
+            <button onClick={handleChatSubmit} disabled={isRunning || animating}
               className="w-full rounded-xl border border-[rgba(0,212,170,0.25)] bg-[rgba(0,212,170,0.10)] py-3 text-[12px] font-semibold text-[rgba(226,232,240,0.95)] hover:bg-[rgba(0,212,170,0.17)] disabled:opacity-40">
               {isRunning ? (
                 <span className="inline-flex items-center gap-2">
                   <span className="h-3 w-3 animate-spin rounded-full border-2 border-[rgba(0,212,170,0.3)] border-t-[rgba(0,212,170,0.9)]" />
                   Running…
+                </span>
+              ) : animating ? (
+                <span className="inline-flex items-center gap-2">
+                  <span className="h-3 w-3 animate-pulse rounded-full bg-[rgba(99,102,241,0.7)]" />
+                  Agent is working…
                 </span>
               ) : "▶ Run Backtest"}
             </button>
@@ -478,6 +610,73 @@ export default function StrategyStudio({
       </div>
     </div>
   );
+}
+
+/* ── ChatMessageBubble component ── */
+
+function ChatMessageBubble({ msg, isAnimating }: { msg: ChatMsg; isAnimating: boolean }) {
+  if (msg.role === "tool_call") {
+    const iconMeta = TOOL_ICONS[msg.tool] || { icon: DEFAULT_TOOL_ICON, label: msg.tool };
+    const statusColor = STATUS_COLORS[msg.status] || STATUS_COLORS.pending;
+    const isRunning_ = msg.status === "running" || (msg.status === "pending" && isAnimating);
+
+    return (
+      <div className={`rounded-xl px-3 py-2 text-[11px] leading-relaxed border ${
+        isRunning_
+          ? "bg-[rgba(99,102,241,0.12)] border-[rgba(99,102,241,0.25)]"
+          : msg.status === "done"
+            ? "bg-[rgba(0,212,170,0.06)] border-[rgba(0,212,170,0.12)] text-[rgba(226,232,240,0.8)]"
+            : "bg-[rgba(138,149,166,0.06)] border-[rgba(138,149,166,0.1)] text-[rgba(226,232,240,0.6)]"
+      }`}>
+        <div className="flex items-center gap-2">
+          <span className="shrink-0">
+            {iconMeta.icon}
+          </span>
+          <span className="text-[10px] font-medium tracking-wide text-[rgba(138,149,166,0.7)] uppercase">
+            {iconMeta.label}
+          </span>
+          <span className="ml-auto shrink-0 flex items-center gap-1">
+            <span className={`inline-block h-2 w-2 rounded-full ${statusColor} ${isRunning_ ? "animate-pulse" : ""}`} />
+            <span className="text-[9px] text-[rgba(138,149,166,0.4)]">
+              {msg.status === "pending" ? "pending" : msg.status === "running" ? "running" : msg.status === "done" ? "done" : "error"}
+            </span>
+          </span>
+        </div>
+        <div className="mt-1 text-[11px] text-[rgba(226,232,240,0.75)] leading-relaxed">
+          {msg.text}
+        </div>
+      </div>
+    );
+  }
+
+  // user / assistant / system
+  return (
+    <div className={`rounded-xl px-3 py-2 text-[11px] leading-relaxed ${
+      msg.role === "user"
+        ? "ml-6 bg-[rgba(0,212,170,0.10)] border border-[rgba(0,212,170,0.18)] text-[rgba(226,232,240,0.9)]"
+        : msg.role === "system"
+          ? "bg-[rgba(138,149,166,0.06)] text-[rgba(226,232,240,0.55)] italic"
+          : "mr-6 bg-[rgba(99,102,241,0.08)] border border-[rgba(99,102,241,0.15)] text-[rgba(226,232,240,0.88)]"
+    }`}>
+      <div className="whitespace-pre-wrap">{msg.text}</div>
+    </div>
+  );
+}
+
+/* ── Helpers ── */
+
+function isLastToolRunning(messages: ChatMsg[], index: number): boolean {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role === "tool_call" && (m.status === "running" || m.status === "pending")) {
+      return i === index;
+    }
+  }
+  return false;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /* ── Sub-components ── */

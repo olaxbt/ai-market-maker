@@ -127,6 +127,15 @@ export default function StudioPage() {
               initialStrategy={loadedStrategy}
               key={loadedStrategy?.id ?? "default"}
               workspaceRef={workspaceRef}
+              onNavigate={(path: string) => {
+                if (path === "panel:strategies") {
+                  setActivePanel("strategies");
+                } else if (path === "panel:paper") {
+                  setActivePanel("paper");
+                } else if (path.startsWith("/")) {
+                  window.location.href = path;
+                }
+              }}
             />
           </Suspense>
         )}
