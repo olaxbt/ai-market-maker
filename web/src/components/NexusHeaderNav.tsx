@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { Orbit, Trophy, FlaskConical } from "lucide-react";
+import { Orbit, Trophy, FlaskConical, BarChart3 } from "lucide-react";
 
 export type HeaderNavMode = "observe" | "nexus" | "studio";
 
@@ -129,7 +129,7 @@ export function NexusHeaderNav({
           active={active === "studio"}
           title="Strategy Studio: build, backtest, deploy"
           icon={<FlaskConical className="h-4 w-4 opacity-85" />}
-          label="Studio"
+          label="Research Hub"
         />
 
         <PrimaryTab
@@ -224,11 +224,14 @@ export function NexusHeaderNav({
 function StudioSecondaryBar({ pathname }: { pathname: string }) {
   const isStudioHome = pathname === "/studio";
 
+  const panelFromQp = useSearchParams().get("panel");
+
   return (
-    <SecondaryBar label="Studio">
+    <SecondaryBar label="Research Hub">
       <SecondaryTab href="/studio" label="Workspace" active={isStudioHome} title="Strategy workspace" />
       <SecondaryTab href="/studio?panel=strategies" label="Strategies" active={pathname === "/studio/strategies"} title="Saved strategies" />
       <SecondaryTab href="/studio?panel=paper" label="Paper Trading" active={pathname === "/studio/paper"} title="Paper trading" />
+      <SecondaryTab href="/studio?panel=leaderboard" label="Leaderboard" active={panelFromQp === "leaderboard"} title="Ranked runs and signals" />
     </SecondaryBar>
   );
 }

@@ -3,11 +3,12 @@
 import React, { useCallback, useEffect, useRef, useState, lazy, Suspense, useMemo } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import {
-  FlaskConical, Layers, BarChart3, Save, Trash2, Edit2, Play, Check, X,
+  FlaskConical, Layers, BarChart3, Save, Trash2, Edit2, Play, Check, X, Trophy,
 } from "lucide-react";
 import { listStrategies, deleteStrategy, renameStrategy, saveStrategy } from "@/lib/strategyStorage";
 import type { SavedStrategy } from "@/lib/strategyStorage";
 import PaperTradingPanel from "@/features/studio/PaperTradingPanel";
+import LeaderboardPanel from "@/features/studio/LeaderboardPanel";
 
 const StrategyStudio = lazy(() => import("@/features/trade/StrategyStudio"));
 
@@ -18,12 +19,13 @@ export interface WorkspaceHandle {
   getSessionConfig: () => any;
 }
 
-type StudioPanel = "workspace" | "strategies" | "paper";
+type StudioPanel = "workspace" | "strategies" | "paper" | "leaderboard";
 
 const PANELS: { id: StudioPanel; label: string; icon: React.ReactNode }[] = [
   { id: "workspace", label: "Workspace", icon: <FlaskConical className="h-3.5 w-3.5" /> },
   { id: "strategies", label: "My Strategies", icon: <Layers className="h-3.5 w-3.5" /> },
   { id: "paper", label: "Paper Trading", icon: <BarChart3 className="h-3.5 w-3.5" /> },
+  { id: "leaderboard", label: "Leaderboard", icon: <Trophy className="h-3.5 w-3.5" /> },
 ];
 
 export default function StudioPage() {
@@ -66,7 +68,7 @@ export default function StudioPage() {
       {/* ── Left Sidebar ── */}
       <aside className="flex w-[200px] flex-col border-r border-[rgba(138,149,166,0.10)] bg-[rgba(6,8,11,0.35)]">
         <div className="flex items-center border-b border-[rgba(138,149,166,0.08)] px-3 py-3 text-[10px] text-[rgba(138,149,166,0.4)]">
-          <span>Toolbox</span>
+          <span>Research Hub</span>
         </div>
 
         <nav className="flex-1 space-y-0.5 px-1.5 py-3">
@@ -132,6 +134,8 @@ export default function StudioPage() {
                   setActivePanel("strategies");
                 } else if (path === "panel:paper") {
                   setActivePanel("paper");
+                } else if (path === "panel:leaderboard") {
+                  setActivePanel("leaderboard");
                 } else if (path.startsWith("/")) {
                   window.location.href = path;
                 }
@@ -143,6 +147,7 @@ export default function StudioPage() {
           <MyStrategiesPanel onLoad={handleLoadStrategy} onDeployToPaper={(s) => { handleLoadStrategy(s); setActivePanel("paper"); }} />
         )}
         {activePanel === "paper" && <PaperTradingPanel />}
+        {activePanel === "leaderboard" && <LeaderboardPanel />}
       </div>
     </div>
   );

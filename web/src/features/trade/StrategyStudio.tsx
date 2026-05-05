@@ -278,7 +278,7 @@ export default function StrategyStudio({
 
     try {
       const flowOrigin = getFlowApiOrigin();
-      const res = await fetch(`${flowOrigin}/api/backtest/submit`, {
+      const res = await fetch(`${flowOrigin}/backtests/quick`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -303,7 +303,7 @@ export default function StrategyStudio({
       // Fetch equity curve and trades separately
       try {
         const flowOrigin2 = getFlowApiOrigin();
-        const eqRes = await fetch(`${flowOrigin2}/api/backtests/${btResult.run_id}/equity`);
+        const eqRes = await fetch(`${flowOrigin2}/backtests/${btResult.run_id}/equity`);
         if (eqRes.ok) {
           const eqData = await eqRes.json();
           setEquityPoints(eqData.points ?? []);
@@ -312,7 +312,7 @@ export default function StrategyStudio({
 
       try {
         const flowOrigin2 = getFlowApiOrigin();
-        const trRes = await fetch(`${flowOrigin2}/api/backtests/${btResult.run_id}/trades`);
+        const trRes = await fetch(`${flowOrigin2}/backtests/${btResult.run_id}/trades`);
         if (trRes.ok) {
           const trData = await trRes.json();
           setTrades(trData.trades ?? []);
