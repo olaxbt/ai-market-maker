@@ -302,7 +302,7 @@ def test_get_nexus_adapter_oms_hyperliquid_dry_run_returns_oms_adapter(monkeypat
         result = adapter.place_smart_order(
             symbol="BTC/USDT", side="buy", qty=0.01, order_type="limit", price=50_000.0
         )
-        assert result["status"] == "accepted"
+        assert result["status"] == "created"  # dry_run=True: Oms never submits, order stays CREATED
     finally:
         set_nexus_adapter(None)
 

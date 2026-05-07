@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional
@@ -290,7 +291,7 @@ class OmsNexusAdapter:
         max_slippage_bps: Optional[float] = None,
         client_order_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        nonce = str(int(time.time() * 1_000_000))
+        nonce = uuid.uuid4().hex
         order = self._oms.submit_order(
             symbol=symbol,
             side=side,
@@ -373,7 +374,7 @@ def get_nexus_adapter() -> Any:
         from adapters.hyperliquid_adapter import FakeHyperliquidClient, HyperliquidAdapter
 
         hl_adapter = HyperliquidAdapter(config=cfg, client=FakeHyperliquidClient())
-        oms = Oms(adapter=hl_adapter)
+        oms = Oms(adapter=hl_adapter, dry_run=cfg.dry_run)
         _adapter = OmsNexusAdapter(oms=oms, exchange_adapter=hl_adapter)
 
     else:
