@@ -200,8 +200,19 @@ def test_missing_sdk_raises_runtime_error(monkeypatch):
     monkeypatch.setitem(sys.modules, "hyperliquid.exchange", None)
     monkeypatch.setitem(sys.modules, "hyperliquid.info", None)
     config = _make_config()
-    with pytest.raises(RuntimeError, match="hyperliquid-python-sdk"):
+    with pytest.raises(RuntimeError, match="hyperliquid-python-sdk") as exc_info:
         _SdkHyperliquidClient(config)
+    assert isinstance(exc_info.value.__cause__, ImportError)
+
+
+def test_dry_run_cancel_order_does_not_call_client():
+    fake = FakeHyperliquidClient()
+    adapter = HyperliquidAdapter(config=_make_config(dry_run=True), client=fake)
+    result = adapter.cancel_order(symbol="BTC/USDT", exchange_order_id="oid-dry-1")
+    assert result["status"] == "dry_run"
+    assert result["exchange_order_id"] == "oid-dry-1"
+    assert result["raw"] == {"dry_run": True}
+    assert len(fake.cancelled_orders) == 0
 
 
 def test_repr_does_not_expose_secret():

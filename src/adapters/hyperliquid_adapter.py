@@ -162,7 +162,9 @@ class FakeHyperliquidClient:
             }
 
     def fetch_open_orders(self, *, coin: str | None = None) -> list[dict[str, Any]]:
-        return list(self.submitted_orders)
+        if coin is None:
+            return list(self.submitted_orders)
+        return [o for o in self.submitted_orders if o.get("coin") == coin]
 
     def fetch_positions(self) -> list[dict[str, Any]]:
         return []
@@ -321,6 +323,20 @@ class HyperliquidAdapter:
         exchange_order_id: str,
     ) -> ExchangeOrderResult:
         now = int(time.time())
+        # dry_run never sends cancellations to the exchange
+        if self._config.dry_run:
+            return ExchangeOrderResult(
+                status="dry_run",
+                exchange_order_id=exchange_order_id,
+                client_order_id=None,
+                symbol=symbol,
+                side="",
+                qty=0.0,
+                price=None,
+                filled_qty=0.0,
+                ts=now,
+                raw={"dry_run": True},
+            )
         coin = normalize_hl_symbol(symbol)
         raw = self._client.cancel_order(coin=coin, oid=exchange_order_id)
         mapped_status = _map_hl_status(str(raw.get("status", "unknown")))
