@@ -29,7 +29,7 @@ Designed to feel like a small professional trading firm — not just another bot
 - Quant-style backtesting with built-in benchmarks (excess return vs buy-and-hold)
 - Unified agent interface + governance layer
 - **OpenClaw-ready packaging** (`SKILL.md` + `manifest.json` + dedicated runners)
-- Paper trading on Binance Testnet + rich local backtester
+- Paper trading on Binance Testnet + rich local backtester; Hyperliquid adapter (dry-run) via OMS layer
 - Modern web dashboard for telemetry and traces
 - Clean configuration (JSON policy + env for secrets only)
 
