@@ -273,7 +273,7 @@ class HyperliquidAdapter:
         # dry_run never sends orders to the exchange
         if self._config.dry_run:
             return ExchangeOrderResult(
-                status="accepted",
+                status="dry_run",
                 exchange_order_id=None,
                 client_order_id=client_order_id,
                 symbol=symbol,

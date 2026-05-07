@@ -56,7 +56,7 @@ def test_dry_run_place_order_does_not_call_client():
         price=50000.0,
         client_order_id="coid-dry-1",
     )
-    assert result["status"] == "accepted"
+    assert result["status"] == "dry_run"
     assert result["exchange_order_id"] is None
     assert result["symbol"] == "BTC/USDT"
     assert result["side"] == "buy"
@@ -211,6 +211,16 @@ def test_repr_does_not_expose_secret():
     )
     r = repr(adapter)
     assert "VERY-SECRET-KEY-XYZ" not in r
+
+
+def test_sdk_client_repr_does_not_expose_secret():
+    config = _make_config(hyperliquid_secret="VERY-SECRET-KEY-XYZ")
+    # Bypass __init__ (which requires the SDK) to test __repr__ in isolation
+    client = _SdkHyperliquidClient.__new__(_SdkHyperliquidClient)
+    client._config = config
+    r = repr(client)
+    assert "VERY-SECRET-KEY-XYZ" not in r
+    assert "[REDACTED]" in r
 
 
 @pytest.mark.parametrize(
