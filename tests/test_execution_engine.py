@@ -208,7 +208,12 @@ def test_oms_nexus_adapter_delegates_market_depth():
 
 
 def test_oms_nexus_adapter_result_shape_compatible_with_execution_result():
-    """OmsNexusAdapter result must have the minimum keys main.py expects."""
+    """Per-order result must satisfy what main.py reads from smart_orders entries.
+
+    main.py: execution_result["smart_order"] = smart_orders[0]
+    e2e test: assert smart_order["status"] == "accepted"
+    paper_account falls back to paper_snapshot when "paper" key is absent — no issue.
+    """
     fake = _FakeExchangeAdapter()
     oms_adapter = OmsNexusAdapter(oms=Oms(adapter=fake), exchange_adapter=fake)
 
@@ -219,8 +224,11 @@ def test_oms_nexus_adapter_result_shape_compatible_with_execution_result():
         order_type="market",
         price=3_000.0,
     )
-    for key in ("status", "symbol", "side", "qty"):
-        assert key in result, f"Missing key in execution_result shape: {key}"
+    # Keys that main.py and the e2e test read from individual smart_orders entries
+    assert result["status"] == "accepted"
+    assert result["symbol"] == "ETH/USDT"
+    assert result["side"] == "sell"
+    assert result["qty"] == 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -274,6 +282,27 @@ def test_get_nexus_adapter_oms_hyperliquid_without_dry_run_raises(monkeypatch):
     try:
         with pytest.raises(RuntimeError, match="not implemented"):
             get_nexus_adapter()
+    finally:
+        set_nexus_adapter(None)
+
+
+def test_get_nexus_adapter_oms_hyperliquid_dry_run_returns_oms_adapter(monkeypatch):
+    """OMS + Hyperliquid + dry_run=True must return OmsNexusAdapter without SDK."""
+    monkeypatch.setenv(EXECUTION_ENGINE_ENV, "oms")
+    monkeypatch.setenv("EXCHANGE", "hyperliquid")
+    monkeypatch.setenv("AI_MARKET_MAKER_ALLOW_LIVE", "1")
+    monkeypatch.setenv("HYPERLIQUID_DRY_RUN", "1")
+    # SDK absent — must still work because FakeHyperliquidClient is injected
+    monkeypatch.setitem(sys.modules, "hyperliquid", None)
+    set_nexus_adapter(None)
+    try:
+        adapter = get_nexus_adapter()
+        assert isinstance(adapter, OmsNexusAdapter)
+        # OMS maps dry_run adapter response → ACCEPTED order state (no real order sent)
+        result = adapter.place_smart_order(
+            symbol="BTC/USDT", side="buy", qty=0.01, order_type="limit", price=50_000.0
+        )
+        assert result["status"] == "accepted"
     finally:
         set_nexus_adapter(None)
 

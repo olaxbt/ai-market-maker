@@ -368,9 +368,11 @@ def get_nexus_adapter() -> Any:
                 "Hyperliquid live SDK execution is not implemented in this PR. "
                 "Set HYPERLIQUID_DRY_RUN=1 to use dry-run mode, or use exchange=paper."
             )
-        from adapters.hyperliquid_adapter import HyperliquidAdapter
+        # dry_run=True: HyperliquidAdapter.place_order() returns immediately without
+        # calling the client, so inject FakeHyperliquidClient to avoid SDK import.
+        from adapters.hyperliquid_adapter import FakeHyperliquidClient, HyperliquidAdapter
 
-        hl_adapter = HyperliquidAdapter(config=cfg)
+        hl_adapter = HyperliquidAdapter(config=cfg, client=FakeHyperliquidClient())
         oms = Oms(adapter=hl_adapter)
         _adapter = OmsNexusAdapter(oms=oms, exchange_adapter=hl_adapter)
 

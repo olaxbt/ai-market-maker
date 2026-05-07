@@ -23,6 +23,7 @@ from oms.order import OmsOrder, OrderState
 _STATUS_MAP: dict[str, OrderState] = {
     "accepted": OrderState.ACCEPTED,
     "open": OrderState.ACCEPTED,
+    "dry_run": OrderState.ACCEPTED,  # dry_run results treated as accepted for OMS lifecycle
     "filled": OrderState.FILLED,
     "cancelled": OrderState.CANCELLED,
     "rejected": OrderState.REJECTED,
