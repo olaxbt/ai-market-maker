@@ -4,6 +4,7 @@ import pytest
 
 from config.exchange_env import (
     EXCHANGE_ENV,
+    HL_API_BASE_ENV,
     HL_API_KEY_ENV,
     HL_DRY_RUN_ENV,
     HL_SECRET_ENV,
@@ -80,3 +81,21 @@ def test_truthy_variants(monkeypatch):
         monkeypatch.setenv("AI_MARKET_MAKER_ALLOW_LIVE", val)
         cfg = load_exchange_config()
         assert cfg.exchange_name == "hyperliquid"
+
+
+def test_testnet_defaults_true_for_non_paper_mode(monkeypatch):
+    """HYPERLIQUID_TESTNET unset must still yield testnet=True (safe default)."""
+    monkeypatch.setenv(EXCHANGE_ENV, "hyperliquid")
+    monkeypatch.setenv("AI_MARKET_MAKER_ALLOW_LIVE", "1")
+    monkeypatch.delenv(HL_TESTNET_ENV, raising=False)
+    cfg = load_exchange_config()
+    assert cfg.testnet is True
+
+
+def test_hl_api_base_env_constant_is_exported(monkeypatch):
+    """HL_API_BASE_ENV must be importable and used to override the API base URL."""
+    monkeypatch.setenv(EXCHANGE_ENV, "hyperliquid")
+    monkeypatch.setenv("AI_MARKET_MAKER_ALLOW_LIVE", "1")
+    monkeypatch.setenv(HL_API_BASE_ENV, "https://my-custom-hl-base.example.com")
+    cfg = load_exchange_config()
+    assert cfg.hyperliquid_api_base == "https://my-custom-hl-base.example.com"

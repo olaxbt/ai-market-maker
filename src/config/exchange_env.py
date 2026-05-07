@@ -85,6 +85,7 @@ def load_exchange_config(*, env: Mapping[str, str] | None = None) -> ExchangeCon
 __all__ = [
     "EXCHANGE_ENV",
     "ExchangeConfig",
+    "HL_API_BASE_ENV",
     "HL_API_KEY_ENV",
     "HL_DRY_RUN_ENV",
     "HL_SECRET_ENV",
