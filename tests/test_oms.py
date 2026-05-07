@@ -50,6 +50,7 @@ class _AcceptingAdapter:
 
     def __init__(self) -> None:
         self.place_order_call_count = 0
+        self.cancel_order_call_count = 0
 
     def place_order(
         self, *, symbol, side, qty, order_type, price, client_order_id
@@ -65,6 +66,7 @@ class _AcceptingAdapter:
         )
 
     def cancel_order(self, *, symbol, exchange_order_id) -> ExchangeOrderResult:
+        self.cancel_order_call_count += 1
         return _base_result(status="cancelled", symbol=symbol, exchange_order_id=exchange_order_id)
 
     def get_order_status(self, *, symbol, exchange_order_id) -> ExchangeOrderResult:
@@ -279,11 +281,13 @@ def test_dry_run_submit_does_not_call_adapter():
 
 def test_cancel_accepted_order():
     """Cancelling an ACCEPTED order must transition it to CANCELLED."""
-    oms = Oms(adapter=_AcceptingAdapter())
+    adapter = _AcceptingAdapter()
+    oms = Oms(adapter=adapter)
     order = _submit(oms)
     assert order.state == OrderState.ACCEPTED
 
     cancelled = oms.cancel_order(client_order_id=order.client_order_id)
+    assert adapter.cancel_order_call_count == 1
     assert cancelled.state == OrderState.CANCELLED
     assert cancelled is order  # same object, mutated in-place
 

@@ -59,10 +59,6 @@ def _apply_result(order: OmsOrder, result: dict[str, Any]) -> None:
     if filled is not None:
         order.filled_quantity = float(filled)
 
-    fill_price = result.get("price")
-    if fill_price is not None and order.filled_quantity > 0:
-        order.average_fill_price = float(fill_price)
-
     error_msg = result.get("error")
     if error_msg:
         order.error = str(error_msg)
@@ -303,7 +299,7 @@ class Oms:
             return []
 
         expired: list[OmsOrder] = []
-        for order in self._orders.values():
+        for order in list(self._orders.values()):
             if order.state not in _LIVE_STATES:
                 continue
             if order.venue_order_id is None:
