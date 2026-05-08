@@ -350,16 +350,20 @@ def get_nexus_adapter() -> Any:
 
     # OMS path — requires explicit AI_MARKET_MAKER_EXECUTION_ENGINE=oms
     from config.exchange_env import load_exchange_config
+    from config.oms_config import load_oms_config
+    from oms.ledger import SqliteLedger
     from oms.oms import Oms
 
     cfg = load_exchange_config()
+    oms_cfg = load_oms_config()
+    ledger = SqliteLedger(oms_cfg.sqlite_path) if oms_cfg.ledger_type == "sqlite" else None
 
     if cfg.exchange_name == "paper":
         mode = (os.getenv("MODE") or "paper").strip().lower()
         inner = NexusAdapter(
             NexusAdapterConfig(mode=mode, nexus_data_base_url=load_nexus_data_base_url())
         )
-        oms = Oms(adapter=inner, dry_run=cfg.dry_run)
+        oms = Oms(adapter=inner, dry_run=cfg.dry_run, ledger=ledger)
         _adapter = OmsNexusAdapter(oms=oms, exchange_adapter=inner)
 
     elif cfg.exchange_name == "hyperliquid":
@@ -374,7 +378,7 @@ def get_nexus_adapter() -> Any:
         from adapters.hyperliquid_adapter import FakeHyperliquidClient, HyperliquidAdapter
 
         hl_adapter = HyperliquidAdapter(config=cfg, client=FakeHyperliquidClient())
-        oms = Oms(adapter=hl_adapter, dry_run=cfg.dry_run)
+        oms = Oms(adapter=hl_adapter, dry_run=cfg.dry_run, ledger=ledger)
         _adapter = OmsNexusAdapter(oms=oms, exchange_adapter=hl_adapter)
 
     else:
