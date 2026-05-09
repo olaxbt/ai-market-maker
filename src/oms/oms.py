@@ -14,6 +14,7 @@ import hashlib
 from typing import Any
 
 from adapters.exchange_protocol import ExchangeAdapter
+from oms.ledger import OmsLedger
 from oms.order import OmsOrder, OrderState
 
 # ---------------------------------------------------------------------------
@@ -80,13 +81,37 @@ class Oms:
                   but never calls adapter.place_order.
     """
 
-    def __init__(self, *, adapter: ExchangeAdapter, dry_run: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        adapter: ExchangeAdapter,
+        dry_run: bool = False,
+        ledger: OmsLedger | None = None,
+    ) -> None:
         self._adapter = adapter
         self._dry_run = dry_run
+        self._ledger = ledger
         # Primary store: client_order_id → OmsOrder
         self._orders: dict[str, OmsOrder] = {}
         # Reverse index for idempotency: idempotency_key → client_order_id
         self._idem_index: dict[str, str] = {}
+        if ledger is not None:
+            for order in ledger.load_orders():
+                self._orders[order.client_order_id] = order
+                self._idem_index[order.idempotency_key] = order.client_order_id
+
+    # ------------------------------------------------------------------
+    # Ledger helpers
+    # ------------------------------------------------------------------
+
+    def _record(
+        self, order: OmsOrder, event_type: str, payload: dict[str, Any] | None = None
+    ) -> None:
+        """Upsert the order snapshot and append an event. No-op when no ledger is set."""
+        if self._ledger is None:
+            return
+        self._ledger.upsert_order(order)
+        self._ledger.append_event(order.client_order_id, event_type, payload)
 
     # ------------------------------------------------------------------
     # Static factory helpers
@@ -188,6 +213,7 @@ class Oms:
 
         self._orders[coid] = order
         self._idem_index[idem_key] = coid
+        self._record(order, "order_created", {"dry_run": True} if self._dry_run else None)
 
         if self._dry_run:
             # Dry run: persist the order in CREATED state, never touch the adapter
@@ -195,6 +221,7 @@ class Oms:
 
         # Transition to SUBMITTED before adapter call
         order._transition(OrderState.SUBMITTED)
+        self._record(order, "order_submitted")
 
         try:
             result = self._adapter.place_order(
@@ -206,9 +233,11 @@ class Oms:
                 client_order_id=coid,
             )
             _apply_result(order, result)
+            self._record(order, f"order_{order.state.value}")
         except Exception as exc:
             order.error = str(exc)
             order._transition(OrderState.FAILED)
+            self._record(order, "order_failed", {"error": str(exc)})
 
         return order
 
@@ -233,6 +262,7 @@ class Oms:
 
         if order.venue_order_id is None:
             order._transition(OrderState.CANCELLED)
+            self._record(order, "order_cancelled")
             return order
 
         try:
@@ -241,9 +271,11 @@ class Oms:
                 exchange_order_id=order.venue_order_id,
             )
             _apply_result(order, result)
+            self._record(order, f"order_{order.state.value}")
         except Exception as exc:
             order.error = str(exc)
             order._transition(OrderState.FAILED)
+            self._record(order, "order_failed", {"error": str(exc)})
 
         return order
 
@@ -273,9 +305,11 @@ class Oms:
                 exchange_order_id=order.venue_order_id,
             )
             _apply_result(order, result)
+            self._record(order, "order_status_updated", {"state": order.state.value})
         except Exception as exc:
             order.error = str(exc)
             order._transition(OrderState.FAILED)
+            self._record(order, "order_failed", {"error": str(exc)})
 
         return order
 
@@ -307,6 +341,7 @@ class Oms:
                 continue
             if order.venue_order_id not in known_venue_ids:
                 order._transition(OrderState.EXPIRED)
+                self._record(order, "order_expired")
                 expired.append(order)
 
         return expired
