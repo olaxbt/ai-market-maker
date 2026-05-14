@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import logging
 import os
+import threading
 import time
 from pathlib import Path
 from pprint import pformat
@@ -26,7 +27,7 @@ from agents.risk_management import RiskManagementAgent
 from agents.statistical_alpha_engine import StatisticalAlphaEngineAgent
 from agents.technical_ta_engine import TechnicalTaEngineAgent
 from agents.whale_behavior_analyst import WhaleBehaviorAnalystAgent
-from config.app_settings import load_app_settings
+from config.app_settings import apply_strategy_env_defaults_from_settings, load_app_settings
 from config.fund_policy import load_fund_policy
 from config.llm_env import use_llm_arbitrator
 from config.llm_mode import llm_mode_enabled
@@ -62,6 +63,7 @@ from workflow.tier2_context import build_synthesis_board, compute_legacy_arbitra
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 logger = logging.getLogger(__name__)
 load_dotenv()
+apply_strategy_env_defaults_from_settings(load_app_settings())
 
 
 def _emit_flow(repo: FlowEventRepo | None, event: FlowEvent) -> None:
@@ -810,24 +812,55 @@ def _run_async(coro):
     except RuntimeError:
         loop = None
     if loop and loop.is_running():
-        new_loop = asyncio.new_event_loop()
-        try:
-            return new_loop.run_until_complete(coro)
-        finally:
-            new_loop.close()
+        # When invoked under an already-running event loop (e.g. tool-calling / hosted runtimes),
+        # we cannot safely run another loop in the same thread. Execute the coroutine in a
+        # dedicated thread with its own event loop and join.
+        out: dict[str, Any] = {}
+
+        def _worker() -> None:
+            try:
+                out["value"] = asyncio.run(coro)
+            except Exception as e:  # noqa: BLE001
+                out["error"] = e
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+        t.join()
+        if "error" in out:
+            raise out["error"]
+        return out.get("value")
     return asyncio.run(coro)
 
 
 def _portfolio_agent_kwargs(state: HedgeFundState) -> dict[str, Any]:
     """Pass simulated position qty into portfolio math during multi-step backtests."""
+
+    def _coerce_bt_position_qty(v: Any) -> float:
+        """``BacktestEngine`` stores perp legs as ``{size, entry}`` dicts; older paths used raw floats."""
+        if isinstance(v, (int, float)):
+            return float(v)
+        if isinstance(v, dict):
+            if isinstance(v.get("size"), (int, float)):
+                sz = float(v["size"])
+                d = v.get("direction")
+                if isinstance(d, (int, float)) and float(d) < 0:
+                    return -abs(sz)
+                return sz
+            if isinstance(v.get("qty"), (int, float)):
+                return float(v["qty"])
+            if isinstance(v.get("qty_signed"), (int, float)):
+                return float(v["qty_signed"])
+        return 0.0
+
     sm = state.get("shared_memory")
     bt = sm.get("backtest") if isinstance(sm, dict) and isinstance(sm.get("backtest"), dict) else {}
     out: dict[str, Any] = {"run_mode": state.get("run_mode")}
     if str(state.get("run_mode") or "").lower() == RunMode.BACKTEST.value:
-        out["external_cash_usd"] = float(bt.get("cash", 0.0))
+        cash_raw = bt.get("cash", 0.0)
+        out["external_cash_usd"] = float(cash_raw) if isinstance(cash_raw, (int, float)) else 0.0
         pos = bt.get("positions")
         if isinstance(pos, dict):
-            ext_pos = {str(k): float(v) for k, v in pos.items()}
+            ext_pos = {str(k): _coerce_bt_position_qty(v) for k, v in pos.items()}
             uni = state.get("universe")
             if isinstance(uni, list):
                 for sym in uni:
@@ -836,7 +869,17 @@ def _portfolio_agent_kwargs(state: HedgeFundState) -> dict[str, Any]:
                         ext_pos[sk] = 0.0
             out["external_positions"] = ext_pos
             ea = bt.get("entry_avg_by_symbol")
-            entry_map = {str(k): float(v) for k, v in ea.items()} if isinstance(ea, dict) else {}
+            entry_map: dict[str, float] = {}
+            if isinstance(ea, dict):
+                for k, v in ea.items():
+                    if isinstance(v, (int, float)):
+                        entry_map[str(k)] = float(v)
+                    elif isinstance(v, dict) and isinstance(v.get("entry"), (int, float)):
+                        entry_map[str(k)] = float(v["entry"])
+            elif pos:
+                for k, v in pos.items():
+                    if isinstance(v, dict) and isinstance(v.get("entry"), (int, float)):
+                        entry_map[str(k)] = float(v["entry"])
             if isinstance(uni, list):
                 for sym in uni:
                     sk = str(sym)
@@ -844,8 +887,12 @@ def _portfolio_agent_kwargs(state: HedgeFundState) -> dict[str, Any]:
                         entry_map[sk] = 0.0
             out["external_entry_avg_by_symbol"] = entry_map
         else:
-            out["external_position_qty"] = float(bt.get("qty", 0.0))
-            out["external_entry_avg_price"] = float(bt.get("entry_avg_price", 0.0))
+            q_raw = bt.get("qty", 0.0)
+            out["external_position_qty"] = float(q_raw) if isinstance(q_raw, (int, float)) else 0.0
+            ea_raw = bt.get("entry_avg_price", 0.0)
+            out["external_entry_avg_price"] = (
+                float(ea_raw) if isinstance(ea_raw, (int, float)) else 0.0
+            )
     return out
 
 
@@ -1464,20 +1511,39 @@ def audit(state: HedgeFundState) -> dict[str, Any]:
 
 
 def validate_ticker(ticker: str) -> bool:
-    """Check if ticker is valid on Binance Testnet."""
+    """Check if ticker is valid on Binance (prefer testnet; fallback to public).
+
+    The workflow uses paper execution by default; validation should not hard-fail
+    if Binance testnet is temporarily unavailable.
+    """
+    if (os.getenv("AIMM_SKIP_TICKER_VALIDATE") or "").strip().lower() in {"1", "true", "yes"}:
+        return True
+
+    cfg = {
+        "apiKey": os.getenv("BINANCE_API_KEY"),
+        "secret": os.getenv("BINANCE_API_SECRET"),
+        "enableRateLimit": True,
+    }
+
+    # Prefer Binance testnet (sandbox) to match paper/testnet environments.
     try:
-        exchange = ccxt.binance(
-            {
-                "apiKey": os.getenv("BINANCE_API_KEY"),
-                "secret": os.getenv("BINANCE_API_SECRET"),
-                "enableRateLimit": True,
-            }
-        )
-        exchange.set_sandbox_mode(True)
-        exchange.load_markets()
-        return ticker in exchange.markets
+        ex = ccxt.binance(cfg)
+        ex.set_sandbox_mode(True)
+        ex.load_markets()
+        return ticker in ex.markets
     except Exception as e:
-        logger.error("Error validating ticker %s: %s", ticker, e)
+        logger.error("Error validating ticker %s on Binance testnet: %s", ticker, e)
+
+    # Fallback to public Binance so local runs still work when testnet is flaky.
+    try:
+        ex2 = ccxt.binance(cfg)
+        ex2.load_markets()
+        ok = ticker in ex2.markets
+        if not ok:
+            logger.error("Ticker %s not found on public Binance markets.", ticker)
+        return ok
+    except Exception as e:
+        logger.error("Error validating ticker %s on public Binance: %s", ticker, e)
         return False
 
 

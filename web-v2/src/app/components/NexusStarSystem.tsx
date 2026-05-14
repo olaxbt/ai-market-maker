@@ -1,0 +1,729 @@
+import { AnimatePresence, motion, useMotionValue, useSpring, useTransform } from "motion/react";
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+
+type TopologyNode = { id: string; label: string; status?: string };
+type TopologyEdge = { from: string; to: string };
+
+function useNexusHubHelioVisual(): boolean {
+  // In web-v2 we use `.dark` only. Treat "not dark" as "light".
+  return useSyncExternalStore(
+    (onStoreChange) => {
+      const el = document.documentElement;
+      const obs = new MutationObserver(() => onStoreChange());
+      obs.observe(el, { attributes: true, attributeFilter: ["class"] });
+      return () => obs.disconnect();
+    },
+    () => !document.documentElement.classList.contains("dark"),
+    () => false,
+  );
+}
+
+type Pt = { x: number; y: number };
+type Dot3D = {
+  id: number;
+  x: number;
+  y: number;
+  z: number;
+  twinklePhase: number;
+  twinkleRate: number;
+  twinkleAmp: number;
+  baseSize: number;
+  spike: number;
+  bright: boolean;
+};
+
+const BASE_SIZE = 520;
+const BASE_RADIUS = [55, 120, 190, 265, 335] as const;
+const DOTS_PER_RING = [24, 36, 48, 60, 72] as const;
+const INTRO_MS = 2000;
+const BURST_MS = 1300;
+
+function parseNodeOrder(id: string): number {
+  const m = id.match(/\d+/);
+  return m ? parseInt(m[0], 10) : 0;
+}
+
+function orderedNodes(nodes: TopologyNode[], edges: TopologyEdge[]): TopologyNode[] {
+  if (nodes.length === 0) return [];
+  const ids = new Set(nodes.map((n) => n.id));
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const incoming = new Map<string, number>();
+  ids.forEach((id) => incoming.set(id, 0));
+  edges.forEach((e) => {
+    if (ids.has(e.from) && ids.has(e.to)) incoming.set(e.to, (incoming.get(e.to) ?? 0) + 1);
+  });
+  const adj = new Map<string, string[]>();
+  edges.forEach((e) => {
+    if (ids.has(e.from) && ids.has(e.to)) {
+      if (!adj.has(e.from)) adj.set(e.from, []);
+      adj.get(e.from)!.push(e.to);
+    }
+  });
+  const queue = Array.from(ids).filter((id) => (incoming.get(id) ?? 0) === 0);
+  queue.sort((a, b) => parseNodeOrder(a) - parseNodeOrder(b));
+  const out: TopologyNode[] = [];
+  const seen = new Set<string>();
+  const incCopy = new Map(incoming);
+  const q = [...queue];
+  while (q.length) {
+    const id = q.shift()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const n = byId.get(id);
+    if (n) out.push(n);
+    for (const next of adj.get(id) ?? []) {
+      const v = (incCopy.get(next) ?? 0) - 1;
+      incCopy.set(next, v);
+      if (v === 0) q.push(next);
+    }
+  }
+  for (const n of nodes) {
+    if (!seen.has(n.id)) out.push(n);
+  }
+  return out;
+}
+
+function orbitPositions(nodes: TopologyNode[], edges: TopologyEdge[]): Array<{ node: TopologyNode; pos: Pt }> {
+  const list = orderedNodes(nodes, edges);
+  const n = list.length;
+  const r = 34;
+  return list.map((node, i) => {
+    const angle = (i / Math.max(n, 1)) * Math.PI * 2 - Math.PI / 2;
+    return { node, pos: { x: 50 + Math.cos(angle) * r, y: 50 + Math.sin(angle) * r } };
+  });
+}
+
+function readHubRgbTriplet(name: "--nexus-hub-canvas-rgb" | "--nexus-hub-mesh-rgb", fallback: string): string {
+  if (typeof document === "undefined") return fallback;
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+
+function readHubCssNumber(name: string, fallback: number): number {
+  if (typeof document === "undefined") return fallback;
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  const n = Number.parseFloat(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function AmbientRingsCanvas({ width, height }: { width: number; height: number }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const size = Math.max(0, Math.min(width, height));
+  const rs = useMemo(() => BASE_RADIUS.map((r) => (r * size) / BASE_SIZE), [size]);
+
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas || size <= 0) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const paint = () => {
+      const rgb = readHubRgbTriplet("--nexus-hub-canvas-rgb", "34, 211, 238");
+      const alphaScale = readHubCssNumber("--nexus-hub-ring-alpha-scale", 1);
+      const strokeAlpha = readHubCssNumber("--nexus-hub-ring-stroke-alpha", 0.12);
+      const dotBoost = readHubCssNumber("--nexus-hub-ring-dot-boost", 0);
+      const strokeW = readHubCssNumber("--nexus-hub-ring-stroke-width", 1);
+      const dpr = Math.min(2, typeof window !== "undefined" ? window.devicePixelRatio : 1);
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(dpr, dpr);
+
+      const cx = width / 2;
+      const cy = height / 2;
+      ctx.clearRect(0, 0, width, height);
+
+      for (let ring = 0; ring < BASE_RADIUS.length; ring++) {
+        const count = DOTS_PER_RING[ring];
+        const rad = rs[ring];
+        for (let i = 0; i < count; i++) {
+          const a = (i / count) * Math.PI * 2;
+          const x = cx + Math.cos(a) * rad;
+          const y = cy + Math.sin(a) * rad;
+          const dot = 1.1 + ring * 0.1 + dotBoost;
+          const alpha = Math.min(0.92, (0.42 + ring * 0.03) * alphaScale);
+          ctx.beginPath();
+          ctx.arc(x, y, dot, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(${rgb}, ${alpha})`;
+          ctx.fill();
+        }
+      }
+
+      ctx.strokeStyle = `rgba(${rgb}, ${strokeAlpha})`;
+      ctx.lineWidth = strokeW;
+      for (let ring = 0; ring < BASE_RADIUS.length; ring++) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, rs[ring], 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    };
+
+    paint();
+    const obs = new MutationObserver(paint);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, [width, height, size, rs]);
+
+  return <canvas ref={ref} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden />;
+}
+
+function buildSphereDots(count: number): Dot3D[] {
+  const phi = Math.PI * (3 - Math.sqrt(5));
+  const dots: Dot3D[] = [];
+  for (let i = 0; i < count; i++) {
+    const y = 1 - (i / Math.max(1, count - 1)) * 2;
+    const radius = Math.sqrt(1 - y * y);
+    const theta = phi * i;
+    dots.push({
+      id: i,
+      x: Math.cos(theta) * radius,
+      y,
+      z: Math.sin(theta) * radius,
+      twinklePhase: Math.random() * Math.PI * 2,
+      twinkleRate: 0.55 + Math.random() * 1.15,
+      twinkleAmp: 0.18 + Math.random() * 0.42,
+      baseSize: 0.45 + Math.random() * 1.9,
+      spike: 0.6 + Math.random() * 1.5,
+      bright: Math.random() < 0.08,
+    });
+  }
+  return dots;
+}
+
+function RotatingSphereCanvas({
+  width,
+  height,
+  mode,
+  burstStartedAt,
+}: {
+  width: number;
+  height: number;
+  mode: "intro" | "burst";
+  burstStartedAt: number | null;
+}) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  const size = Math.max(0, Math.min(width, height));
+  const dots = useMemo(() => buildSphereDots(360), []);
+
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas || size <= 0) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const dpr = Math.min(2, typeof window !== "undefined" ? window.devicePixelRatio : 1);
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    canvas.style.width = `${width}px`;
+    canvas.style.height = `${height}px`;
+    ctx.scale(dpr, dpr);
+
+    const cx = width / 2;
+    const cy = height / 2;
+    const radius = size * 0.25;
+    const perspective = size * 1.35;
+    let raf = 0;
+
+    const draw = (tMs: number) => {
+      const t = tMs * 0.001;
+      const rgbStr = readHubRgbTriplet("--nexus-hub-canvas-rgb", "34, 211, 238");
+      const meshRgb = readHubRgbTriplet("--nexus-hub-mesh-rgb", "96, 231, 255");
+      ctx.clearRect(0, 0, width, height);
+
+      const spinY = t * 0.18;
+      const spinX = Math.sin(t * 0.13) * 0.14;
+      const cosY = Math.cos(spinY);
+      const sinY = Math.sin(spinY);
+      const cosX = Math.cos(spinX);
+      const sinX = Math.sin(spinX);
+      const burstT =
+        mode === "burst" && burstStartedAt != null
+          ? Math.max(0, Math.min(1, (performance.now() - burstStartedAt) / BURST_MS))
+          : 0;
+      const burstSpread = 1 + burstT * 6.4;
+      const burstFade = 1 - burstT;
+
+      const projected = dots
+        .map((p) => {
+          const x1 = p.x * cosY + p.z * sinY;
+          const z1 = p.z * cosY - p.x * sinY;
+          const y2 = p.y * cosX - z1 * sinX;
+          const z2 = z1 * cosX + p.y * sinX;
+          const depth = (z2 + 1) * 0.5;
+          const scale = perspective / (perspective - z2 * radius);
+          const x = cx + x1 * radius * scale * burstSpread;
+          const y = cy + y2 * radius * scale * burstSpread;
+          return { x, y, depth, dot: p };
+        })
+        .sort((a, b) => a.depth - b.depth);
+
+      const meshNodes = projected
+        .filter((p) => p.depth > 0.12)
+        .sort((a, b) => b.depth - a.depth)
+        .slice(0, 110);
+      const byId = new Map(meshNodes.map((n) => [n.dot.id, n]));
+      const edgeSet = new Set<string>();
+      const edgeKey = (a: number, b: number) => (a < b ? `${a}-${b}` : `${b}-${a}`);
+
+      for (const a of meshNodes) {
+        const neighbors = meshNodes
+          .filter((b) => b.dot.id !== a.dot.id)
+          .map((b) => ({ b, d: Math.hypot(b.x - a.x, b.y - a.y) }))
+          .filter((x) => x.d < size * 0.2)
+          .sort((x, y) => x.d - y.d)
+          .slice(0, 3)
+          .map((x) => x.b);
+
+        for (let i = 0; i < neighbors.length; i++) {
+          for (let j = i + 1; j < neighbors.length; j++) {
+            const b = neighbors[i];
+            const c = neighbors[j];
+            if (!b || !c) continue;
+            if (Math.hypot(b.x - c.x, b.y - c.y) > size * 0.2) continue;
+            edgeSet.add(edgeKey(a.dot.id, b.dot.id));
+            edgeSet.add(edgeKey(a.dot.id, c.dot.id));
+            edgeSet.add(edgeKey(b.dot.id, c.dot.id));
+          }
+        }
+      }
+
+      for (const key of Array.from(edgeSet)) {
+        const [ia, ib] = key.split("-").map((x) => Number.parseInt(x, 10));
+        const a = byId.get(ia);
+        const b = byId.get(ib);
+        if (!a || !b) continue;
+        const dist = Math.hypot(b.x - a.x, b.y - a.y);
+        const depth = (a.depth + b.depth) * 0.5;
+        const shimmer = 0.5 + 0.5 * Math.sin(t * 1.4 + (ia + ib) * 0.013);
+        const alpha =
+          Math.max(0.02, 0.16 - dist / (size * 2.7)) * (0.45 + depth * 0.55) * shimmer * burstFade;
+        ctx.strokeStyle = `rgba(${meshRgb}, ${alpha})`;
+        ctx.lineWidth = 0.48;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+
+      for (const p of projected) {
+        const glow = 0.33 + p.depth * 0.63;
+        const pulse = 1 - p.dot.twinkleAmp + Math.sin(t * p.dot.twinkleRate + p.dot.twinklePhase) * p.dot.twinkleAmp;
+        const alpha = Math.max(0, glow * pulse * burstFade);
+        const r = Math.max(0.5, p.dot.baseSize * (0.65 + p.depth * 1.05));
+        const tint = `rgba(${rgbStr},`;
+
+        const haloR = r * (p.dot.bright ? 5.4 : 3.1);
+        const halo = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, haloR);
+        halo.addColorStop(0, `${tint}${Math.min(0.45, alpha * 0.55)})`);
+        halo.addColorStop(0.55, `${tint}${Math.min(0.16, alpha * 0.2)})`);
+        halo.addColorStop(1, `${tint}0)`);
+        ctx.fillStyle = halo;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, haloR, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        ctx.fillStyle = `${tint}${Math.min(1, alpha)})`;
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, r * 0.45, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(255, 255, 255, ${Math.min(0.92, alpha * 0.82)})`;
+        ctx.fill();
+
+        const spike = p.dot.spike * (p.dot.bright ? 3.4 : 1.2) * (0.65 + p.depth * 1.05);
+        const spikeAlpha = alpha * (p.dot.bright ? 0.95 : 0.62);
+        ctx.strokeStyle = `rgba(${rgbStr}, ${spikeAlpha})`;
+        ctx.lineWidth = Math.max(0.25, r * (p.dot.bright ? 0.32 : 0.2));
+        ctx.beginPath();
+        ctx.moveTo(p.x - spike, p.y);
+        ctx.lineTo(p.x + spike, p.y);
+        ctx.moveTo(p.x, p.y - spike);
+        ctx.lineTo(p.x, p.y + spike);
+        ctx.stroke();
+      }
+
+      raf = requestAnimationFrame(draw);
+    };
+
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [width, height, size, dots, mode, burstStartedAt]);
+
+  return <canvas ref={ref} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden />;
+}
+
+const CENTER_PCT: Pt = { x: 50, y: 50 };
+function clamp01(x: number): number {
+  return Math.max(0, Math.min(1, x));
+}
+
+function CentralStar({ energy }: { energy: number }) {
+  const e = clamp01(energy);
+  const pulseDur = 6 - e * 3.2;
+  return (
+    <div className="relative flex items-center justify-center">
+      <motion.div
+        animate={{ scale: [1, 1.22, 1], opacity: [0.28 + e * 0.12, 0.62 + e * 0.2, 0.28 + e * 0.12] }}
+        transition={{ duration: pulseDur, repeat: Infinity, ease: "easeInOut" }}
+        className="nexus-hub-bloom absolute h-32 w-32 rounded-full blur-3xl sm:h-40 sm:w-40"
+      />
+      <motion.div
+        className="absolute z-10 h-40 w-40 rounded-full nexus-core-aura sm:h-48 sm:w-48"
+        animate={{ rotate: 360 }}
+        transition={{ duration: 22 - e * 10, repeat: Infinity, ease: "linear" }}
+        aria-hidden
+      />
+      <motion.div
+        className="nexus-hub-orbit-wire absolute z-10 h-44 w-44 rounded-full border border-transparent sm:h-52 sm:w-52"
+        animate={{ rotate: -360 }}
+        transition={{ duration: 36 - e * 14, repeat: Infinity, ease: "linear" }}
+        style={{
+          borderColor: `rgba(var(--nexus-hub-glow-rgb), 0.14)`,
+          boxShadow: `0 0 ${24 + e * 22}px rgba(var(--nexus-hub-glow-rgb), ${0.08 + e * 0.12})`,
+        }}
+        aria-hidden
+      />
+      <div
+        className="nexus-hub-core-disk relative z-20 h-11 w-11 rounded-full sm:h-14 sm:w-14"
+        style={{
+          background: "var(--nexus-hub-core-fill)",
+          boxShadow: `0 0 50px 20px rgba(var(--nexus-hub-glow-rgb), ${0.55 + e * 0.35})`,
+        }}
+      >
+        <div className="absolute inset-0 rounded-full nexus-core-star-nucleus" style={{ opacity: 0.18 + e * 0.18 }} />
+        <div
+          className="absolute -inset-2 rounded-full border border-transparent"
+          style={{ borderColor: `rgba(var(--nexus-hub-glow-rgb), 0.14)`, boxShadow: `0 0 22px rgba(var(--nexus-hub-glow-rgb), ${0.22 + e * 0.55})` }}
+          aria-hidden
+        />
+      </div>
+    </div>
+  );
+}
+
+function AgentStar({
+  label,
+  selected,
+  pipelineActive,
+  position,
+  hubLight,
+}: {
+  label: string;
+  selected: boolean;
+  pipelineActive: boolean;
+  position: Pt;
+  hubLight: boolean;
+}) {
+  const dotClass = pipelineActive
+    ? "scale-125 bg-[var(--nexus-glow)]"
+    : selected
+      ? "scale-110 bg-[var(--nexus-glow)]"
+      : "scale-100 bg-[var(--nexus-agent-star-idle-bg)] shadow-none";
+  const dotGlow =
+    pipelineActive || selected
+      ? pipelineActive
+        ? { boxShadow: "0 0 14px 6px rgba(var(--nexus-agent-shadow-rgb), 0.5)" }
+        : { boxShadow: "0 0 0 2px rgba(var(--nexus-agent-shadow-rgb), 0.28), 0 0 12px 4px rgba(var(--nexus-agent-shadow-rgb), 0.45)" }
+      : undefined;
+  const labelClass = pipelineActive
+    ? "text-[var(--nexus-glow)]"
+    : selected
+      ? "text-[var(--nexus-glow)] font-semibold"
+      : hubLight
+        ? "nexus-hub-agent-label-idle"
+        : "text-[var(--nexus-muted)]";
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ left: `${position.x}%`, top: `${position.y}%` }} className="absolute z-20 flex flex-col items-center gap-2 -translate-x-1/2 -translate-y-1/2">
+      <div className={`h-3 w-3 rounded-full transition-all duration-500 ${dotClass}`} style={dotGlow} />
+      <span className={`nexus-agent-label max-w-[140px] text-center font-mono text-[9px] uppercase tracking-widest ${labelClass}`}>{label}</span>
+    </motion.div>
+  );
+}
+
+function StarParticle({ start, end }: { start: Pt; end: Pt }) {
+  return (
+    <motion.div
+      initial={{ left: `${start.x}%`, top: `${start.y}%`, opacity: 1, scale: 0.5 }}
+      animate={{ left: `${end.x}%`, top: `${end.y}%`, opacity: 0, scale: 1.2 }}
+      transition={{ duration: 1.5, ease: "easeOut" }}
+      className="nexus-hub-particle pointer-events-none absolute z-10 h-1 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--nexus-glow)] shadow-[0_0_8px_2px_rgba(var(--nexus-hub-glow-rgb),0.45)]"
+    />
+  );
+}
+
+export function NexusStarSystem({
+  nodes,
+  edges,
+  activeNodeId,
+  signalCount = 0,
+  readyToReveal,
+  playIntro = true,
+  frameless = false,
+}: {
+  nodes: TopologyNode[];
+  edges: TopologyEdge[];
+  activeNodeId: string | null;
+  signalCount?: number;
+  readyToReveal: boolean;
+  playIntro?: boolean;
+  frameless?: boolean;
+}) {
+  const helioVisual = useNexusHubHelioVisual();
+  const edgeGradId = useId().replace(/:/g, "");
+  const containerRef = useRef<HTMLDivElement>(null);
+  const prevSignalRef = useRef(0);
+  const traceBurstInitRef = useRef(false);
+  const [box, setBox] = useState({ w: 0, h: 0 });
+  const [particles, setParticles] = useState<Array<{ id: string; end: Pt }>>([]);
+  const [hubPhase, setHubPhase] = useState<"intro" | "burst" | "done">(playIntro ? "intro" : "done");
+  const burstStartedAtRef = useRef<number | null>(null);
+  const [clock, setClock] = useState("--:--:--");
+  const [energy, setEnergy] = useState(0.22);
+  const tiltX = useMotionValue(0);
+  const tiltY = useMotionValue(0);
+  const tiltXS = useSpring(tiltX, { stiffness: 120, damping: 24, mass: 0.35 });
+  const tiltYS = useSpring(tiltY, { stiffness: 120, damping: 24, mass: 0.35 });
+  const energyMV = useMotionValue(energy);
+  useEffect(() => energyMV.set(energy), [energy, energyMV]);
+
+  const rotateX = useTransform([tiltYS, energyMV], (v: number[]) => {
+    const y = v[0] ?? 0;
+    const e = v[1] ?? 0;
+    return (-y * (2.2 + e * 1.2)).toFixed(2);
+  });
+  const rotateY = useTransform([tiltXS, energyMV], (v: number[]) => {
+    const x = v[0] ?? 0;
+    const e = v[1] ?? 0;
+    return (x * (2.6 + e * 1.3)).toFixed(2);
+  });
+  const scale = useTransform(energyMV, (e) => 1 + e * 0.01);
+
+  const placed = useMemo(() => orbitPositions(nodes, edges), [nodes, edges]);
+  const pipelineActiveId = placed.find((p) => (p.node.status ?? "") === "ACTIVE")?.node.id ?? null;
+  const resolvedFocusId = activeNodeId ?? pipelineActiveId;
+  const activePos = useMemo(() => placed.find((p) => p.node.id === resolvedFocusId)?.pos ?? null, [placed, resolvedFocusId]);
+
+  useEffect(() => {
+    const fmt = () =>
+      new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+    setClock(fmt());
+    const id = setInterval(() => setClock(fmt()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      const r = el.getBoundingClientRect();
+      setBox({ w: Math.floor(r.width), h: Math.floor(r.height) });
+    });
+    ro.observe(el);
+    const r = el.getBoundingClientRect();
+    setBox({ w: Math.floor(r.width), h: Math.floor(r.height) });
+    return () => ro.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (frameless) return;
+    const onMove = (e: MouseEvent) => {
+      const r = el.getBoundingClientRect();
+      const px = (e.clientX - r.left) / Math.max(1, r.width);
+      const py = (e.clientY - r.top) / Math.max(1, r.height);
+      // Light theme: disable parallax tilt — orbit is 2D; tilt fights the HUD and reads as “broken 3D”.
+      const k = helioVisual ? 0 : 1;
+      tiltX.set((px - 0.5) * 2 * k);
+      tiltY.set((py - 0.5) * 2 * k);
+    };
+    const onLeave = () => {
+      tiltX.set(0);
+      tiltY.set(0);
+    };
+    el.addEventListener("mousemove", onMove, { passive: true });
+    el.addEventListener("mouseleave", onLeave, { passive: true });
+    return () => {
+      el.removeEventListener("mousemove", onMove);
+      el.removeEventListener("mouseleave", onLeave);
+    };
+  }, [frameless, helioVisual, tiltX, tiltY]);
+
+  useEffect(() => {
+    if (!playIntro && hubPhase !== "done") setHubPhase("done");
+  }, [playIntro, hubPhase]);
+
+  useEffect(() => {
+    if (!playIntro) return;
+    if (!readyToReveal || hubPhase !== "intro") return;
+    const wait = window.setTimeout(() => {
+      burstStartedAtRef.current = performance.now();
+      setHubPhase("burst");
+    }, Math.max(0, INTRO_MS - 400));
+    return () => clearTimeout(wait);
+  }, [readyToReveal, hubPhase, playIntro]);
+
+  useEffect(() => {
+    if (!playIntro) return;
+    if (hubPhase !== "burst") return;
+    const done = window.setTimeout(() => setHubPhase("done"), BURST_MS);
+    return () => clearTimeout(done);
+  }, [hubPhase, playIntro]);
+
+  useEffect(() => {
+    if (!traceBurstInitRef.current) {
+      traceBurstInitRef.current = true;
+      prevSignalRef.current = signalCount;
+      return;
+    }
+    if (!activePos || signalCount <= prevSignalRef.current) return;
+    prevSignalRef.current = signalCount;
+    const burst = 4;
+    const next: Array<{ id: string; end: Pt }> = [];
+    for (let i = 0; i < burst; i++) {
+      next.push({
+        id: `${signalCount}-${i}-${Date.now()}`,
+        end: { x: activePos.x + (Math.random() - 0.5) * 3, y: activePos.y + (Math.random() - 0.5) * 3 },
+      });
+    }
+    setParticles((prev) => [...prev, ...next]);
+    const t = window.setTimeout(() => {
+      setParticles((prev) => prev.filter((p) => !next.some((n) => n.id === p.id)));
+    }, 1600);
+    return () => clearTimeout(t);
+  }, [signalCount, activePos]);
+
+  const energyBootRef = useRef(false);
+  useEffect(() => {
+    if (!energyBootRef.current) {
+      energyBootRef.current = true;
+      return;
+    }
+    setEnergy(1);
+    const t = window.setTimeout(() => setEnergy(0.22), 2200);
+    return () => window.clearTimeout(t);
+  }, [signalCount]);
+
+  useEffect(() => {
+    if (hubPhase !== "done") return;
+    let cancelled = false;
+    const id = window.setInterval(() => {
+      if (cancelled) return;
+      const burst = 2;
+      const next: Array<{ id: string; end: Pt }> = [];
+      for (let i = 0; i < burst; i++) {
+        next.push({ id: `idle-${Date.now()}-${i}`, end: { x: 50 + (Math.random() - 0.5) * 12, y: 50 + (Math.random() - 0.5) * 12 } });
+      }
+      setParticles((prev) => [...prev, ...next]);
+      window.setTimeout(() => setParticles((prev) => prev.filter((p) => !next.some((n) => n.id === p.id))), 1800);
+    }, 5200);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [hubPhase]);
+
+  return (
+    <div
+      ref={containerRef}
+      className={
+        frameless
+          ? "nexus-star-system relative h-full w-full overflow-hidden bg-transparent"
+          : "nexus-hub-card nexus-star-system relative h-full min-h-[min(480px,70vh)] w-full overflow-hidden rounded-3xl border border-[color:var(--nexus-hub-frame)] bg-[var(--nexus-bg)] shadow-inner"
+      }
+    >
+      <motion.div
+        className="absolute inset-0"
+        style={{ transformStyle: "preserve-3d", rotateX, rotateY, scale, willChange: "transform" }}
+      >
+        <div className="nexus-hub-radial-bed absolute inset-0" />
+        {hubPhase === "done" && <div className="nexus-hub-grid-lines absolute inset-0" />}
+        <div className="nexus-hub-vignette absolute inset-0" />
+
+        {box.w > 0 && box.h > 0 && hubPhase !== "done" && (
+          <RotatingSphereCanvas width={box.w} height={box.h} mode={hubPhase} burstStartedAt={burstStartedAtRef.current} />
+        )}
+        {box.w > 0 && box.h > 0 && hubPhase === "done" && (
+          <div className="absolute inset-0 nexus-ambient-rings" aria-hidden>
+            <AmbientRingsCanvas width={box.w} height={box.h} />
+          </div>
+        )}
+
+        {!frameless && hubPhase === "done" ? (
+          <motion.div
+            className="pointer-events-none absolute inset-0 z-[6] nexus-scan-sweep"
+            aria-hidden
+            animate={{ backgroundPositionX: ["-140%", "140%"] }}
+            transition={{ duration: 10 - energy * 3.5, repeat: Infinity, ease: "linear", repeatDelay: 0.6 }}
+            style={{ opacity: 0.12 + energy * 0.12 }}
+          />
+        ) : null}
+
+        {hubPhase === "done" && (
+          <svg className="pointer-events-none absolute inset-0 z-[5] h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id={edgeGradId} x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="var(--nexus-hub-edge-0)" stopOpacity={helioVisual ? 0.38 : 0.32} />
+                <stop offset="100%" stopColor="var(--nexus-hub-edge-1)" stopOpacity={helioVisual ? 0.22 : 0.1} />
+              </linearGradient>
+            </defs>
+            {edges.map((e, i) => {
+              const a = placed.find((p) => p.node.id === e.from)?.pos;
+              const b = placed.find((p) => p.node.id === e.to)?.pos;
+              if (!a || !b) return null;
+              return (
+                <line
+                  key={`${e.from}-${e.to}-${i}`}
+                  x1={a.x}
+                  y1={a.y}
+                  x2={b.x}
+                  y2={b.y}
+                  stroke={`url(#${edgeGradId})`}
+                  strokeWidth={helioVisual ? 0.22 : 0.15}
+                  vectorEffect="non-scaling-stroke"
+                />
+              );
+            })}
+          </svg>
+        )}
+
+        <div className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2">
+          <CentralStar energy={energy} />
+        </div>
+
+        {hubPhase === "done" &&
+          placed.map(({ node, pos }) => (
+            <AgentStar
+              key={node.id}
+              label={node.label}
+              selected={activeNodeId != null && node.id === activeNodeId}
+              pipelineActive={(node.status ?? "") === "ACTIVE"}
+              position={pos}
+              hubLight={helioVisual}
+            />
+          ))}
+
+        <AnimatePresence>
+          {particles.map((p) => (
+            <StarParticle key={p.id} start={CENTER_PCT} end={p.end} />
+          ))}
+        </AnimatePresence>
+
+        {hubPhase === "done" && (
+          <div className="nexus-hub-hud absolute bottom-6 left-6 z-20 font-mono text-[10px] leading-relaxed">
+            <span className="text-[var(--nexus-muted)]">Local:</span> {clock}
+            <br />
+            <span className="text-[var(--nexus-muted)]">Topology map</span>
+            {": "}
+            {nodes.length} nodes · buffered traces <span className="text-[var(--nexus-text)]">{signalCount ?? 0}</span>
+            {" · hub pulses when the count rises (live stream)"}
+          </div>
+        )}
+      </motion.div>
+    </div>
+  );
+}
+

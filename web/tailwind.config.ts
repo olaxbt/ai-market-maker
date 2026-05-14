@@ -11,6 +11,27 @@ const config: Config = {
       fontFamily: {
         mono: ["var(--font-jetbrains)", "monospace"],
       },
+      colors: {
+        background: "var(--nexus-bg)",
+        foreground: "var(--nexus-text)",
+        border: "var(--nexus-border)",
+        muted: {
+          DEFAULT: "var(--nexus-surface)",
+          foreground: "var(--nexus-muted)",
+        },
+        accent: {
+          DEFAULT: "var(--nexus-toggle-idle-hover-bg)",
+          foreground: "var(--nexus-text)",
+        },
+        card: {
+          DEFAULT: "var(--nexus-panel)",
+          foreground: "var(--nexus-text)",
+        },
+        primary: {
+          DEFAULT: "var(--nexus-accent)",
+          foreground: "var(--nexus-text)",
+        },
+      },
     },
   },
   plugins: [],

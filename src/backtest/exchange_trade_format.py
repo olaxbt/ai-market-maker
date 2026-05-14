@@ -139,17 +139,49 @@ def normalize_trade_row_for_api(row: dict[str, Any]) -> dict[str, Any]:
     """Map persisted exchange-shaped rows to the HTTP/API contract (superset, non-destructive).
 
     Ledger lines follow Binance ``myTrades`` (``isBuyer``, ``time``, string numerics, ``_sim``).
-    The API also exposes ``side``, ``step``, ``ts_ms``, and ``fee_usd`` so clients and charts
+    The API also exposes ``side``, ``step``, ``ts_ms``, ``ts`` (unix seconds, for older UI), and ``fee_usd`` so clients and charts
     stay stable. Rows that already include those keys are unchanged.
     """
     out = dict(row)
     sim = row.get("_sim") if isinstance(row.get("_sim"), dict) else {}
     if "side" not in out and "isBuyer" in row:
         out["side"] = "buy" if row.get("isBuyer") else "sell"
+    if "side" not in out and "direction" in row:
+        try:
+            di = int(row["direction"])
+            if di > 0:
+                out["side"] = "buy"
+            elif di < 0:
+                out["side"] = "sell"
+        except (TypeError, ValueError):
+            pass
     if "step" not in out and sim.get("step") is not None:
         out["step"] = int(sim["step"])
+    if "step" not in out and row.get("exit_bar_index") is not None:
+        try:
+            out["step"] = int(row["exit_bar_index"])
+        except (TypeError, ValueError):
+            pass
     if "ts_ms" not in out and row.get("time") is not None:
-        out["ts_ms"] = int(row["time"])
+        try:
+            out["ts_ms"] = int(row["time"])
+        except (TypeError, ValueError):
+            pass
+    if "ts_ms" not in out and row.get("exit_ts_ms") is not None:
+        try:
+            v = int(row["exit_ts_ms"])
+            if v > 0:
+                out["ts_ms"] = v
+        except (TypeError, ValueError):
+            pass
+    # Web panels historically read unix **seconds** as ``ts`` (see BacktestResultsPanel fmtTs).
+    if "ts" not in out and out.get("ts_ms") is not None:
+        try:
+            tm = int(out["ts_ms"])
+            if tm > 0:
+                out["ts"] = tm / 1000.0
+        except (TypeError, ValueError):
+            pass
     if "fee_usd" not in out:
         c = row.get("commission")
         if c is not None:
@@ -181,6 +213,15 @@ def trade_row_side(tr: dict[str, Any]) -> str:
         return str(tr["side"])
     if "isBuyer" in tr:
         return "buy" if tr.get("isBuyer") else "sell"
+    d = tr.get("direction")
+    try:
+        di = int(d)
+        if di > 0:
+            return "buy"
+        if di < 0:
+            return "sell"
+    except (TypeError, ValueError):
+        pass
     return ""
 
 
