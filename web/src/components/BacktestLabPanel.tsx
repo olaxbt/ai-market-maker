@@ -725,7 +725,7 @@ export function BacktestLabPanel({
           )}
         </div>
 
-        <div className={`flex flex-wrap items-end ${compactForm ? "gap-2" : "gap-4"}`}>
+        <div className={`flex flex-wrap items-start ${compactForm ? "gap-2" : "gap-4"}`}>
           <div
             className={`w-full min-w-[120px] ${compactForm ? "max-w-[12rem]" : "max-w-xs min-w-[180px]"}`}
           >
@@ -735,6 +735,7 @@ export function BacktestLabPanel({
                 value={ticker}
                 onChange={setTicker}
                 disabled={formBusy}
+                compact={compactForm}
               />
             ) : (
               <input
@@ -1401,9 +1402,11 @@ export function BacktestLabPanel({
                             <h2 className="font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-muted)]">
                               Live timeline
                             </h2>
-                            <p className="mt-0.5 font-mono text-[8px] text-[var(--nexus-muted)]">
-                              Updates while the replay runs (soft payload). Expand a bar for CoT +
-                              log.
+                            <p className="mt-0.5 font-mono text-[8px] leading-snug text-[var(--nexus-muted)]">
+                              Same multi-agent graph as live (scan, risk, execution). While the
+                              replay runs, new steps appear here. If the server tags each candle,
+                              you will see &quot;Bar 1&quot;, &quot;Bar 2&quot;, … otherwise one
+                              &quot;Live workflow&quot; group until the run finishes.
                             </p>
                           </div>
                         </div>
