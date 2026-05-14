@@ -1565,7 +1565,7 @@ export function BacktestLabPanel({
 
             {kpis || streamingThoughts || tracesToShow.length > 0 || messageLog.length > 0 ? (
               <section className="grid w-full grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_420px]">
-                <div className="min-w-0 space-y-4">
+                <div className="min-w-0 space-y-4 max-h-[calc(100vh-16rem)] overflow-y-auto">
                   <div className="min-w-0">{kpis ? renderResultsDetail("standalone") : null}</div>
 
                   <section className="flex min-h-[320px] w-full flex-col overflow-hidden rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 shadow-[0_0_24px_rgba(0,212,170,0.04)]">
@@ -1592,8 +1592,8 @@ export function BacktestLabPanel({
                   </section>
                 </div>
 
-                <aside className="flex min-h-0 flex-col gap-4">
-                  <section className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 p-4 shadow-[0_0_24px_rgba(0,212,170,0.04)]">
+                <aside className="flex min-h-0 flex-col gap-4 max-h-[calc(100vh-16rem)] overflow-y-auto">
+                  <section className="shrink-0 rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 p-4 shadow-[0_0_24px_rgba(0,212,170,0.04)]">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
