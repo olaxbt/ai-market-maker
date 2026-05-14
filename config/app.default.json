@@ -5,8 +5,15 @@
     "fee_bps": 10.0,
     "min_notional_usd": 25.0,
     "max_notional_fraction": 0.25,
-    "instrument": "spot",
-    "leverage": 3.0
+    "instrument": "perp",
+    "leverage": 1.5
+  },
+  "strategy": {
+    "tier1_preset": "balanced",
+    "desk_strategy_preset": "all_weather"
+  },
+  "backtest": {
+    "hold_signal_fallback": "momentum"
   },
   "ui": {
     "tail_events": 1200,
@@ -47,6 +54,14 @@
   "llm": {
     "strict_json": true,
     "output_retries": 2
+  },
+  "control_plane": {
+    "hosted_studio": false,
+    "ops_enabled": true
+  },
+  "harness_memory": {
+    "recent_views_max": 60,
+    "recent_decisions_max": 60,
+    "recent_tool_events_max": 60
   }
 }
-

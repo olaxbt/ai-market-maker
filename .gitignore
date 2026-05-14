@@ -25,6 +25,12 @@ web/out/
 web/tsconfig.tsbuildinfo
 *.tsbuildinfo
 
+web-v2/.next/
+web-v2/node_modules/
+web-v2/out/
+web-v2/tsconfig.tsbuildinfo
+*.tsbuildinfo
+
 # Misc
 *.log
 .DS_Store

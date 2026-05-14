@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
-import { Orbit, Trophy } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Orbit, Trophy, FlaskConical } from "lucide-react";
+import { startTransition } from "react";
 
-export type HeaderNavMode = "observe" | "nexus";
+export type HeaderNavMode = "observe" | "nexus" | "studio";
 
 export type NexusViewMode = "nexus" | "grid" | "backtest" | "supervisor" | "monitor" | "research";
 
@@ -105,6 +106,7 @@ export function NexusHeaderNav({
   viewModeTitle?: string;
 }) {
   const pathname = usePathname() || "/";
+  const router = useRouter();
   const searchParams = useSearchParams();
   const leaderboardFocus = searchParams.get("focus") === "signals" ? "signals" : "overview";
   const consoleView = (searchParams.get("view") ?? "").trim();
@@ -120,6 +122,14 @@ export function NexusHeaderNav({
   return (
     <div className="w-full">
       <div className="flex flex-wrap items-center gap-2">
+        <PrimaryTab
+          href="/studio"
+          active={active === "studio"}
+          title="Studio: agentic chat + backtest workspace"
+          icon={<FlaskConical className="h-4 w-4 opacity-85" />}
+          label="Studio"
+        />
+
         <PrimaryTab
           href="/leaderboard"
           active={active === "observe"}
@@ -138,19 +148,27 @@ export function NexusHeaderNav({
       </div>
 
       <div className="mt-2 w-full">
-        {active === "observe" ? (
+        {active === "studio" ? (
+          <StudioSecondaryBar pathname={pathname} />
+        ) : active === "observe" ? (
           <SecondaryBar label="Leaderboard">
             <SecondaryTab
               href="/leaderboard"
               label="Overview"
               active={(pathname === "/leaderboard" || pathname.startsWith("/leaderboard/")) && leaderboardFocus !== "signals"}
               title="Leaderboard results"
+              onClick={() => {
+                startTransition(() => router.push("/leaderboard"));
+              }}
             />
             <SecondaryTab
               href="/leaderboard?focus=signals"
               label="Signals"
               active={pathname === "/leaderboard" && leaderboardFocus === "signals"}
               title="Signals feed (inside Leaderboard)"
+              onClick={() => {
+                startTransition(() => router.push("/leaderboard?focus=signals"));
+              }}
             />
           </SecondaryBar>
         ) : active === "nexus" ? (
@@ -207,3 +225,21 @@ export function NexusHeaderNav({
   );
 }
 
+function StudioSecondaryBar({ pathname }: { pathname: string }) {
+  const isChat = pathname === "/studio";
+  const isWorkspace = pathname === "/studio/workspace";
+  const isStrategies = pathname === "/studio/strategies";
+  const isPaper = pathname === "/paper";
+
+  return (
+    <SecondaryBar label="Studio">
+      <SecondaryTab href="/studio" label="Chat" active={isChat} title="Agentic studio chat" />
+      <SecondaryTab href="/studio/workspace" label="Workspace" active={isWorkspace} title="Backtest workspace" />
+      <SecondaryTab href="/studio/strategies" label="Strategies" active={isStrategies} title="Saved strategies" />
+      <SecondaryTab href="/get-started" label="Get Started" active={pathname === "/get-started"} title="Clone + run locally" />
+      <SecondaryTab href="/control" label="Control" active={pathname === "/control"} title="Control Center (ops)" />
+      <SecondaryTab href="/tools" label="Tools" active={pathname === "/tools"} title="Browse platform tools" />
+      <SecondaryTab href="/paper" label="Paper" active={isPaper} title="Paper portfolio + fills" />
+    </SecondaryBar>
+  );
+}

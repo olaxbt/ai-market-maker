@@ -10,6 +10,26 @@ from config.app_settings import load_app_settings
 from .engine import BacktestConfig, BacktestEngine
 
 
+def _maybe_tail_slice(
+    bars: Sequence[Sequence[Any]],
+    *,
+    max_steps: int | None,
+) -> list[list[Any]]:
+    """Keep only the trailing ``max_steps`` bars when capping simulated steps.
+
+    OHLCV fetches usually return ``n_bars`` history but callers may ask to replay fewer
+    (``max_steps`` from API merges). Without this, execution + progress totals use the
+    full fetched length and overwrite job ``total_steps`` mid-run.
+    """
+    rows = [list(x) for x in bars]
+    if max_steps is None:
+        return rows
+    limit = int(max_steps)
+    if limit < 1 or len(rows) <= limit:
+        return rows
+    return rows[-limit:]
+
+
 @dataclass(frozen=True)
 class MultiStepResult:
     run_id: str
@@ -62,7 +82,8 @@ def run_multi_step_backtest(
     )
     engine = BacktestEngine(cfg)
     if bars_by_symbol is not None:
-        bbs = {str(sym): [list(x) for x in series] for sym, series in bars_by_symbol.items()}
+        raw = {str(sym): [list(x) for x in series] for sym, series in bars_by_symbol.items()}
+        bbs = {sym: _maybe_tail_slice(rows, max_steps=max_steps) for sym, rows in raw.items()}
         res = engine.run(
             ticker=str(ticker),
             bars_by_symbol=bbs,
@@ -70,9 +91,8 @@ def run_multi_step_backtest(
             runs_dir=runs_dir,
         )
     elif bars is not None:
-        res = engine.run(
-            ticker=str(ticker), bars=[list(x) for x in bars], run_id=run_id, runs_dir=runs_dir
-        )
+        sliced = _maybe_tail_slice(bars, max_steps=max_steps)
+        res = engine.run(ticker=str(ticker), bars=sliced, run_id=run_id, runs_dir=runs_dir)
     else:
         raise ValueError("run_multi_step_backtest requires bars or bars_by_symbol")
 

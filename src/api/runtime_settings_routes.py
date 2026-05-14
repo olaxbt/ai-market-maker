@@ -47,6 +47,11 @@ class PolicyPatch(BaseModel):
     policy: dict[str, Any] = Field(default_factory=dict)
 
 
+class HarnessMemoryPatch(BaseModel):
+    # Bounded working-memory knobs for receipts (run-scoped, not user preference memory).
+    harness_memory: dict[str, Any] = Field(default_factory=dict)
+
+
 @router.get("/runtime-settings")
 def get_runtime_settings() -> dict[str, Any]:
     return {"path": str(_settings_path()), "settings": _read_settings()}
@@ -57,6 +62,15 @@ def put_runtime_policy(patch: PolicyPatch) -> dict[str, Any]:
     obj = _read_settings()
     obj_policy = obj.get("policy") if isinstance(obj.get("policy"), dict) else {}
     obj["policy"] = {**obj_policy, **(patch.policy or {})}
+    _write_settings(obj)
+    return {"ok": True, "path": str(_settings_path()), "settings": obj}
+
+
+@router.put("/runtime-settings/harness-memory")
+def put_runtime_harness_memory(patch: HarnessMemoryPatch) -> dict[str, Any]:
+    obj = _read_settings()
+    cur = obj.get("harness_memory") if isinstance(obj.get("harness_memory"), dict) else {}
+    obj["harness_memory"] = {**cur, **(patch.harness_memory or {})}
     _write_settings(obj)
     return {"ok": True, "path": str(_settings_path()), "settings": obj}
 

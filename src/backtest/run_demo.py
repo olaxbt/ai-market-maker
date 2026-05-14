@@ -1,5 +1,8 @@
 """Multi-step backtest CLI: **online** exchange candles (public fetch) or cached CSV (offline).
 
+Public defaults for strategy env vars and HOLD shaping live in ``config/app.default.json``
+(``strategy.*``, ``backtest.hold_signal_fallback``); see also ``AIMM_BACKTEST_HOLD_FALLBACK`` in ``.env.example``.
+
 **CSV cache:** ``--ohlcv-cache-dir DIR`` (or ``config/app.default.json`` ``market.ohlcv_cache_dir``) stores one ``.csv`` per
 symbol/timeframe; combine with ``--online`` to fill on first run and reuse later. ``--csv-only``
 runs fully offline from that folder (populate via ``python -m backtest.prefetch_ohlcv``).
@@ -81,7 +84,7 @@ from backtest.bars import (
 )
 from backtest.loop import run_multi_step_backtest
 from backtest.ohlcv_csv_cache import ensure_bars_cached, load_bars_csv_only
-from config.app_settings import load_app_settings
+from config.app_settings import apply_strategy_env_defaults_from_settings, load_app_settings
 
 try:
     from config.leaderboard_submit import load_leaderboard_submit_config
@@ -267,6 +270,7 @@ def resolve_run_demo_symbols(
 def execute_run_demo(args: argparse.Namespace, parser: argparse.ArgumentParser) -> dict[str, Any]:
     sym_list, primary = resolve_run_demo_symbols(args, parser)
     runs_dir_path = Path(args.runs_dir).expanduser() if args.runs_dir else None
+    fee_bps = float(load_app_settings().paper.fee_bps)
 
     raw_cache = (
         getattr(args, "ohlcv_cache_dir", None) or load_app_settings().market.ohlcv_cache_dir or ""
@@ -354,6 +358,7 @@ def execute_run_demo(args: argparse.Namespace, parser: argparse.ArgumentParser) 
             ticker=primary,
             bars_by_symbol=aligned,
             initial_cash=args.initial_cash,
+            fee_bps=fee_bps,
             interval_sec=interval_m,
             run_id=args.run_id,
             runs_dir=runs_dir_path,
@@ -418,6 +423,7 @@ def execute_run_demo(args: argparse.Namespace, parser: argparse.ArgumentParser) 
             bars=bars,
             initial_cash=ic,
             initial_btc=ibtc,
+            fee_bps=fee_bps,
             interval_sec=interval_sec,
             run_id=args.run_id
             if attempt == 1
@@ -523,6 +529,7 @@ def execute_run_demo(args: argparse.Namespace, parser: argparse.ArgumentParser) 
 
 def main(argv: list[str] | None = None) -> dict[str, Any]:
     load_dotenv()
+    apply_strategy_env_defaults_from_settings(load_app_settings())
     parser = build_run_demo_parser()
     args = parser.parse_args(argv)
     if args.llm:

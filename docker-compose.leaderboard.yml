@@ -1,3 +1,5 @@
+# Leaderboard / portal stack: Flow API + web-v2 (Vite SPA).
+# Full Nexus console (Next) stays on docker-compose.prod.yml → service `web` (./web).
 services:
   db:
     image: postgres:16-alpine
@@ -37,20 +39,18 @@ services:
     ports:
       - "${LEADERBOARD_PORT:-8001}:8001"
     volumes:
-      - lb_runs:/app/.runs
+      - ./.runs:/app/.runs
     restart: unless-stopped
 
   web:
     build:
-      context: ./web
+      context: ./web-v2
       dockerfile: Dockerfile
-    environment:
-      FLOW_API_BASE_URL: ${FLOW_API_BASE_URL:-http://api:8001}
-      NODE_ENV: production
     depends_on:
       - api
     ports:
-      - "${LEADERBOARD_WEB_PORT:-3000}:3000"
+      # nginx serves the Vite build on container port 80
+      - "${LEADERBOARD_WEB_PORT:-3000}:80"
     profiles:
       - full
       - web
@@ -58,4 +58,3 @@ services:
 
 volumes:
   lb_pgdata:
-  lb_runs:

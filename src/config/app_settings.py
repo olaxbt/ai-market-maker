@@ -61,6 +61,37 @@ class LLMSettings:
 
 
 @dataclass(frozen=True)
+class ControlPlaneSettings:
+    hosted_studio: bool
+    ops_enabled: bool
+
+
+@dataclass(frozen=True)
+class HarnessMemorySettings:
+    recent_views_max: int
+    recent_decisions_max: int
+    recent_tool_events_max: int
+
+
+@dataclass(frozen=True)
+class StrategyEnvDefaults:
+    """Optional defaults for ``AIMM_*`` strategy env vars (applied with ``setdefault`` after ``.env``)."""
+
+    tier1_preset: str | None
+    desk_strategy_preset: str | None
+
+
+@dataclass(frozen=True)
+class BacktestSettings:
+    """Backtest-only behavior (does not affect live paper trading)."""
+
+    #: How to interpret graph ``HOLD`` before returning a flat signal to the perp simulator.
+    #: ``off`` = strict graph output only; ``momentum`` = small OHLCV drift nudge only;
+    #: ``legacy`` = momentum plus a deterministic bar-parity probe (old UX; not a real strategy).
+    hold_signal_fallback: str
+
+
+@dataclass(frozen=True)
 class AppSettings:
     paper: PaperSettings
     ui: UISettings
@@ -68,6 +99,24 @@ class AppSettings:
     runs: RunsSettings
     market: MarketSettings
     llm: LLMSettings
+    control_plane: ControlPlaneSettings
+    harness_memory: HarnessMemorySettings
+    strategy: StrategyEnvDefaults
+    backtest: BacktestSettings
+
+
+def normalize_hold_signal_fallback(raw: str | None, *, default: str = "momentum") -> str:
+    """Normalize ``hold_signal_fallback`` tokens from config or env."""
+    s = str(raw or "").strip().lower()
+    if s in ("none", "0", "false", "strict", "off"):
+        return "off"
+    if s in ("legacy", "full", "debug", "ux", "1", "true"):
+        return "legacy"
+    if s in ("momentum", "partial", "drift"):
+        return "momentum"
+    if not s:
+        return default
+    return default
 
 
 def load_app_settings(path: Path | None = None) -> AppSettings:
@@ -84,6 +133,12 @@ def load_app_settings(path: Path | None = None) -> AppSettings:
     runs = obj.get("runs") or {}
     market = obj.get("market")
     llm = obj.get("llm") or {}
+    control_plane = obj.get("control_plane") or {}
+    harness_memory = obj.get("harness_memory") or {}
+    _st = obj.get("strategy")
+    strategy_raw = _st if isinstance(_st, dict) else {}
+    _bt = obj.get("backtest")
+    backtest_raw = _bt if isinstance(_bt, dict) else {}
     if not isinstance(paper, dict) or not isinstance(market, dict):
         raise ValueError("app.default.json must contain 'paper' and 'market' objects")
     if ui is not None and not isinstance(ui, dict):
@@ -94,6 +149,14 @@ def load_app_settings(path: Path | None = None) -> AppSettings:
         raise ValueError("app.default.json 'runs' must be an object when present")
     if llm is not None and not isinstance(llm, dict):
         raise ValueError("app.default.json 'llm' must be an object when present")
+    if control_plane is not None and not isinstance(control_plane, dict):
+        raise ValueError("app.default.json 'control_plane' must be an object when present")
+    if harness_memory is not None and not isinstance(harness_memory, dict):
+        raise ValueError("app.default.json 'harness_memory' must be an object when present")
+    if not isinstance(strategy_raw, dict):
+        raise ValueError("app.default.json 'strategy' must be an object when present")
+    if not isinstance(backtest_raw, dict):
+        raise ValueError("app.default.json 'backtest' must be an object when present")
 
     start_usdt = paper.get("start_usdt")
     if not isinstance(start_usdt, (int, float)):
@@ -199,6 +262,52 @@ def load_app_settings(path: Path | None = None) -> AppSettings:
         raise ValueError("llm.output_retries must be a number")
     output_retries_i = max(0, min(5, int(float(output_retries))))
 
+    hosted_studio = control_plane.get("hosted_studio", False)
+    if not isinstance(hosted_studio, bool):
+        raise ValueError("control_plane.hosted_studio must be a boolean")
+    ops_enabled = control_plane.get("ops_enabled", True)
+    if not isinstance(ops_enabled, bool):
+        raise ValueError("control_plane.ops_enabled must be a boolean")
+
+    def _int(name: str, v: object, *, lo: int, hi: int, default: int) -> int:
+        if not isinstance(v, (int, float)):
+            v = default
+        return max(lo, min(hi, int(float(v))))
+
+    recent_views_max = _int(
+        "harness_memory.recent_views_max",
+        harness_memory.get("recent_views_max"),
+        lo=0,
+        hi=1000,
+        default=60,
+    )
+    recent_decisions_max = _int(
+        "harness_memory.recent_decisions_max",
+        harness_memory.get("recent_decisions_max"),
+        lo=0,
+        hi=1000,
+        default=60,
+    )
+    recent_tool_events_max = _int(
+        "harness_memory.recent_tool_events_max",
+        harness_memory.get("recent_tool_events_max"),
+        lo=0,
+        hi=1000,
+        default=60,
+    )
+
+    tier1_preset = strategy_raw.get("tier1_preset")
+    desk_strategy_preset = strategy_raw.get("desk_strategy_preset")
+    tier1_s = str(tier1_preset).strip() if tier1_preset not in (None, "") else None
+    desk_s = str(desk_strategy_preset).strip() if desk_strategy_preset not in (None, "") else None
+    if tier1_s in ("none", "off", "0", "false", ""):
+        tier1_s = None
+    if desk_s in ("none", "off", "0", "false", ""):
+        desk_s = None
+
+    hold_fb = str(backtest_raw.get("hold_signal_fallback") or "momentum").strip().lower()
+    hold_fb_norm = normalize_hold_signal_fallback(hold_fb)
+
     return AppSettings(
         paper=PaperSettings(
             start_usdt=start_usdt_f,
@@ -231,16 +340,41 @@ def load_app_settings(path: Path | None = None) -> AppSettings:
             ohlcv_cache_dir=ohlcv_cache_dir,
         ),
         llm=LLMSettings(strict_json=bool(strict_json), output_retries=output_retries_i),
+        control_plane=ControlPlaneSettings(
+            hosted_studio=bool(hosted_studio),
+            ops_enabled=bool(ops_enabled),
+        ),
+        harness_memory=HarnessMemorySettings(
+            recent_views_max=recent_views_max,
+            recent_decisions_max=recent_decisions_max,
+            recent_tool_events_max=recent_tool_events_max,
+        ),
+        strategy=StrategyEnvDefaults(tier1_preset=tier1_s, desk_strategy_preset=desk_s),
+        backtest=BacktestSettings(hold_signal_fallback=hold_fb_norm),
     )
+
+
+def apply_strategy_env_defaults_from_settings(settings: AppSettings) -> None:
+    """Apply ``config/app.default.json`` ``strategy`` block via ``os.environ.setdefault`` (after ``.env``)."""
+    import os
+
+    if settings.strategy.tier1_preset:
+        os.environ.setdefault("AIMM_STRATEGY_PRESET", settings.strategy.tier1_preset)
+    if settings.strategy.desk_strategy_preset:
+        os.environ.setdefault("AIMM_DESK_STRATEGY_PRESET", settings.strategy.desk_strategy_preset)
 
 
 __all__ = [
     "AppSettings",
+    "BacktestSettings",
     "FlowSettings",
     "LLMSettings",
     "MarketSettings",
     "PaperSettings",
     "RunsSettings",
+    "StrategyEnvDefaults",
     "UISettings",
+    "apply_strategy_env_defaults_from_settings",
     "load_app_settings",
+    "normalize_hold_signal_fallback",
 ]

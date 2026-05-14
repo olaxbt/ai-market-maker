@@ -22,6 +22,7 @@ def run_perp_backtest(
     config: dict[str, Any] | None = None,
     run_id: str | None = None,
     runs_dir: Path | None = None,
+    progress_callback: Any | None = None,
 ) -> dict[str, Any]:
     cfg = dict(config or {})
     cfg.setdefault("leverage", 3.0)
@@ -36,4 +37,5 @@ def run_perp_backtest(
         signal_fn=signal_fn,
         run_id=run_id,
         runs_dir=runs_dir,
+        progress_callback=progress_callback,
     )

@@ -13,6 +13,8 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import math
+import numbers
 import os
 import secrets
 import time
@@ -31,6 +33,7 @@ from api.wallet_auth import (
     wallet_to_email,
 )
 from config.leaderboard_submit import load_leaderboard_submit_config, mask_key
+from config.runs_paths import runs_dir as _resolved_runs_dir
 from storage.leadpage_db import LeadpageProvider, LeadpageUser
 from storage.leadpage_db import (
     active_provider_secret_digest as _db_active_secret_digest,
@@ -57,7 +60,7 @@ from storage.leadpage_db import (
     record_nonce as _db_record_nonce,
 )
 
-RUNS_DIR = Path(".runs")
+RUNS_DIR = _resolved_runs_dir()
 BACKTESTS_DIR = RUNS_DIR / "backtests"
 LEADPAGE_DIR = RUNS_DIR / "leadpage"
 EXTERNAL_RESULTS_JSONL = LEADPAGE_DIR / "external_results.jsonl"
@@ -70,6 +73,63 @@ REQUIRE_KEYS_ENV = "LEADPAGE_REQUIRE_KEYS"
 REQUIRE_SIGNED_ENV = "LEADPAGE_REQUIRE_SIGNED"
 SIGNED_MAX_SKEW_SEC_ENV = "LEADPAGE_SIGNED_MAX_SKEW_SEC"
 NONCES_JSONL = LEADPAGE_DIR / "nonces.jsonl"
+
+
+def _leaderboard_row_completeness(row: dict[str, Any]) -> int:
+    keys = (
+        "total_return_pct",
+        "sharpe",
+        "max_drawdown_pct",
+        "trade_count",
+        "win_rate",
+        "change_pct",
+    )
+    return sum(1 for k in keys if row.get(k) is not None)
+
+
+def _dedupe_leaderboard_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collapse duplicate (provider, run_id) rows, keeping the richest payload."""
+    out_map: dict[tuple[str, str], dict[str, Any]] = {}
+    tail: list[dict[str, Any]] = []
+    for r in rows:
+        rid = r.get("run_id")
+        if not isinstance(rid, str) or not rid.strip():
+            tail.append(r)
+            continue
+        prov = str(r.get("provider") or "local").strip() or "local"
+        k = (prov, rid.strip())
+        old = out_map.get(k)
+        if old is None:
+            out_map[k] = r
+            continue
+        s_new = _leaderboard_row_completeness(r)
+        s_old = _leaderboard_row_completeness(old)
+        if s_new > s_old:
+            out_map[k] = r
+        elif s_new == s_old and old.get("source") != "local" and r.get("source") == "local":
+            out_map[k] = r
+    return [*tail, *out_map.values()]
+
+
+def _overlay_disk_summary_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Fill gaps from ``.runs/backtests/<run_id>/summary.json`` when Postgres/JSONL rows are stale or partial."""
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        rid = row.get("run_id")
+        if not isinstance(rid, str) or not rid.strip():
+            out.append(row)
+            continue
+        summary = _load_local_summary(rid.strip())
+        if not summary:
+            out.append(row)
+            continue
+        disk = _leaderboard_row_from_summary(run_id=rid.strip(), summary=summary)
+        merged = dict(row)
+        for k, v in disk.items():
+            if merged.get(k) is None and v is not None:
+                merged[k] = v
+        out.append(merged)
+    return out
 
 
 def _provider_keys() -> dict[str, str]:
@@ -333,12 +393,20 @@ def _load_local_summary(run_id: str) -> dict[str, Any] | None:
 
 
 def _float_or_none(v: Any) -> float | None:
+    """Coerce scalars for leaderboard math (handles numpy / Decimal from JSON or ORM)."""
+    if v is None:
+        return None
     if isinstance(v, bool):
         return None
-    if isinstance(v, (int, float)):
-        return float(v)
+    if isinstance(v, numbers.Real):
+        try:
+            x = float(v)
+            return x if math.isfinite(x) else None
+        except Exception:
+            return None
     try:
-        return float(str(v))
+        x = float(str(v).strip())
+        return x if math.isfinite(x) else None
     except Exception:
         return None
 
@@ -348,31 +416,190 @@ def _leaderboard_row_from_summary(*, run_id: str, summary: dict[str, Any]) -> di
     metrics = summary.get("metrics") if isinstance(summary.get("metrics"), dict) else {}
     bench = summary.get("benchmark") if isinstance(summary.get("benchmark"), dict) else {}
 
-    total_return_pct = (
-        _float_or_none(evaluation.get("total_return_pct"))
-        if evaluation.get("total_return_pct") is not None
-        else _float_or_none(bench.get("strategy_total_return_pct"))
-    )
+    if evaluation.get("total_return_pct") is not None:
+        total_return_pct = _float_or_none(evaluation.get("total_return_pct"))
+    elif metrics.get("total_return_pct") is not None:
+        total_return_pct = _float_or_none(metrics.get("total_return_pct"))
+    else:
+        total_return_pct = _float_or_none(bench.get("strategy_total_return_pct"))
     sharpe = _float_or_none(metrics.get("sharpe"))
-    mdd_frac = _float_or_none(metrics.get("max_drawdown"))
-    mdd_pct = (mdd_frac * 100.0) if isinstance(mdd_frac, float) else None
+    if sharpe is None:
+        sharpe = _float_or_none(metrics.get("sharpe_ratio"))
+
+    mdd_pct = None
+    raw_mdd_pct = metrics.get("max_drawdown_pct")
+    if raw_mdd_pct is not None:
+        mdd_pct = _float_or_none(raw_mdd_pct)
+    if mdd_pct is None:
+        mdd_frac = _float_or_none(metrics.get("max_drawdown"))
+        if isinstance(mdd_frac, float):
+            # Heuristic: stored as fraction (0–1) vs already percent (e.g. 12.3)
+            mdd_pct = mdd_frac * 100.0 if abs(mdd_frac) <= 1.0 else mdd_frac
+
+    trade_count = summary.get("trade_count")
+    if not isinstance(trade_count, (int, float)):
+        for k in ("total_trades", "n_trades", "trades", "num_trades"):
+            tv = metrics.get(k)
+            if isinstance(tv, (int, float)):
+                trade_count = tv
+                break
+
+    # Prefer explicit percent; legacy summaries store win_rate as 0–1 fraction.
+    win = _float_or_none(metrics.get("win_rate_pct"))
+    if win is None:
+        wr = _float_or_none(metrics.get("win_rate"))
+        if wr is not None:
+            win = wr * 100.0 if abs(wr) <= 1.0 else wr
+
+    # "Change" = excess vs buy-and-hold (or equal-weight) when benchmark block exists.
+    change_pct: float | None = None
+    if isinstance(bench, dict):
+        change_pct = _float_or_none(bench.get("excess_return_vs_buy_hold_equity_pct"))
+    if change_pct is None and isinstance(evaluation, dict):
+        change_pct = _float_or_none(
+            evaluation.get("total_return_vs_hold_pct") or evaluation.get("excess_return_pct")
+        )
+    if change_pct is None:
+        change_pct = _float_or_none(summary.get("total_return_vs_hold_pct"))
+    if (
+        change_pct is None
+        and isinstance(bench, dict)
+        and isinstance(total_return_pct, (int, float))
+    ):
+        bh = _float_or_none(bench.get("benchmark_buy_hold_equity_return_pct"))
+        ew = _float_or_none(bench.get("benchmark_equal_weight_equity_return_pct"))
+        if bh is not None:
+            change_pct = float(total_return_pct) - bh
+        elif ew is not None:
+            change_pct = float(total_return_pct) - ew
+
+    # Perp summaries (and some API responses) expose cash/equity at top level without metrics.
+    if total_return_pct is None:
+        init = _float_or_none(summary.get("initial_cash"))
+        fin = _float_or_none(summary.get("final_equity"))
+        if init is not None and init > 0 and fin is not None:
+            total_return_pct = (float(fin) - float(init)) / float(init) * 100.0
+
+    # Unix seconds for web "When" column (summary uses end_ts in ms).
+    ts_out: int | None = None
+    raw_ts = summary.get("ts")
+    if isinstance(raw_ts, (int, float)) and raw_ts > 0:
+        ts_out = int(raw_ts // 1000) if raw_ts > 10_000_000_000 else int(raw_ts)
+    else:
+        end_ts = summary.get("end_ts")
+        if isinstance(end_ts, (int, float)) and end_ts > 0:
+            ts_out = int(end_ts // 1000) if end_ts > 10_000_000_000 else int(end_ts)
+
+    syms = summary.get("symbols")
+    ticker = summary.get("ticker")
+    if not ticker and isinstance(syms, list) and syms:
+        ticker = str(syms[0])
 
     return {
         "source": "local",
-        "ts": summary.get("ts") if summary.get("ts") is not None else None,
+        "provider": "local",
+        "ts": ts_out,
         "run_id": run_id,
         "title": summary.get("strategy", {}).get("title")
         if isinstance(summary.get("strategy"), dict)
         else None,
-        "ticker": summary.get("ticker"),
-        "steps": summary.get("steps"),
-        "trade_count": summary.get("trade_count"),
+        "ticker": ticker,
+        "steps": summary.get("steps") or summary.get("total_bars"),
+        "trade_count": int(trade_count) if isinstance(trade_count, (int, float)) else None,
         "total_return_pct": total_return_pct,
         "sharpe": sharpe,
         "max_drawdown_pct": mdd_pct,
-        "win_rate": _float_or_none(metrics.get("win_rate")),
+        "win_rate": win,
+        "change_pct": change_pct,
         "profit_factor": _float_or_none(metrics.get("profit_factor")),
     }
+
+
+def _enrich_leaderboard_row_from_meta_summary(row: dict[str, Any]) -> dict[str, Any]:
+    """Fill optional columns from ``meta.summary`` (e.g. DB rows from local backtest insert)."""
+    meta = row.get("meta")
+    if not isinstance(meta, dict):
+        return row
+    summary = meta.get("summary")
+    if not isinstance(summary, dict):
+        return row
+    run_id = str(row.get("run_id") or summary.get("run_id") or "").strip()
+    if not run_id:
+        return row
+    derived = _leaderboard_row_from_summary(run_id=run_id, summary=summary)
+    out = dict(row)
+    for k in (
+        "total_return_pct",
+        "sharpe",
+        "max_drawdown_pct",
+        "trade_count",
+        "win_rate",
+        "change_pct",
+        "ticker",
+        "title",
+    ):
+        if out.get(k) is None and derived.get(k) is not None:
+            out[k] = derived[k]
+    return out
+
+
+def _local_backtest_history_rows_from_disk(*, limit: int) -> list[dict[str, Any]]:
+    """History rows for provider ``local``, shaped like ``provider_rows`` output, from ``summary.json``."""
+    out: list[dict[str, Any]] = []
+    if not BACKTESTS_DIR.is_dir():
+        return out
+    lim = max(1, int(limit))
+    for p in sorted(BACKTESTS_DIR.iterdir(), key=lambda x: x.name, reverse=True):
+        if len(out) >= lim:
+            break
+        if not p.is_dir():
+            continue
+        run_id = p.name
+        summary = _load_local_summary(run_id)
+        if not summary:
+            continue
+        lb = _leaderboard_row_from_summary(run_id=run_id, summary=summary)
+        ts_raw = lb.get("ts")
+        ts_out = (
+            int(ts_raw) if isinstance(ts_raw, (int, float)) and ts_raw > 0 else int(time.time())
+        )
+        out.append(
+            {
+                "source": "local",
+                "ts": ts_out,
+                "schema_version": 1,
+                "provider": "local",
+                "run_id": run_id,
+                "title": lb.get("title"),
+                "ticker": lb.get("ticker"),
+                "total_return_pct": lb.get("total_return_pct"),
+                "sharpe": lb.get("sharpe"),
+                "max_drawdown_pct": lb.get("max_drawdown_pct"),
+                "trade_count": lb.get("trade_count"),
+                "meta": {"kind": "local_backtest_summary", "summary": summary},
+            }
+        )
+    return out
+
+
+def _merge_local_provider_history_rows(
+    *,
+    disk_rows: list[dict[str, Any]],
+    db_rows: list[dict[str, Any]],
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Prefer on-disk ``summary.json`` per ``run_id``; add DB-only runs without a disk tree."""
+    by_run: dict[str, dict[str, Any]] = {}
+    for r in db_rows:
+        rid = r.get("run_id")
+        if isinstance(rid, str) and rid.strip():
+            by_run[rid.strip()] = dict(r)
+    for r in disk_rows:
+        rid = r.get("run_id")
+        if isinstance(rid, str) and rid.strip():
+            by_run[rid.strip()] = dict(r)
+    merged = sorted(by_run.values(), key=lambda x: int(x.get("ts") or 0), reverse=True)
+    return merged[: max(1, int(limit))]
 
 
 class ExternalResult(BaseModel):
@@ -640,7 +867,22 @@ def get_provider_rows(
     provider: str,
     limit: int = Query(500, ge=1, le=10_000),
 ) -> dict[str, Any]:
-    """Raw row history for a provider (external only)."""
+    """Raw row history for a provider.
+
+    External providers: Postgres or ``external_results.jsonl``.
+
+    ``local``: merged view of ``.runs/backtests/*/summary.json`` (canonical) plus optional
+    ``LeadpageResult`` rows for provider ``local`` when a database is configured.
+    """
+    if provider.strip().lower() == "local":
+        disk = _local_backtest_history_rows_from_disk(limit=int(limit))
+        if _db_url():
+            db = _db_provider_rows("local", limit=int(limit))
+            merged = _merge_local_provider_history_rows(
+                disk_rows=disk, db_rows=db, limit=int(limit)
+            )
+            return {"provider": "local", "count": len(merged), "rows": merged}
+        return {"provider": "local", "count": len(disk), "rows": disk}
     if _db_url():
         rows = _db_provider_rows(provider, limit=int(limit))
         return {"provider": provider, "count": len(rows), "rows": rows}
@@ -750,18 +992,40 @@ def get_leaderboard(
             ext = [r for r in ext if r.get("provider") != "local"]
         rows.extend(ext)
 
-    def key_return(r: dict[str, Any]) -> float:
+    rows = [_enrich_leaderboard_row_from_meta_summary(dict(r)) for r in rows]
+    rows = _dedupe_leaderboard_rows(rows)
+    rows = _overlay_disk_summary_rows(rows)
+
+    for row in rows:
+        if str(row.get("provider") or "").strip():
+            continue
+        rid = row.get("run_id")
+        if isinstance(rid, str) and rid.startswith("bt_"):
+            row["provider"] = "local"
+        elif row.get("source") == "local":
+            row["provider"] = "local"
+
+    def key_return(r: dict[str, Any]) -> tuple[float, float]:
         v = _float_or_none(r.get("total_return_pct"))
-        return v if isinstance(v, float) else float("-inf")
+        ret = v if isinstance(v, float) else float("-inf")
+        sh = _float_or_none(r.get("sharpe"))
+        sharpe_tie = sh if isinstance(sh, float) else float("-inf")
+        return (ret, sharpe_tie)
 
-    def key_sharpe(r: dict[str, Any]) -> float:
+    def key_sharpe(r: dict[str, Any]) -> tuple[float, float]:
         v = _float_or_none(r.get("sharpe"))
-        return v if isinstance(v, float) else float("-inf")
+        sh = v if isinstance(v, float) else float("-inf")
+        rret = _float_or_none(r.get("total_return_pct"))
+        ret_tie = rret if isinstance(rret, float) else float("-inf")
+        return (sh, ret_tie)
 
-    def key_mdd(r: dict[str, Any]) -> float:
+    def key_mdd(r: dict[str, Any]) -> tuple[float, float]:
         # For drawdown, "better" is smaller. Sort ascending; missing treated as +inf.
         v = _float_or_none(r.get("max_drawdown_pct"))
-        return v if isinstance(v, float) else float("inf")
+        mdd = v if isinstance(v, float) else float("inf")
+        rret = _float_or_none(r.get("total_return_pct"))
+        ret_tie = -(rret if isinstance(rret, float) else float("-inf"))
+        return (mdd, ret_tie)
 
     if sort_by == "sharpe":
         rows.sort(key=key_sharpe, reverse=True)
@@ -773,13 +1037,45 @@ def get_leaderboard(
     return {"count": len(rows), "rows": rows[: int(limit)]}
 
 
+@router.get("/leadpage/runs-surface")
+def get_leadpage_runs_surface() -> dict[str, Any]:
+    """Where the API looks for ``summary.json`` trees (debugging empty leaderboards)."""
+    n = 0
+    if BACKTESTS_DIR.is_dir():
+        for p in BACKTESTS_DIR.iterdir():
+            if p.is_dir() and (p / "summary.json").is_file():
+                n += 1
+    return {
+        "runs_dir": str(RUNS_DIR.resolve()),
+        "backtests_dir": str(BACKTESTS_DIR),
+        "summary_json_count": n,
+        "database_url_configured": bool(_db_url()),
+        "hint": (
+            "If summary_json_count is 0 but you have backtests on disk, set AIMM_RUNS_DIR to that "
+            "repo's .runs, or ensure the API container bind-mounts host ./.runs (docker-compose.prod.yml does this by default)."
+        ),
+    }
+
+
 @router.get("/leadpage/providers/{provider}/leaderboard")
 def get_provider_leaderboard(
     provider: str,
     limit: int = Query(50, ge=1, le=500),
     sort_by: Literal["return", "sharpe", "mdd"] = Query("return"),
 ) -> dict[str, Any]:
-    """Convenience wrapper for provider pages (external rows only)."""
+    """Provider-scoped leaderboard slice.
+
+    ``local`` includes this machine's backtest summaries (same as global leaderboard without externals).
+    Other providers return externally submitted rows only.
+    """
+    if provider.strip().lower() == "local":
+        return get_leaderboard(
+            limit=limit,
+            include_local=True,
+            include_external=False,
+            sort_by=sort_by,
+            provider=None,
+        )
     return get_leaderboard(
         limit=limit,
         include_local=False,

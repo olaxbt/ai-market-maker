@@ -1,22 +1,21 @@
 {
   "policy": {
     "portfolio_budget_usd": 10000,
-    "stop_loss_pct": 0.02,
-    "take_profit_pct": 0.05,
+    "stop_loss_pct": 0.025,
+    "take_profit_pct": 0.06,
     "max_leverage": 2,
-    "min_confidence_directional": 0.35,
-    "trade_cooldown_bars": 12,
+    "min_confidence_directional": 0.26,
+    "trade_cooldown_bars": 10,
     "allows_short": true,
     "order_max_add_btc": 0.1,
     "order_max_add_notional_usd": 2000,
-    "intent_notional_fraction": 0.2,
-    "rule_sentiment_buy_min": 40,
-    "rule_sentiment_sell_below": 35,
-    "bull_exposure_floor": 0.8,
-    "bear_exposure_cap": 0.3,
-    "risk_max_drawdown_stop": 0.15,
+    "intent_notional_fraction": 0.12,
+    "rule_sentiment_buy_min": 34,
+    "rule_sentiment_sell_below": 36,
+    "bull_exposure_floor": 0.65,
+    "bear_exposure_cap": 0.35,
+    "risk_max_drawdown_stop": 0.12,
     "risk_kill_switch_cooldown_bars": 120,
-    "risk_position_cap_usd": 3000
+    "risk_position_cap_usd": 2800
   }
 }
-

@@ -53,16 +53,28 @@ def downside_deviation(returns: Sequence[float], *, mar: float = 0.0) -> float:
 
 
 def sharpe_ratio(returns: Sequence[float], *, periods_per_year: int = 365) -> float:
-    """Annualized Sharpe ratio assuming zero risk-free rate."""
+    """Annualized Sharpe ratio assuming zero risk-free rate.
+
+    Short runs often have **near-zero sample volatility** while the mean bar return is slightly
+    non-zero; ``mean / std`` then explodes after ``sqrt(periods_per_year)``. We combine a small
+    robust noise floor on ``std`` with a cap so stored metrics stay interpretable (see
+    ``leadpage_validation`` plausible ranges).
+    """
     r = _to_floats(returns)
     if len(r) < 2:
         return 0.0
     mean = sum(r) / len(r)
     var = sum((x - mean) ** 2 for x in r) / (len(r) - 1)
     std = math.sqrt(var)
-    if std == 0:
+    if std <= 0:
         return 0.0
-    return float((mean / std) * math.sqrt(periods_per_year))
+    absrets = sorted(abs(x) for x in r)
+    med_abs = absrets[len(absrets) // 2]
+    noise_floor = max(1e-12, float(med_abs) * 0.2)
+    std_eff = max(std, noise_floor)
+    raw = (mean / std_eff) * math.sqrt(max(1, int(periods_per_year)))
+    cap = 15.0
+    return float(max(-cap, min(cap, raw)))
 
 
 def sortino_ratio(

@@ -501,24 +501,32 @@ def insert_local_backtest_result_if_missing(*, summary: dict[str, Any]) -> bool:
     evaluation = summary.get("evaluation") if isinstance(summary.get("evaluation"), dict) else {}
     metrics = summary.get("metrics") if isinstance(summary.get("metrics"), dict) else {}
     bench = summary.get("benchmark") if isinstance(summary.get("benchmark"), dict) else {}
-    total_return_pct = (
-        float(evaluation.get("total_return_pct"))
-        if isinstance(evaluation.get("total_return_pct"), (int, float))
-        else (
-            float(bench.get("strategy_total_return_pct"))
-            if isinstance(bench.get("strategy_total_return_pct"), (int, float))
-            else None
-        )
-    )
-    sharpe = (
-        float(metrics.get("sharpe")) if isinstance(metrics.get("sharpe"), (int, float)) else None
-    )
-    mdd_pct = (
-        float(metrics.get("max_drawdown")) * 100.0
-        if isinstance(metrics.get("max_drawdown"), (int, float))
-        else None
-    )
+
+    # Support multiple summary formats across versions.
+    total_return_pct = None
+    if isinstance(evaluation.get("total_return_pct"), (int, float)):
+        total_return_pct = float(evaluation.get("total_return_pct"))
+    elif isinstance(metrics.get("total_return_pct"), (int, float)):
+        total_return_pct = float(metrics.get("total_return_pct"))
+    elif isinstance(bench.get("strategy_total_return_pct"), (int, float)):
+        total_return_pct = float(bench.get("strategy_total_return_pct"))
+
+    sharpe = None
+    if isinstance(metrics.get("sharpe"), (int, float)):
+        sharpe = float(metrics.get("sharpe"))
+    elif isinstance(metrics.get("sharpe_ratio"), (int, float)):
+        sharpe = float(metrics.get("sharpe_ratio"))
+
+    mdd_pct = None
+    if isinstance(metrics.get("max_drawdown_pct"), (int, float)):
+        mdd_pct = float(metrics.get("max_drawdown_pct"))
+    elif isinstance(metrics.get("max_drawdown"), (int, float)):
+        mdd_pct = float(metrics.get("max_drawdown")) * 100.0
     trade_count = summary.get("trade_count")
+    if not isinstance(trade_count, (int, float)) and isinstance(
+        metrics.get("total_trades"), (int, float)
+    ):
+        trade_count = metrics.get("total_trades")
     trade_count_i = int(trade_count) if isinstance(trade_count, (int, float)) else None
     insert_result(
         provider="local",

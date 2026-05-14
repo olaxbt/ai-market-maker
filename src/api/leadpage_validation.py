@@ -249,19 +249,28 @@ def validate_result(payload: dict[str, Any]) -> list[str]:
                 f"total_return_pct {total_return_pct}% exceeds plausible threshold (5000%)"
             )
 
-    sharpe = summary.get("sharpe_ratio")
-    if isinstance(sharpe, (int, float)):
+    sharpe_raw = summary.get("sharpe_ratio")
+    if sharpe_raw is None:
+        sharpe_raw = summary.get("sharpe")
+    if isinstance(sharpe_raw, (int, float)):
+        sharpe = float(sharpe_raw)
         if sharpe > 15:
             errors.append(f"sharpe_ratio {sharpe} exceeds plausible threshold (15)")
         if sharpe < -10:
             errors.append(f"sharpe_ratio {sharpe} below plausible threshold (-10)")
 
     max_dd = summary.get("max_drawdown_pct")
+    if max_dd is None:
+        m = summary.get("metrics")
+        if isinstance(m, dict):
+            max_dd = m.get("max_drawdown_pct")
+            if max_dd is None:
+                max_dd = m.get("max_drawdown")
     if isinstance(max_dd, (int, float)):
-        if max_dd > 0:
-            errors.append(f"max_drawdown_pct {max_dd} is positive (should be negative)")
-        if max_dd < -100:
-            errors.append(f"max_drawdown_pct {max_dd}% exceeds plausible loss (max -100%)")
+        # Internal perp summaries use **positive** magnitude (0–100%); some clients send signed DD.
+        mag = abs(float(max_dd))
+        if mag > 100:
+            errors.append(f"max_drawdown_pct magnitude {mag}% exceeds plausible loss (max 100%)")
 
     win_rate = summary.get("win_rate_pct")
     if isinstance(win_rate, (int, float)):

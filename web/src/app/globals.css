@@ -1,3 +1,5 @@
+@import "../styles/theme-v2.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -61,11 +63,82 @@
 body {
   background: var(--nexus-bg);
   color: var(--nexus-text);
-  font-family: var(--font-mono), ui-monospace, monospace;
+  font-family: ui-sans-serif, system-ui, -apple-system, "SF Pro Display", "SF Pro Text",
+    "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+/* Studio: allow a distinct visual identity while keeping global theming.
+   This scope still respects the global light/dark toggle (html.light). */
+.studio-scope {
+  --nexus-hub-edge-0: #22d3ee;
+  --nexus-hub-edge-1: #22d3ee;
+}
+
+.light .studio-scope {
+  --nexus-hub-edge-0: #0ea5e9;
+  --nexus-hub-edge-1: #0ea5e9;
+}
+
+/* Studio "modern" skin (Minara-like): warm canvas, soft surfaces, minimal borders. */
+.studio-modern {
+  --nexus-bg: #f7f6f2;
+  --nexus-surface: rgba(255, 255, 255, 0.8);
+  --nexus-panel: rgba(255, 255, 255, 0.72);
+  --nexus-border: rgba(15, 23, 42, 0.08);
+  --nexus-card-stroke: rgba(15, 23, 42, 0.08);
+  --nexus-rule-strong: rgba(15, 23, 42, 0.08);
+  --nexus-rule-soft: rgba(15, 23, 42, 0.06);
+  --nexus-text: #0b1220;
+  --nexus-muted: rgba(15, 23, 42, 0.62);
+  --nexus-toggle-shell-bg: rgba(255, 255, 255, 0.75);
+  --nexus-toggle-shell-border: rgba(15, 23, 42, 0.08);
+  --nexus-toggle-active-bg: rgba(0, 212, 170, 0.10);
+  --nexus-toggle-active-border: rgba(0, 212, 170, 0.22);
+  --nexus-toggle-active-shadow: 0 10px 40px rgba(2, 6, 23, 0.06);
+}
+
+.studio-modern .nexus-bg {
+  /* Remove grid pattern for Studio. */
+  background-image: none;
+}
+
+/* Studio modern typography + composition helpers */
+.studio-modern {
+  --studio-base: 14px;
+  --studio-muted: rgba(15, 23, 42, 0.62);
+  --studio-strong: rgba(15, 23, 42, 0.88);
+}
+
+.studio-modern body {
+  font-size: var(--studio-base);
+}
+
+.studio-modern .studio-kicker {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(15, 23, 42, 0.55);
+}
+
+.studio-modern .studio-h1 {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(15, 23, 42, 0.88);
+}
+
+code,
+pre,
+kbd,
+samp {
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
 }
 
 /* Nexus space: subtle grid */
 .nexus-bg {
+  background-color: var(--nexus-bg);
   background-image:
     linear-gradient(rgba(0, 212, 170, 0.03) 1px, transparent 1px),
     linear-gradient(90deg, rgba(0, 212, 170, 0.03) 1px, transparent 1px);
@@ -702,34 +775,38 @@ html.light .nexus-hub-card {
 
 /* ── Light mode overrides ── */
 html.light {
-  --nexus-bg: #ffffff;
-  --nexus-surface: #f8fafc;
-  --nexus-panel: #ffffff;
-  --nexus-border: #e2e8f0;
-  --nexus-glow: #3b82f6;
-  --nexus-glow-dim: rgba(59, 130, 246, 0.10);
-  --nexus-text: #0f172a;
+  --nexus-bg: #f6f7fb;
+  --nexus-surface: #ffffff;
+  --nexus-panel: rgba(255, 255, 255, 0.86);
+  --nexus-border: rgba(15, 23, 42, 0.08);
+  --nexus-glow: #2563eb;
+  --nexus-glow-dim: rgba(37, 99, 235, 0.10);
+  --nexus-text: #0b1220;
   /* Darker than slate-500 so 10px chrome copy stays legible on white */
   --nexus-muted: #475569;
   --nexus-accent: #3b82f6;
   --nexus-danger: #ef4444;
   --nexus-success: #22c55e;
   --nexus-rule-strong: rgba(15, 23, 42, 0.10);
-  --nexus-rule-soft: rgba(15, 23, 42, 0.05);
-  --nexus-card-stroke: rgba(148, 163, 184, 0.30);
-  --nexus-hub-frame: rgba(148, 163, 184, 0.30);
-  --nexus-topology-idle-border: rgba(148, 163, 184, 0.30);
-  --nexus-cot-rule: rgba(148, 163, 184, 0.30);
+  --nexus-rule-soft: rgba(15, 23, 42, 0.06);
+  --nexus-card-stroke: rgba(15, 23, 42, 0.10);
+  --nexus-hub-frame: rgba(15, 23, 42, 0.10);
+  --nexus-topology-idle-border: rgba(15, 23, 42, 0.10);
+  --nexus-cot-rule: rgba(15, 23, 42, 0.10);
 
-  --nexus-toggle-shell-bg: #f1f5f9;
-  --nexus-toggle-shell-border: #e2e8f0;
+  --nexus-input-bg: rgba(255, 255, 255, 0.72);
+  --nexus-input-border: rgba(15, 23, 42, 0.12);
+  --nexus-input-focus-border: rgba(37, 99, 235, 0.35);
+
+  --nexus-toggle-shell-bg: rgba(255, 255, 255, 0.72);
+  --nexus-toggle-shell-border: rgba(15, 23, 42, 0.10);
   --nexus-toggle-active-bg: rgba(59, 130, 246, 0.12);
   --nexus-toggle-active-fg: #2563eb;
   --nexus-toggle-active-border: rgba(59, 130, 246, 0.35);
   --nexus-toggle-active-shadow: 0 0 14px rgba(59, 130, 246, 0.14);
   --nexus-toggle-idle-fg: #475569;
   --nexus-toggle-idle-hover-fg: #1e293b;
-  --nexus-toggle-idle-hover-bg: #f1f5f9;
+  --nexus-toggle-idle-hover-bg: rgba(2, 6, 23, 0.04);
 
   /* Surface vars for hardcoded component colors */
   --nexus-surface-bg: rgba(248, 250, 252, 0.60);

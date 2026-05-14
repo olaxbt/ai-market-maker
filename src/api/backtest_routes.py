@@ -11,10 +11,13 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+import anyio
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from backtest.bars import (
+    align_bars_by_min_length,
     fetch_ccxt_ohlcv_bars,
     fetch_ccxt_ohlcv_range,
     interval_sec_to_ccxt_timeframe,
@@ -24,6 +27,7 @@ from backtest.bars import (
 from backtest.exchange_trade_format import normalize_trade_row_for_api
 from backtest.loop import MultiStepResult, run_multi_step_backtest
 from backtest.trade_book import read_jsonl_dict_records
+from config.runs_paths import runs_dir as _resolved_runs_dir
 from strategies.presets import (
     DEFAULT_QUANT_STRATEGY_ID,
     get_preset,
@@ -31,7 +35,7 @@ from strategies.presets import (
     merge_preset_quick_request,
 )
 
-RUNS_DIR = Path(".runs")
+RUNS_DIR = _resolved_runs_dir()
 BACKTESTS_DIR = RUNS_DIR / "backtests"
 
 # Async preset jobs: UI polls GET /backtests/jobs/{run_id} for step progress.
@@ -43,6 +47,23 @@ logger = logging.getLogger(__name__)
 
 def _max_api_steps() -> int:
     return max(20, int(os.environ.get("BACKTEST_API_MAX_STEPS", "5000")))
+
+
+def _job_path(run_id: str) -> Path:
+    return BACKTESTS_DIR / str(run_id) / "job.json"
+
+
+def _write_job(run_id: str, payload: dict[str, Any]) -> None:
+    """Persist job progress so multi-worker servers can poll reliably."""
+    try:
+        p = _job_path(run_id)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(p)
+    except Exception:
+        # Best-effort: in-memory polling may still work in single-worker setups.
+        pass
 
 
 def _jsonl_preview(path: Path, *, limit: int = 20) -> list[dict[str, Any]]:
@@ -127,6 +148,26 @@ class QuickBacktestRequest(BaseModel):
     )
 
 
+class DemoBacktestRequest(BaseModel):
+    """README-style demo defaults: multi-symbol, aligned bars, single portfolio run."""
+
+    symbols: str = Field(
+        "BTC/USDT,ETH/USDT,SOL/USDT",
+        min_length=3,
+        description="Comma-separated ccxt pairs (min 2).",
+    )
+    steps: int = Field(100, ge=20, le=20_000, description="Candles to fetch and replay.")
+    interval_sec: int = Field(
+        86_400,
+        ge=60,
+        le=86_400,
+        description="Bar size in seconds (default: 1d).",
+    )
+    exchange_id: str = Field("binance", description="CCXT exchange id (default: binance).")
+    initial_cash: float = Field(10_000.0, gt=0)
+    fee_bps: float = Field(10.0, ge=0, le=500)
+
+
 def _execute_quick_backtest(
     req: QuickBacktestRequest,
     *,
@@ -170,6 +211,7 @@ def _execute_quick_backtest(
                 "step": 0,
             }
         )
+        _write_job(run_id, dict(BACKTEST_JOBS[run_id]))
 
     logger.info(
         "backtest quick ticker=%s bars=%s effective_steps=%s",
@@ -209,6 +251,68 @@ def _execute_quick_backtest(
     return out
 
 
+def _execute_demo_backtest(
+    req: DemoBacktestRequest,
+    *,
+    run_id: str | None = None,
+    on_bar_complete: Callable[[int, int, dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    cap = _max_api_steps()
+    want = int(req.steps)
+    effective = max(1, min(want, cap))
+    ex_id = (req.exchange_id or "binance").strip()
+    tf = interval_sec_to_ccxt_timeframe(int(req.interval_sec))
+    syms = [s.strip() for s in (req.symbols or "").split(",") if s.strip()]
+    if len(syms) < 2:
+        raise HTTPException(
+            status_code=400, detail="demo backtest requires at least 2 symbols (comma-separated)"
+        )
+
+    if run_id is not None and run_id in BACKTEST_JOBS:
+        BACKTEST_JOBS[run_id].update({"status": "running", "total_steps": effective, "step": 0})
+        _write_job(run_id, dict(BACKTEST_JOBS[run_id]))
+
+    bars_by_symbol: dict[str, list[list[float]]] = {}
+    for sym in syms:
+        bars = fetch_ccxt_ohlcv_bars(exchange_id=ex_id, symbol=sym, timeframe=tf, limit=effective)
+        if not bars:
+            raise HTTPException(
+                status_code=400, detail=f"No OHLCV returned for {sym} ({ex_id}, {tf})"
+            )
+        bars_by_symbol[sym] = [list(map(float, row)) for row in bars]
+
+    aligned = align_bars_by_min_length(bars_by_symbol)
+
+    # Use the first symbol as "primary" for logging/bench labels inside the engine.
+    primary = syms[0]
+    result = run_multi_step_backtest(
+        ticker=primary,
+        bars_by_symbol=aligned,
+        initial_cash=req.initial_cash,
+        fee_bps=req.fee_bps,
+        interval_sec=req.interval_sec,
+        runs_dir=RUNS_DIR,
+        max_steps=effective,
+        run_id=run_id,
+        progress_callback=on_bar_complete,
+    )
+
+    out: dict[str, Any] = {
+        "run_id": result.run_id,
+        "steps": result.steps,
+        "trade_count": result.trade_count,
+        "metrics": result.metrics,
+        "evaluation": _evaluation_block(result=result, initial_cash=req.initial_cash),
+        "paths": _backtest_paths_response(result),
+        "capped": effective < want,
+        "server_max_steps": cap,
+        "symbols": syms,
+        "timeframe": tf,
+        "exchange_id": ex_id,
+    }
+    return out
+
+
 @router.post("/backtests/quick")
 def post_quick_backtest(req: QuickBacktestRequest) -> dict[str, Any]:
     """
@@ -216,6 +320,117 @@ def post_quick_backtest(req: QuickBacktestRequest) -> dict[str, Any]:
     write ``.runs/backtests/<run_id>/`` (trades, equity, ``iterations.jsonl``, summary) and flow events under ``.runs/``.
     """
     return _execute_quick_backtest(req)
+
+
+@router.post("/backtests/quick/async")
+def post_quick_backtest_async(req: QuickBacktestRequest) -> dict[str, Any]:
+    """Run quick backtest in a background thread and expose per-bar progress.
+
+    Poll :func:`get_backtest_job` for progress updates.
+    """
+    rid = f"bt-{uuid.uuid4().hex[:12]}"
+    BACKTEST_JOBS[rid] = {
+        "status": "queued",
+        "step": 0,
+        "total_steps": 0,
+        "trade_count": 0,
+        "equity": None,
+        "capital": None,
+        "positions": 0,
+        "ts": None,
+    }
+    _write_job(rid, dict(BACKTEST_JOBS[rid]))
+
+    def work() -> None:
+        def on_bar(i: int, total: int, snap: dict[str, Any]) -> None:
+            if rid not in BACKTEST_JOBS:
+                return
+            BACKTEST_JOBS[rid].update(
+                {
+                    "status": "running",
+                    "step": i + 1,
+                    "total_steps": total,
+                    "trade_count": snap.get("trade_count", 0),
+                    "equity": snap.get("equity"),
+                    "capital": snap.get("capital"),
+                    "positions": snap.get("positions", 0),
+                    "ts": snap.get("ts"),
+                }
+            )
+            _write_job(rid, dict(BACKTEST_JOBS[rid]))
+
+        try:
+            out = _execute_quick_backtest(req, run_id=rid, on_bar_complete=on_bar)
+            BACKTEST_JOBS[rid] = {"status": "completed", "result": out}
+            _write_job(rid, dict(BACKTEST_JOBS[rid]))
+        except HTTPException as e:
+            detail = e.detail
+            BACKTEST_JOBS[rid] = {
+                "status": "failed",
+                "error": detail if isinstance(detail, str) else str(detail),
+            }
+            _write_job(rid, dict(BACKTEST_JOBS[rid]))
+        except Exception as e:
+            logger.exception("async quick backtest failed")
+            BACKTEST_JOBS[rid] = {"status": "failed", "error": str(e)}
+            _write_job(rid, dict(BACKTEST_JOBS[rid]))
+
+    threading.Thread(target=work, daemon=True).start()
+    return {"run_id": rid, "poll": f"/backtests/jobs/{rid}"}
+
+
+@router.post("/backtests/demo/async")
+def post_demo_backtest_async(req: DemoBacktestRequest) -> dict[str, Any]:
+    """Run README-style multi-symbol demo backtest (async) with job polling."""
+    rid = f"bt-{uuid.uuid4().hex[:12]}"
+    BACKTEST_JOBS[rid] = {
+        "status": "queued",
+        "step": 0,
+        "total_steps": 0,
+        "trade_count": 0,
+        "equity": None,
+        "capital": None,
+        "positions": 0,
+        "ts": None,
+    }
+    _write_job(rid, dict(BACKTEST_JOBS[rid]))
+
+    def work() -> None:
+        def on_bar(i: int, total: int, snap: dict[str, Any]) -> None:
+            if rid not in BACKTEST_JOBS:
+                return
+            BACKTEST_JOBS[rid].update(
+                {
+                    "status": "running",
+                    "step": i + 1,
+                    "total_steps": total,
+                    "trade_count": snap.get("trade_count", 0),
+                    "equity": snap.get("equity"),
+                    "capital": snap.get("capital"),
+                    "positions": snap.get("positions", 0),
+                    "ts": snap.get("ts"),
+                }
+            )
+            _write_job(rid, dict(BACKTEST_JOBS[rid]))
+
+        try:
+            out = _execute_demo_backtest(req, run_id=rid, on_bar_complete=on_bar)
+            BACKTEST_JOBS[rid] = {"status": "completed", "result": out}
+            _write_job(rid, dict(BACKTEST_JOBS[rid]))
+        except HTTPException as e:
+            detail = e.detail
+            BACKTEST_JOBS[rid] = {
+                "status": "failed",
+                "error": detail if isinstance(detail, str) else str(detail),
+            }
+            _write_job(rid, dict(BACKTEST_JOBS[rid]))
+        except Exception as e:
+            logger.exception("async demo backtest failed")
+            BACKTEST_JOBS[rid] = {"status": "failed", "error": str(e)}
+            _write_job(rid, dict(BACKTEST_JOBS[rid]))
+
+    threading.Thread(target=work, daemon=True).start()
+    return {"run_id": rid, "poll": f"/backtests/jobs/{rid}"}
 
 
 class PresetBacktestRequest(BaseModel):
@@ -295,6 +510,7 @@ def post_preset_backtest_async(req: PresetBacktestRequest) -> dict[str, Any]:
         "equity": None,
         "vetoed": None,
     }
+    _write_job(rid, dict(BACKTEST_JOBS[rid]))
 
     def work() -> None:
         def on_bar(i: int, total: int, snap: dict[str, Any]) -> None:
@@ -305,11 +521,12 @@ def post_preset_backtest_async(req: PresetBacktestRequest) -> dict[str, Any]:
                     "status": "running",
                     "step": i + 1,
                     "total_steps": total,
-                    "trade_count": snap["trade_count"],
-                    "equity": snap["equity"],
-                    "vetoed": snap["vetoed"],
+                    "trade_count": snap.get("trade_count", 0),
+                    "equity": snap.get("equity"),
+                    "vetoed": snap.get("vetoed"),
                 }
             )
+            _write_job(rid, dict(BACKTEST_JOBS[rid]))
 
         try:
             out = _execute_quick_backtest(
@@ -323,15 +540,18 @@ def post_preset_backtest_async(req: PresetBacktestRequest) -> dict[str, Any]:
                 on_bar_complete=on_bar,
             )
             BACKTEST_JOBS[rid] = {"status": "completed", "result": out}
+            _write_job(rid, dict(BACKTEST_JOBS[rid]))
         except HTTPException as e:
             detail = e.detail
             BACKTEST_JOBS[rid] = {
                 "status": "failed",
                 "error": detail if isinstance(detail, str) else str(detail),
             }
+            _write_job(rid, dict(BACKTEST_JOBS[rid]))
         except Exception as e:
             logger.exception("async preset backtest failed")
             BACKTEST_JOBS[rid] = {"status": "failed", "error": str(e)}
+            _write_job(rid, dict(BACKTEST_JOBS[rid]))
 
     threading.Thread(target=work, daemon=True).start()
     return {"run_id": rid, "poll": f"/backtests/jobs/{rid}"}
@@ -339,10 +559,72 @@ def post_preset_backtest_async(req: PresetBacktestRequest) -> dict[str, Any]:
 
 @router.get("/backtests/jobs/{run_id}")
 def get_backtest_job(run_id: str) -> dict[str, Any]:
-    job = BACKTEST_JOBS.get(run_id)
+    rid = str(run_id)
+    p = _job_path(rid)
+    if p.is_file():
+        try:
+            return json.loads(p.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    job = BACKTEST_JOBS.get(rid)
     if job is None:
         raise HTTPException(status_code=404, detail="Unknown job or run_id")
     return job
+
+
+@router.get("/backtests/jobs/{run_id}/stream")
+async def stream_backtest_job(run_id: str, request: Request) -> StreamingResponse:
+    """Server-sent events stream of backtest job progress.
+
+    This is a drop-in upgrade over polling for large fanout. Clients should close the stream
+    once they receive a terminal state (completed/failed).
+    """
+
+    rid = str(run_id)
+
+    async def gen():
+        last_payload: str | None = None
+        last_keepalive = 0.0
+        while True:
+            if await request.is_disconnected():
+                return
+
+            try:
+                job = get_backtest_job(rid)
+            except HTTPException as e:
+                # One structured error event, then end.
+                payload = json.dumps(
+                    {"status": "failed", "error": str(e.detail)}, ensure_ascii=False
+                )
+                yield f"event: error\ndata: {payload}\n\n"
+                return
+
+            payload = json.dumps(job, ensure_ascii=False)
+            if payload != last_payload:
+                last_payload = payload
+                yield f"data: {payload}\n\n"
+
+            status = (job or {}).get("status")
+            if status in ("completed", "failed"):
+                return
+
+            # Keep-alive comment ~ every 15s to prevent idle timeouts.
+            now = anyio.current_time()
+            if now - last_keepalive > 15.0:
+                last_keepalive = now
+                yield ": keepalive\n\n"
+
+            await anyio.sleep(0.5)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 class FileBacktestRequest(BaseModel):
@@ -393,7 +675,38 @@ def get_backtest_summary(run_id: str) -> dict[str, Any]:
     summary_path = BACKTESTS_DIR / run_id / "summary.json"
     if not summary_path.is_file():
         raise HTTPException(status_code=404, detail="Unknown backtest run_id")
-    return json.loads(summary_path.read_text(encoding="utf-8"))
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    # Backfill start/end time for older runs (added later in engine).
+    if isinstance(summary, dict) and ("start_ts" not in summary or "end_ts" not in summary):
+        equity_path = BACKTESTS_DIR / run_id / "equity.jsonl"
+        if equity_path.is_file():
+            try:
+                lines = equity_path.read_text(encoding="utf-8").splitlines()
+                if lines:
+                    first = json.loads(lines[0])
+                    last = json.loads(lines[-1])
+                    start_ts = first.get("ts")
+                    end_ts = last.get("ts")
+                    if isinstance(start_ts, (int, float)) and isinstance(end_ts, (int, float)):
+                        start_ts_i = int(start_ts)
+                        end_ts_i = int(end_ts)
+                        summary["start_ts"] = start_ts_i
+                        summary["end_ts"] = end_ts_i
+                        try:
+                            from datetime import datetime, timezone
+
+                            summary["start_iso"] = datetime.fromtimestamp(
+                                start_ts_i / 1000, tz=timezone.utc
+                            ).isoformat()
+                            summary["end_iso"] = datetime.fromtimestamp(
+                                end_ts_i / 1000, tz=timezone.utc
+                            ).isoformat()
+                        except Exception:
+                            summary.setdefault("start_iso", None)
+                            summary.setdefault("end_iso", None)
+            except Exception:
+                pass
+    return summary
 
 
 @router.get("/backtests/{run_id}/equity")
@@ -441,6 +754,26 @@ def get_backtest_trades(
         "returned": len(normalized),
         "truncated": total > len(normalized),
         "trades": normalized,
+    }
+
+
+@router.get("/backtests/{run_id}/iterations")
+def get_backtest_iterations(
+    run_id: str,
+    limit: int = Query(300, ge=1, le=5000),
+) -> dict[str, Any]:
+    """Return per-bar iteration receipts from ``iterations.jsonl`` (capped)."""
+
+    iterations_path = BACKTESTS_DIR / run_id / "iterations.jsonl"
+    if not iterations_path.is_file():
+        raise HTTPException(
+            status_code=404, detail="Unknown backtest run_id or missing iterations.jsonl"
+        )
+    rows = _jsonl_preview(iterations_path, limit=limit)
+    return {
+        "run_id": run_id,
+        "total_returned": len(rows),
+        "iterations": rows,
     }
 
 

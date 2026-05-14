@@ -17,6 +17,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
+    env_file:
+      - .env
     environment:
       DATABASE_URL: ${DATABASE_URL}
       AIMM_DB_AUTOCREATE: "0"
@@ -29,12 +31,16 @@ services:
     ports:
       - "8001:8001"
     volumes:
-      - aimm_runs:/app/.runs
+      - ./.runs:/app/.runs
+      # Host `config/` overrides image-baked JSON so API backtests match local `uv run` without rebuild.
+      - ./config:/app/config:ro
 
   worker:
     build:
       context: .
       dockerfile: Dockerfile.worker
+    env_file:
+      - .env
     environment:
       DATABASE_URL: ${DATABASE_URL}
       PLATFORM_WORKER_AUTO_EXECUTE: ${PLATFORM_WORKER_AUTO_EXECUTE:-0}
@@ -47,11 +53,14 @@ services:
       db:
         condition: service_healthy
     volumes:
-      - aimm_runs:/app/.runs
+      - ./.runs:/app/.runs
+      - ./config:/app/config:ro
 
   engine:
     profiles: ["engine"]
     image: henry-ai-market-maker-api
+    env_file:
+      - .env
     environment:
       MODE: ${MODE:-paper}
       TICKER: ${TICKER:-BTC/USDT}
@@ -59,7 +68,7 @@ services:
     depends_on:
       - api
     volumes:
-      - aimm_runs:/app/.runs
+      - ./.runs:/app/.runs
     command: >
       sh -lc "while true; do python src/main.py --mode \"$MODE\" --ticker \"$TICKER\" || true; sleep \"$STRATEGY_INTERVAL_SEC\"; done"
 
@@ -78,5 +87,4 @@ services:
 
 volumes:
   aimm_pgdata:
-  aimm_runs:
 
