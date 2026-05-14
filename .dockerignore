@@ -1,0 +1,26 @@
+.DS_Store
+.git
+.github
+
+# Python
+.venv
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# Runtime artifacts
+.runs/
+
+# Frontend (when building API/worker with context: .)
+web/node_modules/
+web/.next/
+web/out/
+
+# OS / editors
+.idea/
+.vscode/
