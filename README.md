@@ -298,6 +298,54 @@ These results reflect:
 
 ---
 
+## Futu OpenD (HK / US Stock Data)
+
+The stack includes a **Futu OpenD adapter** for fetching real-time HK and US stock data and placing simulated (paper) orders.
+
+### Prerequisites
+- Futu OpenD must be running locally or on a reachable host.
+  Download from [Futu OpenAPI](https://www.futunn.com/OpenAPI) or use:
+  ```bash
+  docker run -d \
+    --name futu-opend \
+    -p 11111:11111 \
+    -p 11112:11112 \
+    registry.cn-hangzhou.aliyuncs.com/futu-openapi/opend:latest
+  ```
+
+### Configuration
+
+```bash
+# .env (all have sensible defaults if unset)
+FUTU_OPEND_HOST=127.0.0.1       # OpenD host
+FUTU_OPEND_QUOTE_PORT=11111     # Quote API port
+FUTU_OPEND_TRADE_PORT=11112     # Trade API port
+FUTU_DRY_RUN=1                  # 1 = parse only, never send real orders (safe default)
+# FUTU_UNLOCK_PWD=              # Required for order placement
+```
+
+### Test the connection
+
+```bash
+python -c "
+from futu import OpenQuoteContext
+ctx = OpenQuoteContext(host='127.0.0.1', port=11111)
+ret, data = ctx.get_stock_quote('HK.00700')
+print('OK' if ret == 0 else 'FAIL', data)
+ctx.close()
+"
+```
+
+### Web Dashboard
+
+Open the Futu dashboard at **`/futu`** (Nexus nav → Futu tab) after starting the web UI.
+- Select HK/US tickers from the configured universe.
+- View OHLCV candlestick charts (interval: 1h / 1d / 1w).
+- Place simulated buy/sell orders (paper trades).
+- Falls back to synthetic mock data when OpenD is not available.
+
+---
+
 ## Web UI
 
 A Next.js dashboard is included for viewing:
@@ -305,6 +353,7 @@ A Next.js dashboard is included for viewing:
 - Backtest results
 - Topology visualization
 - Prompt editing (where applicable)
+- **Futu stock data and charts**
 
 Run with:
 ```bash
