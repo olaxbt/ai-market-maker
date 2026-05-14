@@ -726,16 +726,50 @@ export function BacktestLabPanel({
 
         <div className={`flex flex-wrap items-end ${compactForm ? "gap-2" : "gap-4"}`}>
           <div
-            className={`w-full min-w-[120px] ${compactForm ? "max-w-[11rem]" : "max-w-xs min-w-[160px]"}`}
+            className={`w-full min-w-[120px] ${compactForm ? "max-w-[12rem]" : "max-w-xs min-w-[180px]"}`}
           >
             <label className={lb}>Ticker</label>
-            <input
-              className={inp}
-              value={ticker}
-              onChange={(e) => setTicker(e.target.value)}
-              placeholder={dataExchange === "futu" ? "HK.00700" : "BTC/USDT"}
-              disabled={formBusy}
-            />
+            {dataExchange === "futu" ? (
+              <select
+                className={sel}
+                value={ticker}
+                onChange={(e) => setTicker(e.target.value)}
+                disabled={formBusy}
+                aria-label="Futu stock selection"
+              >
+                <optgroup label="HK Stocks">
+                  <option value="HK.00700">HK.00700 - Tencent</option>
+                  <option value="HK.09988">HK.09988 - Alibaba</option>
+                  <option value="HK.03690">HK.03690 - Meituan</option>
+                  <option value="HK.09999">HK.09999 - NetEase</option>
+                  <option value="HK.01810">HK.01810 - Xiaomi</option>
+                  <option value="HK.09618">HK.09618 - JD.com</option>
+                  <option value="HK.02015">HK.02015 - Li Auto</option>
+                  <option value="HK.01211">HK.01211 - BYD</option>
+                  <option value="HK.02318">HK.02318 - Ping An</option>
+                  <option value="HK.00388">HK.00388 - HKEX</option>
+                  <option value="HK.00883">HK.00883 - CNOOC</option>
+                  <option value="HK.00941">HK.00941 - China Mobile</option>
+                  <option value="HK.01299">HK.01299 - AIA Group</option>
+                </optgroup>
+                <optgroup label="US Stocks">
+                  <option value="US.AAPL">US.AAPL - Apple</option>
+                  <option value="US.MSFT">US.MSFT - Microsoft</option>
+                  <option value="US.GOOGL">US.GOOGL - Alphabet</option>
+                  <option value="US.AMZN">US.AMZN - Amazon</option>
+                  <option value="US.TSLA">US.TSLA - Tesla</option>
+                  <option value="US.NVDA">US.NVDA - NVIDIA</option>
+                </optgroup>
+              </select>
+            ) : (
+              <input
+                className={inp}
+                value={ticker}
+                onChange={(e) => setTicker(e.target.value)}
+                placeholder="BTC/USDT"
+                disabled={formBusy}
+              />
+            )}
           </div>
           <div className={`w-full min-w-[120px] ${compactForm ? "max-w-[9rem]" : "max-w-[10rem]"}`}>
             <label className={lb}>Data source</label>
@@ -750,6 +784,8 @@ export function BacktestLabPanel({
                   setSinceIso("");
                   setUntilIso("");
                   setTicker((cur) => (cur.includes("/") && !cur.includes("HK.") ? "HK.00700" : cur));
+                } else {
+                  setTicker((cur) => (cur.startsWith("HK.") || cur.startsWith("US.") ? "BTC/USDT" : cur));
                 }
               }}
               disabled={formBusy}
