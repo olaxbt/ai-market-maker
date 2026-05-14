@@ -210,6 +210,7 @@ export function NexusHeaderNav({
                 <span className="mx-1 h-6 w-px bg-[rgba(138,149,166,0.18)]" />
                 <SecondaryTab href="/inbox" label="Approvals" active={isNexusApprovals} title="Your approvals queue" />
                 <SecondaryTab href="/paper" label="Paper" active={isNexusPaper} title="Paper portfolio + fills" />
+                <SecondaryTab href="/futu" label="Futu" active={pathname === "/futu"} title="Futu OpenD HK/US stocks" />
                 <SecondaryTab
                   href="/platform/providers"
                   label="Provider keys"

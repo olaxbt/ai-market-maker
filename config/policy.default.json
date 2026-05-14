@@ -17,5 +17,32 @@
     "risk_max_drawdown_stop": 0.12,
     "risk_kill_switch_cooldown_bars": 120,
     "risk_position_cap_usd": 2800
+  },
+  "futu": {
+    "enabled": false,
+    "opend_host": "127.0.0.1",
+    "opend_quote_port": 11111,
+    "opend_trade_port": 11112,
+    "universe_hk": [
+      "HK.00700",
+      "HK.09988",
+      "HK.03690",
+      "HK.09999",
+      "HK.01810",
+      "HK.09618",
+      "HK.02015",
+      "HK.01211",
+      "HK.02318",
+      "HK.00388"
+    ],
+    "universe_us": [
+      "US.AAPL",
+      "US.MSFT",
+      "US.GOOGL",
+      "US.AMZN",
+      "US.TSLA"
+    ],
+    "default_interval": "1d",
+    "simulate_mode": true
   }
 }
