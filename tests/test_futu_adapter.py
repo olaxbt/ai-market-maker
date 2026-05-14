@@ -42,6 +42,7 @@ def _make_config() -> ExchangeConfig:
 
 # -- Symbol normalization tests -----------------------------------------------
 
+
 @pytest.mark.parametrize(
     "symbol,expected",
     [
@@ -63,6 +64,7 @@ def test_normalize_futu_symbol(symbol: str, expected: str):
 
 # -- Protocol conformance -----------------------------------------------------
 
+
 def test_protocol_conformance_all_methods_exist():
     adapter = FutuAdapter(config=_make_config(), client=FakeFutuClient())
     for method in (
@@ -76,6 +78,7 @@ def test_protocol_conformance_all_methods_exist():
 
 
 # -- Dry run ------------------------------------------------------------------
+
 
 def test_dry_run_place_order_does_not_call_client():
     fake = FakeFutuClient()
@@ -104,6 +107,7 @@ def test_dry_run_place_order_does_not_call_client():
 
 
 # -- Place order ---------------------------------------------------------------
+
 
 def test_place_order_accepted_via_fake_client():
     fake = FakeFutuClient(default_response="accepted")
@@ -160,6 +164,7 @@ def test_place_order_filled_via_fake_client():
 
 # -- Cancel order -------------------------------------------------------------
 
+
 def test_cancel_order_returns_cancelled():
     fake = FakeFutuClient()
     adapter = FutuAdapter(config=_make_config(), client=fake)
@@ -187,6 +192,7 @@ def test_dry_run_cancel_order_does_not_call_client():
 
 # -- Get order status ---------------------------------------------------------
 
+
 @pytest.mark.parametrize(
     "fake_response,expected_status",
     [
@@ -208,6 +214,7 @@ def test_get_order_status_maps_all_statuses(fake_response: str, expected_status:
 
 # -- Portfolio health ---------------------------------------------------------
 
+
 def test_get_portfolio_health_returns_data():
     fake = FakeFutuClient()
     adapter = FutuAdapter(config=_make_config(), client=fake)
@@ -221,6 +228,7 @@ def test_get_portfolio_health_returns_data():
 
 
 # -- Market depth -------------------------------------------------------------
+
 
 def test_fetch_market_depth_returns_orders():
     fake = FakeFutuClient()
@@ -236,6 +244,7 @@ def test_fetch_market_depth_returns_orders():
 
 # -- History kline ------------------------------------------------------------
 
+
 def test_get_history_kline_returns_bars():
     fake = FakeFutuClient()
     adapter = FutuAdapter(config=_make_config(), client=fake)
@@ -247,6 +256,7 @@ def test_get_history_kline_returns_bars():
 
 
 # -- RT data ------------------------------------------------------------------
+
 
 def test_get_rt_data_returns_snapshot():
     fake = FakeFutuClient()
@@ -260,6 +270,7 @@ def test_get_rt_data_returns_snapshot():
 
 # -- Healthcheck --------------------------------------------------------------
 
+
 def test_healthcheck_returns_ok():
     fake = FakeFutuClient()
     adapter = FutuAdapter(config=_make_config(), client=fake)
@@ -270,6 +281,7 @@ def test_healthcheck_returns_ok():
 
 # -- Missing SDK --------------------------------------------------------------
 
+
 def test_missing_sdk_raises_runtime_error(monkeypatch):
     monkeypatch.setitem(sys.modules, "futu", None)
     env = _make_futu_env()
@@ -279,6 +291,7 @@ def test_missing_sdk_raises_runtime_error(monkeypatch):
 
 
 # -- Repr safety --------------------------------------------------------------
+
 
 def test_repr_does_not_expose_host():
     adapter = FutuAdapter(
