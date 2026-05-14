@@ -304,20 +304,13 @@ The stack includes a **Futu OpenD adapter** for fetching real-time HK and US sto
 
 ### Prerequisites
 - Futu OpenD must be running locally or on a reachable host.
-
-  **Option A — Docker (recommended for dev):**
+  Download from [Futu OpenAPI](https://www.futunn.com/OpenAPI) and start the
+  gateway on your local machine:
   ```bash
-  # Launch alongside the full stack
-  docker compose --profile with-futu up -d
-
-  # Or standalone
-  docker compose run --rm -d--service-ports futu-opend
+  chmod +x OpenD
+  ./OpenD
   ```
-
-  **Option B — Download from [Futu OpenAPI](https://www.futunn.com/OpenAPI):**
-  ```bash
-  chmod +x OpenD && ./OpenD
-  ```
+  OpenD exposes port 11111 (quote) and 11112 (trade) by default.
 
 ### Configuration
 
