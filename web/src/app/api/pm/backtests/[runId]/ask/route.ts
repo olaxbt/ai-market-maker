@@ -1,7 +1,8 @@
 import { flowAuthHeaders } from "../../../../_flowAuth";
 import { flowApiBase, proxyJson } from "@/server/flowProxy";
+import { NextRequest } from "next/server";
 
-export async function POST(req: Request, ctx: { params: Promise<{ runId: string }> }) {
+export async function POST(req: NextRequest, ctx: { params: Promise<{ runId: string }> }) {
   const { runId } = await ctx.params;
 
   let body: unknown;

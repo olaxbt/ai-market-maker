@@ -34,11 +34,11 @@ export default function StudioClient() {
     const url = new URL(window.location.href);
     const urlPanel = (url.searchParams.get("panel") as StudioPanel | null) ?? null;
     const path = url.pathname;
-    const pathPanel: StudioPanel | null =
-      path === "/studio/strategies"
-        ? "strategies"
-          : null;
-    setActivePanel(pathPanel ?? urlPanel ?? "workspace");
+    let pathPanel: StudioPanel | null = null;
+    if (path === "/studio/workspace") pathPanel = "workspace";
+    else if (path === "/studio/strategies") pathPanel = "strategies";
+    // Query wins so `/studio/strategies?panel=workspace` can open the backtest workspace.
+    setActivePanel(urlPanel ?? pathPanel ?? "workspace");
   }, []);
 
   const handleLoadStrategy = useCallback((s: SavedStrategy) => {

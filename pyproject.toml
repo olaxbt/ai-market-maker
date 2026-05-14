@@ -56,6 +56,9 @@ aimm-export-eval = "eval_export:main"
 export = [
     "pyarrow>=16.0.0",
 ]
+hyperliquid = [
+    "hyperliquid-python-sdk>=0.1.0",
+]
 dev = [
     "pre-commit>=4.0.0",
     "pytest>=8.0.0",
