@@ -17,6 +17,7 @@ import {
   type StrategyOption,
   type StrategyCategory,
 } from "@/components/StrategyCardSelector";
+import { FutuTickerCombobox } from "@/components/FutuTickerCombobox";
 import { BacktestPriceChart } from "@/features/backtest/components/BacktestPriceChart";
 import { format, parseISO } from "date-fns";
 import { createPortal } from "react-dom";
@@ -730,37 +731,11 @@ export function BacktestLabPanel({
           >
             <label className={lb}>Ticker</label>
             {dataExchange === "futu" ? (
-              <select
-                className={sel}
+              <FutuTickerCombobox
                 value={ticker}
-                onChange={(e) => setTicker(e.target.value)}
+                onChange={setTicker}
                 disabled={formBusy}
-                aria-label="Futu stock selection"
-              >
-                <optgroup label="HK Stocks">
-                  <option value="HK.00700">HK.00700 - Tencent</option>
-                  <option value="HK.09988">HK.09988 - Alibaba</option>
-                  <option value="HK.03690">HK.03690 - Meituan</option>
-                  <option value="HK.09999">HK.09999 - NetEase</option>
-                  <option value="HK.01810">HK.01810 - Xiaomi</option>
-                  <option value="HK.09618">HK.09618 - JD.com</option>
-                  <option value="HK.02015">HK.02015 - Li Auto</option>
-                  <option value="HK.01211">HK.01211 - BYD</option>
-                  <option value="HK.02318">HK.02318 - Ping An</option>
-                  <option value="HK.00388">HK.00388 - HKEX</option>
-                  <option value="HK.00883">HK.00883 - CNOOC</option>
-                  <option value="HK.00941">HK.00941 - China Mobile</option>
-                  <option value="HK.01299">HK.01299 - AIA Group</option>
-                </optgroup>
-                <optgroup label="US Stocks">
-                  <option value="US.AAPL">US.AAPL - Apple</option>
-                  <option value="US.MSFT">US.MSFT - Microsoft</option>
-                  <option value="US.GOOGL">US.GOOGL - Alphabet</option>
-                  <option value="US.AMZN">US.AMZN - Amazon</option>
-                  <option value="US.TSLA">US.TSLA - Tesla</option>
-                  <option value="US.NVDA">US.NVDA - NVIDIA</option>
-                </optgroup>
-              </select>
+              />
             ) : (
               <input
                 className={inp}
