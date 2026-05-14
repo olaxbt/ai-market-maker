@@ -29,7 +29,22 @@ def _shared_ccxt_exchange(exchange: str, testnet: bool):
     )
     if testnet:
         ex.set_sandbox_mode(True)
-    ex.load_markets()
+    try:
+        ex.load_markets()
+    except Exception as e:
+        logger.error(f"Failed to load markets (exchange={exchange}, testnet={testnet}): {str(e)}")
+        if testnet:
+            # Testnet can be flaky; fall back to public markets so paper runs still work.
+            try:
+                ex.set_sandbox_mode(False)
+                ex.load_markets()
+                logger.warning(
+                    "Recovered by loading public exchange markets (testnet unavailable)."
+                )
+            except Exception as e2:
+                logger.error(f"Failed to load public markets (exchange={exchange}): {str(e2)}")
+                ex.markets = {}
+                ex.symbols = []
     _CCXT_SHARED[key] = ex
     return ex
 

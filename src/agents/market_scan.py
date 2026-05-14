@@ -23,8 +23,21 @@ class MarketScanAgent:
         try:
             self.exchange.load_markets()
         except Exception as e:
-            logger.error(f"Failed to load markets: {str(e)}")
-            raise
+            # Testnet is occasionally flaky/unavailable. Don't crash the entire workflow:
+            # retry against public markets, and if that also fails, continue in degraded mode.
+            logger.error(f"Failed to load markets (testnet={testnet}): {str(e)}")
+            if testnet:
+                try:
+                    self.exchange.set_sandbox_mode(False)
+                    self.exchange.load_markets()
+                    logger.warning(
+                        "Recovered by loading public exchange markets (testnet unavailable)."
+                    )
+                except Exception as e2:
+                    logger.error(f"Failed to load public markets: {str(e2)}")
+                    # Degraded mode: keep agent alive so the rest of the workflow can proceed.
+                    self.exchange.markets = {}
+                    self.exchange.symbols = []
         self.cg = CoinGeckoAPI()
 
     def fetch_data(self, ticker: str, timeframe: str = "1h") -> Dict:

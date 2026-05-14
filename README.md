@@ -110,7 +110,10 @@ docker compose -f docker-compose.prod.yml up --build -d
 docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
 
 # 6. Open the dashboard
-# http://localhost:3000
+# http://localhost:3000/leaderboard   (results + signals)
+# http://localhost:3000/console       (nexus console)
+# http://localhost:3000/get-started   (copy/paste setup guide)
+# http://localhost:3000/tools         (tool browser)
 ```
 
 Open http://localhost:3000 to view the dashboard.
@@ -123,6 +126,39 @@ uv run python src/main.py
 ```
 
 ---
+
+## Hosted Leaderboard (recommended public deployment)
+
+If you want a **public site** where people can:
+- view **Leaderboard** results + **Signals**
+- publish results from their own local runs (provider keys)
+
+Run the **leaderboard stack** (DB + API, optional Web UI):
+
+```bash
+# API + DB (leaderboard endpoints)
+docker compose -f docker-compose.leaderboard.yml up -d --build
+
+# Optional: include the web UI too
+docker compose -f docker-compose.leaderboard.yml --profile web up -d --build
+```
+
+This keeps the public deployment lightweight and focused on evaluation, while users run the full agentic system locally.
+
+---
+
+## How to evaluate this repo (developer checklist)
+
+- **Start with the product surface**
+  - Open `/leaderboard` to see how results/signals are presented.
+  - Open `/get-started` for local setup commands.
+  - Open `/tools` to browse callable platform endpoints.
+- **Run a quick backtest**
+  - Use Nexus → Research (or call `POST /backtests/quick`) and confirm:
+    - equity + trades ledgers exist under `.runs/backtests/<run_id>/`
+    - results can be published to the leaderboard (see `/leadpage/external_result`)
+- **Inspect a run**
+  - Fetch `GET /runs/latest/payload?soft=1` and inspect topology/traces/message log.
 
 ## Setup Details
 
@@ -219,16 +255,27 @@ Every backtest automatically includes:
 
 ### Running Backtests
 
+Run these **from the repository root** (the directory that contains `pyproject.toml`), after `uv sync --extra dev` (or `uv sync`).
+
 ```bash
-# Using the OpenClaw runner
-python3 openclaw/scripts/claw_runner.py --backtest
+# Using the OpenClaw runner (same cwd requirement)
+uv run python openclaw/scripts/claw_runner.py --backtest
 
 # With custom parameters
-python3 openclaw/scripts/claw_runner.py --backtest --symbols "BTC/USDT,ETH/USDT,SOL/USDT" --steps 100
+uv run python openclaw/scripts/claw_runner.py --backtest --symbols "BTC/USDT,ETH/USDT,SOL/USDT" --steps 100
 
-# Direct Python execution
-uv run python -m backtest.run_demo --symbols BTC/USDT,ETH/USDT,SOL/USDT --steps 100 --online --exchange binance
+# Direct multi-symbol demo (public OHLCV via CCXT; no API keys required)
+# Quote --symbols in zsh/fish. NEXUS_DISABLE + LLM off avoid slow/failing network and LLM calls.
+NEXUS_DISABLE=1 AI_MARKET_MAKER_USE_LLM=0 \
+  uv run python -m backtest.run_demo \
+    --symbols 'BTC/USDT,ETH/USDT,SOL/USDT' \
+    --steps 100 \
+    --online \
+    --exchange binance
 ```
+
+If you see `ModuleNotFoundError: No module named 'backtest'`, you are not in the repo root or dependencies are not installed (`uv sync`).
+If your `.env` sets `AIMM_STRATEGY_PRESET`, it overrides `config/app.default.json` strategy defaults; unset it to use shipped `app.default.json` presets.
 
 ### Example Backtest Results
 

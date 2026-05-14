@@ -141,11 +141,24 @@ export default function LeaderboardPanel() {
             Signals
           </button>
         </div>
-        <span className="text-[9px] tracking-[0.2em] text-[rgba(138,149,166,0.35)] uppercase">Ranked runs &amp; signals</span>
+        <div className="flex items-center gap-3">
+          <a
+            href="/leaderboard"
+            className="rounded-lg border border-[rgba(138,149,166,0.12)] bg-[rgba(6,8,11,0.25)] px-2 py-1 text-[9px] uppercase tracking-[0.18em] text-[rgba(138,149,166,0.55)] hover:text-[rgba(226,232,240,0.85)]"
+          >
+            Open full leaderboard
+          </a>
+          <span className="text-[9px] tracking-[0.2em] text-[rgba(138,149,166,0.35)] uppercase">
+            Ranked runs &amp; signals
+          </span>
+        </div>
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-auto p-3">
+        <div className="mb-3 rounded-lg border border-[rgba(138,149,166,0.12)] bg-[rgba(6,8,11,0.22)] p-3 text-[10px] text-[rgba(138,149,166,0.55)]">
+          Want to contribute? Ask Studio: <span className="font-mono text-[rgba(226,232,240,0.75)]">publish to leaderboard</span>
+        </div>
         {tab === "runs" ? (
           loading && ranked.length === 0 ? (
             <div className="flex items-center justify-center py-12">

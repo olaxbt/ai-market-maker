@@ -10,10 +10,12 @@ function SectionExplainer({ active }: { active: HeaderNavMode }) {
   const text =
     active === "observe"
       ? "Leaderboard = performance + signals. Use Results to compare runs/providers; use Signals to see what they’re doing now."
-      : "Nexus = operator tools. Research runs backtests; Monitor watches live state; Approvals/Paper are your paper-only ops loop.";
+      : active === "studio"
+        ? "Studio = guided chat entry point. Learn the system, clone + run locally, and iterate with receipts and repeatable loops."
+        : "Nexus = operator tools. Research runs backtests; Monitor watches live state; Approvals/Paper are your paper-only ops loop.";
 
   return (
-    <div className="w-full rounded-xl border border-[rgba(138,149,166,0.16)] bg-[rgba(6,8,11,0.30)] px-3 py-2 text-[11px] text-[rgba(226,232,240,0.82)]">
+    <div className="w-full h-[44px] overflow-hidden rounded-xl border border-[rgba(138,149,166,0.16)] bg-[rgba(6,8,11,0.30)] px-3 py-2 text-[11px] leading-snug text-[rgba(226,232,240,0.82)]">
       <span className="text-[var(--nexus-muted)]">What is this?</span> {text}
     </div>
   );
@@ -63,20 +65,22 @@ export function NexusSectionHeader({
             <h1 className="text-sm font-bold tracking-[0.2em] text-[var(--nexus-glow)] nexus-glow-text">
               {title}
             </h1>
-            <p className="mt-0.5 text-[10px] tracking-wide text-[var(--nexus-muted)]">{subtitle}</p>
+            <p className="mt-0.5 min-h-[1.5rem] text-[10px] leading-snug tracking-wide text-[var(--nexus-muted)]">
+              {subtitle}
+            </p>
           </div>
         </div>
 
-        <div className="w-full mt-2 border-t border-[var(--nexus-rule-soft)] pt-2 flex flex-wrap items-center justify-start gap-3">
+        <div className="w-full mt-2 min-h-[48px] border-t border-[var(--nexus-rule-soft)] pt-2 flex flex-nowrap items-center justify-start gap-3 overflow-x-auto">
           <Suspense fallback={<div className="h-10 w-full max-w-md rounded-lg bg-[rgba(6,8,11,0.35)]" />}>
             <NexusHeaderNav active={active} variant="section" />
           </Suspense>
-          {active !== "nexus" && lastRunId ? (
+          {active === "observe" && lastRunId ? (
             <div className="rounded-lg border border-[rgba(138,149,166,0.18)] bg-[rgba(0,0,0,0.15)] px-2 py-1 text-[10px] text-[var(--nexus-muted)]">
               Run: <span className="text-[rgba(226,232,240,0.92)]">{lastRunId}</span>
             </div>
           ) : null}
-          {authed === false ? (
+          {active === "nexus" && authed === false ? (
             <Link
               href="/platform/login"
               className="rounded-xl border border-[rgba(0,212,170,0.25)] bg-[rgba(0,212,170,0.10)] px-3 py-2 text-[11px] font-semibold text-[rgba(226,232,240,0.95)] hover:border-[rgba(0,212,170,0.45)]"

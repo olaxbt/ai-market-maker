@@ -31,8 +31,10 @@ def derive_trade_intent(
     sm = state.get("shared_memory") or {}
     bt = sm.get("backtest") if isinstance(sm, dict) and isinstance(sm.get("backtest"), dict) else {}
     if run_mode == RunMode.BACKTEST.value:
-        cash = float(bt.get("cash", 0.0))
-        qty = float(bt.get("qty", 0.0))
+        cash_raw = bt.get("cash", 0.0)
+        cash = float(cash_raw) if isinstance(cash_raw, (int, float)) else 0.0
+        qty_raw = bt.get("qty", 0.0)
+        qty = float(qty_raw) if isinstance(qty_raw, (int, float)) else 0.0
     else:
         # Paper/live: use the local paper account snapshot when available.
         paper = (

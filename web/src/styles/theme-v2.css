@@ -1,0 +1,142 @@
+/**
+ * UI v2 theme (parity with `web-v2/src/styles/theme.css`).
+ *
+ * Enable with `html.theme-v2` (see ThemeProvider). Maps semantic tokens → legacy `--nexus-*`
+ * so existing components pick up the new palette without a full rewrite.
+ */
+
+/* Dark palette (matches web-v2 `.dark`) */
+html.theme-v2:not(.light) {
+  --v2-background: oklch(0.145 0 0);
+  --v2-foreground: oklch(0.985 0 0);
+  --v2-card: oklch(0.145 0 0);
+  --v2-card-foreground: oklch(0.985 0 0);
+  --v2-popover: oklch(0.145 0 0);
+  --v2-popover-foreground: oklch(0.985 0 0);
+  --v2-primary: oklch(0.985 0 0);
+  --v2-primary-foreground: oklch(0.205 0 0);
+  --v2-secondary: oklch(0.269 0 0);
+  --v2-secondary-foreground: oklch(0.985 0 0);
+  --v2-muted: oklch(0.269 0 0);
+  --v2-muted-foreground: oklch(0.708 0 0);
+  --v2-accent: oklch(0.269 0 0);
+  --v2-accent-foreground: oklch(0.985 0 0);
+  --v2-destructive: oklch(0.396 0.141 25.723);
+  --v2-destructive-foreground: oklch(0.637 0.237 25.331);
+  --v2-border: oklch(0.269 0 0);
+  --v2-input: oklch(0.269 0 0);
+  --v2-ring: oklch(0.439 0 0);
+  --v2-sidebar: oklch(0.205 0 0);
+  --v2-sidebar-foreground: oklch(0.985 0 0);
+  --v2-sidebar-primary: oklch(0.488 0.243 264.376);
+  --v2-sidebar-primary-foreground: oklch(0.985 0 0);
+  --v2-sidebar-accent: oklch(0.269 0 0);
+  --v2-sidebar-accent-foreground: oklch(0.985 0 0);
+  --v2-sidebar-border: oklch(0.269 0 0);
+  --v2-sidebar-ring: oklch(0.439 0 0);
+
+  /* ── Bridge → Nexus (existing UI) ───────────────────────────────────── */
+  --nexus-bg: var(--v2-background);
+  --nexus-text: var(--v2-foreground);
+  --nexus-muted: var(--v2-muted-foreground);
+  --nexus-border: var(--v2-border);
+  --nexus-panel: var(--v2-card);
+  --nexus-surface: var(--v2-muted);
+  --nexus-card-stroke: var(--v2-border);
+  --nexus-rule-strong: color-mix(in oklab, var(--v2-border) 85%, transparent);
+  --nexus-rule-soft: color-mix(in oklab, var(--v2-border) 55%, transparent);
+  --nexus-input-bg: color-mix(in oklab, var(--v2-background) 92%, white 8%);
+  --nexus-input-border: var(--v2-border);
+  --nexus-input-focus-border: rgba(0, 212, 170, 0.45);
+  --nexus-accent: #00d4aa;
+  --nexus-glow: #00d4aa;
+  --nexus-glow-dim: rgba(0, 212, 170, 0.12);
+  --nexus-danger: oklch(0.637 0.237 25.331);
+  --nexus-success: #00d4aa;
+  --nexus-toggle-shell-bg: color-mix(in oklab, var(--v2-background) 75%, white 6%);
+  --nexus-toggle-shell-border: var(--v2-border);
+  --nexus-toggle-active-bg: rgba(0, 212, 170, 0.14);
+  --nexus-toggle-active-fg: #00d4aa;
+  --nexus-toggle-active-border: rgba(0, 212, 170, 0.35);
+  --nexus-toggle-active-shadow: 0 0 14px rgba(0, 212, 170, 0.14);
+  --nexus-toggle-idle-fg: var(--v2-foreground);
+  --nexus-toggle-idle-hover-fg: #ffffff;
+  --nexus-toggle-idle-hover-bg: color-mix(in oklab, var(--v2-muted) 90%, black 10%);
+  --nexus-cot-rule: var(--v2-border);
+  --nexus-topology-idle-border: var(--v2-border);
+  --nexus-hub-frame: var(--v2-border);
+}
+
+/* Light palette (matches web-v2 `:root`) */
+html.theme-v2.light {
+  --v2-background: #ffffff;
+  --v2-foreground: oklch(0.145 0 0);
+  --v2-card: #ffffff;
+  --v2-card-foreground: oklch(0.145 0 0);
+  --v2-popover: oklch(1 0 0);
+  --v2-popover-foreground: oklch(0.145 0 0);
+  --v2-primary: #030213;
+  --v2-primary-foreground: oklch(1 0 0);
+  --v2-secondary: oklch(0.95 0.0058 264.53);
+  --v2-secondary-foreground: #030213;
+  --v2-muted: #ececf0;
+  --v2-muted-foreground: #717182;
+  --v2-accent: #e9ebef;
+  --v2-accent-foreground: #030213;
+  --v2-destructive: #d4183d;
+  --v2-destructive-foreground: #ffffff;
+  --v2-border: rgba(0, 0, 0, 0.1);
+  --v2-input: transparent;
+  --v2-ring: oklch(0.708 0 0);
+  --v2-sidebar: oklch(0.985 0 0);
+  --v2-sidebar-foreground: oklch(0.145 0 0);
+  --v2-sidebar-primary: #030213;
+  --v2-sidebar-primary-foreground: oklch(0.985 0 0);
+  --v2-sidebar-accent: oklch(0.97 0 0);
+  --v2-sidebar-accent-foreground: oklch(0.205 0 0);
+  --v2-sidebar-border: oklch(0.922 0 0);
+  --v2-sidebar-ring: oklch(0.708 0 0);
+
+  --nexus-bg: var(--v2-background);
+  --nexus-text: var(--v2-foreground);
+  --nexus-muted: var(--v2-muted-foreground);
+  --nexus-border: var(--v2-border);
+  --nexus-panel: rgba(255, 255, 255, 0.92);
+  --nexus-surface: var(--v2-muted);
+  --nexus-card-stroke: var(--v2-border);
+  --nexus-rule-strong: rgba(15, 23, 42, 0.1);
+  --nexus-rule-soft: rgba(15, 23, 42, 0.06);
+  --nexus-input-bg: #f3f3f5;
+  --nexus-input-border: rgba(15, 23, 42, 0.14);
+  --nexus-input-focus-border: rgba(0, 212, 170, 0.35);
+  --nexus-accent: #00a082;
+  --nexus-glow: #00d4aa;
+  --nexus-glow-dim: rgba(0, 212, 170, 0.08);
+  --nexus-danger: #d4183d;
+  --nexus-success: #00a082;
+  --nexus-toggle-shell-bg: rgba(255, 255, 255, 0.85);
+  --nexus-toggle-shell-border: var(--v2-border);
+  --nexus-toggle-active-bg: rgba(0, 212, 170, 0.12);
+  --nexus-toggle-active-fg: #007a62;
+  --nexus-toggle-active-border: rgba(0, 212, 170, 0.28);
+  --nexus-toggle-active-shadow: 0 10px 40px rgba(2, 6, 23, 0.06);
+  --nexus-toggle-idle-fg: var(--v2-foreground);
+  --nexus-toggle-idle-hover-fg: #030213;
+  --nexus-toggle-idle-hover-bg: var(--v2-accent);
+  --nexus-cot-rule: var(--v2-border);
+  --nexus-topology-idle-border: var(--v2-border);
+  --nexus-hub-frame: var(--v2-border);
+}
+
+/* Softer grid on v2 (less “neon terminal”) */
+html.theme-v2:not(.light) .nexus-bg {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+}
+
+html.theme-v2.light .nexus-bg {
+  background-image:
+    linear-gradient(rgba(15, 23, 42, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.04) 1px, transparent 1px);
+}

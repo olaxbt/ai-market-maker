@@ -48,6 +48,47 @@ def _actor_for_node_id(node_id: str) -> str | None:
     return None
 
 
+_LLM_BACKED_ACTORS = frozenset(
+    {"signal_arbitrator", "desk_debate", "portfolio_proposal", "portfolio_execute"}
+)
+
+
+def _public_prompt_merged(node_id: str, rows: list[AgentPromptSettings]) -> dict[str, Any] | None:
+    """Match `payload_adapter.build_nexus_payload` merge semantics for one node."""
+    nid = str(node_id)
+    by_node = {p.node_id: p for p in rows}
+    for n in NODE_REGISTRY:
+        reg_id = str(n.get("id") or "")
+        if reg_id != nid:
+            continue
+        actor = str(n.get("actor") or "").strip()
+        if not actor:
+            continue
+        applies = actor in _LLM_BACKED_ACTORS
+        existing = by_node.get(nid)
+        if existing is not None:
+            base = existing.to_public_dict()
+        else:
+            label = str(n.get("label") or actor)
+            base = AgentPromptSettings(
+                node_id=nid,
+                actor_id=actor,
+                system_prompt=(
+                    f"You are {label}. Produce compact, structured outputs. "
+                    f"Never invent data; state assumptions."
+                ),
+                task_prompt=f"For ticker {{ticker}} and run {{run_id}}: emit a {actor} summary.",
+                cot_enabled=(actor == "signal_arbitrator"),
+                tools=[],
+            ).to_public_dict()
+        return {
+            **base,
+            "mode": "llm" if applies else "deterministic",
+            "applies_to_runtime": applies,
+        }
+    return None
+
+
 @router.get("/agent-prompts")
 def list_agent_prompts() -> dict[str, Any]:
     rows = load_agent_prompt_settings()
@@ -57,10 +98,10 @@ def list_agent_prompts() -> dict[str, Any]:
 @router.get("/agent-prompts/{node_id}")
 def get_agent_prompt(node_id: str) -> dict[str, Any]:
     rows = load_agent_prompt_settings()
-    row = _by_node_id(rows, node_id=str(node_id))
-    if row is None:
+    merged = _public_prompt_merged(str(node_id), rows)
+    if merged is None:
         raise HTTPException(status_code=404, detail="Unknown node_id")
-    return row.to_public_dict()
+    return merged
 
 
 @router.put("/agent-prompts/{node_id}")
@@ -86,6 +127,10 @@ def put_agent_prompt(node_id: str, patch: AgentPromptPatch) -> dict[str, Any]:
         tools=patch.tools,
     )
     upsert_agent_prompt_setting(updated)
+    rows_after = load_agent_prompt_settings()
+    merged = _public_prompt_merged(str(node_id), rows_after)
+    if merged is not None:
+        return merged
     return updated.to_public_dict()
 
 

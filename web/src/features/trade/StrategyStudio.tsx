@@ -1,13 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { BacktestRunResult, TradeRow, EquityPoint } from "@/types/backtest";
 import { BacktestEquityChart } from "@/features/backtest/components/BacktestEquityChart";
 import { BacktestTradesTable } from "@/components/backtest/BacktestTradesTable";
 import { getFlowApiOrigin } from "@/lib/flowApiOrigin";
 import { saveStrategy, deleteStrategy, renameStrategy } from "@/lib/strategyStorage";
 import type { StrategyConfig } from "@/lib/strategyStorage";
-import type { WorkspaceHandle } from "@/app/studio/page";
+import type { WorkspaceHandle } from "@/app/studio/StudioClient";
+import Link from "next/link";
 import {
   Save, Trash2, Check, X,
   Search, BarChart3, Shield, Activity, Brain, TrendingUp,
@@ -33,6 +36,8 @@ const TOOL_ICONS: Record<string, { icon: React.ReactNode; label: string }> = {
   market_data:     { icon: <BarChart3 className="h-3 w-3" />,         label: "Market Data" },
   analyze_market:  { icon: <TrendingUp className="h-3 w-3" />,       label: "Market Analysis" },
   backtest:        { icon: <Activity className="h-3 w-3" />,          label: "Backtest" },
+  execution_plan:  { icon: <Layers className="h-3 w-3" />,            label: "Execution Plan" },
+  explain_system:  { icon: <HelpCircle className="h-3 w-3" />,        label: "Explain System" },
   navigate:        { icon: <MapPin className="h-3 w-3" />,            label: "Navigate" },
   save:            { icon: <Save className="h-3 w-3" />,              label: "Save" },
   help:            { icon: <HelpCircle className="h-3 w-3" />,        label: "Help" },
@@ -94,6 +99,7 @@ const TEMPLATES = [
 ];
 
 const STEP_DELAY_MS = 350;
+const REPO_URL = "https://github.com/olaxbt/ai-market-maker";
 
 export default function StrategyStudio({
   initialStrategy,
@@ -105,7 +111,11 @@ export default function StrategyStudio({
   onNavigate?: (path: string) => void;
 }) {
   const [messages, setMessages] = useState<ChatMsg[]>([
-    { role: "system", text: "Describe your strategy idea in plain language." },
+    {
+      role: "system",
+      text:
+        "Welcome to Studio.\n\nIf you’re using a hosted demo, I can **answer questions** and **guide you** — but to run the full system (backtests, worker, paper runs) you should clone the repo and run locally.\n\nTry: `onboarding` (recommended), `help`, `publish to leaderboard`, `leaderboard`, or describe a strategy idea.",
+    },
   ]);
   const [chatInput, setChatInput] = useState("");
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -140,7 +150,13 @@ export default function StrategyStudio({
           setEquityPoints([]);
           setTrades([]);
           setError(null);
-          setMessages([{ role: "system", text: "Describe your strategy idea in plain language." }]);
+          setMessages([
+            {
+              role: "system",
+              text:
+                "Welcome to Studio.\n\nIf you’re using a hosted demo, I can **answer questions** and **guide you** — but to run the full system (backtests, worker, paper runs) you should clone the repo and run locally.\n\nTry: `onboarding` (recommended), `help`, `publish to leaderboard`, `leaderboard`, or describe a strategy idea.",
+            },
+          ]);
         },
         getSessionConfig: () => sessionConfig,
       };
@@ -172,23 +188,11 @@ export default function StrategyStudio({
       if (abortRef.current) break;
 
       if (step.action === "tool_call") {
-        // Add pending, then flip to running
         const tool = step.tool || "unknown";
         setMessages((prev) => [
           ...prev,
-          { role: "tool_call" as const, tool, status: "pending" as const, text: step.text },
+          { role: "tool_call" as const, tool, status: "running" as const, text: step.text },
         ]);
-        // Re-render with pending, then flip to running
-        await sleep(50);
-        if (abortRef.current) break;
-        setMessages((prev) => {
-          const copy = [...prev];
-          const last = copy[copy.length - 1];
-          if (last?.role === "tool_call" && last.status === "pending") {
-            (last as any).status = "running";
-          }
-          return copy;
-        });
       } else if (step.action === "tool_result") {
         // Add as done tool_call
         setMessages((prev) => [
@@ -457,16 +461,98 @@ export default function StrategyStudio({
   }, [result, metrics]);
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex flex-1 gap-0 overflow-hidden">
-        {/* Left: Chat */}
-        <div className="flex w-[360px] min-w-[300px] flex-col border-r border-[rgba(138,149,166,0.12)]">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex flex-1 min-h-0 gap-0 overflow-hidden">
+        {/* Chat-first canvas (no persistent right-side panels) */}
+        <div className="flex w-full h-full min-h-0 flex-col">
           <div className="flex items-center justify-between border-b border-[rgba(138,149,166,0.12)] px-4 py-2">
-            <span className="text-[11px] font-semibold tracking-[0.12em] text-[rgba(226,232,240,0.75)]">CHAT</span>
-            <button onClick={() => { setMessages([{ role: "system", text: "Describe your strategy idea in plain language." }]); setResult(null); setEquityPoints([]); setTrades([]); setError(null); }}
-              className="rounded-lg border border-[rgba(138,149,166,0.15)] px-2 py-1 text-[10px] text-[rgba(226,232,240,0.55)] hover:border-[rgba(0,212,170,0.3)] hover:text-white">Clear</button>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold tracking-[0.12em] text-[rgba(226,232,240,0.75)]">STUDIO CHAT</span>
+              <span className="text-[10px] text-[rgba(138,149,166,0.55)]">Ask anything about the system, then act on it.</span>
+            </div>
+            <button
+              onClick={() => {
+                setMessages([
+                  {
+                    role: "system",
+                    text:
+                      "I can help you navigate the system end-to-end: design strategies, run backtests, and publish results to the leaderboard.\n\nTry: `help`, `onboarding`, `publish to leaderboard`, `leaderboard`, or describe a strategy idea.",
+                  },
+                ]);
+                setResult(null);
+                setEquityPoints([]);
+                setTrades([]);
+                setError(null);
+              }}
+              className="rounded-lg border border-[rgba(138,149,166,0.15)] px-2 py-1 text-[10px] text-[rgba(226,232,240,0.55)] hover:border-[rgba(0,212,170,0.3)] hover:text-white"
+            >
+              Clear
+            </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-3 space-y-2">
+
+          <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+            {/* Inline templates as a chat block (not a persistent side panel) */}
+            <div className="rounded-2xl border border-[rgba(138,149,166,0.14)] bg-[rgba(6,8,11,0.18)] p-3">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[10px] uppercase tracking-[0.16em] text-[rgba(138,149,166,0.55)]">Quick templates</div>
+                  <div className="mt-0.5 text-[10px] text-[rgba(138,149,166,0.6)]">
+                    Pick one, then say <span className="font-mono text-[rgba(226,232,240,0.75)]">run backtest</span>.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMessages((prev) => [...prev, { role: "user", text: "help" }])}
+                  className="rounded-xl border border-[rgba(138,149,166,0.12)] bg-[rgba(6,8,11,0.18)] px-2.5 py-1 text-[10px] text-[rgba(138,149,166,0.65)] hover:text-[rgba(226,232,240,0.9)]"
+                >
+                  Commands
+                </button>
+              </div>
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <Link
+                  href="/get-started"
+                  className="rounded-xl border border-[rgba(0,212,170,0.18)] bg-[rgba(0,212,170,0.08)] px-2.5 py-1 text-[10px] text-[rgba(0,212,170,0.9)] hover:bg-[rgba(0,212,170,0.12)]"
+                >
+                  Get Started
+                </Link>
+                <a
+                  href={REPO_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-xl border border-[rgba(138,149,166,0.12)] bg-[rgba(6,8,11,0.18)] px-2.5 py-1 text-[10px] text-[rgba(138,149,166,0.75)] hover:text-[rgba(226,232,240,0.9)]"
+                >
+                  GitHub
+                </a>
+                <Link
+                  href="/tools"
+                  className="rounded-xl border border-[rgba(99,102,241,0.16)] bg-[rgba(99,102,241,0.06)] px-2.5 py-1 text-[10px] text-[rgba(99,102,241,0.9)] hover:bg-[rgba(99,102,241,0.10)]"
+                >
+                  Tool Browser
+                </Link>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {TEMPLATES.map((t) => (
+                  <button
+                    key={t.name}
+                    onClick={() => loadTemplate(t)}
+                    className="group relative overflow-hidden rounded-2xl border border-[rgba(138,149,166,0.14)] bg-[rgba(6,8,11,0.22)] px-3 py-2.5 text-left transition hover:border-[rgba(0,212,170,0.22)] hover:bg-[rgba(6,8,11,0.28)]"
+                  >
+                    <div
+                      className="pointer-events-none absolute inset-0 opacity-0 transition group-hover:opacity-100"
+                      style={{
+                        background:
+                          "radial-gradient(800px circle at 20% -10%, rgba(0,212,170,0.10), transparent 45%), radial-gradient(600px circle at 110% 120%, rgba(34,211,238,0.08), transparent 55%)",
+                      }}
+                    />
+                    <div className="relative">
+                      <div className="text-[11px] font-semibold text-[rgba(226,232,240,0.92)]">{t.name}</div>
+                      <div className="mt-0.5 text-[10px] text-[rgba(138,149,166,0.65)]">{t.desc}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {messages.map((msg, i) => (
               <ChatMessageBubble key={i} msg={msg} isAnimating={animating && isLastToolRunning(messages, i)} />
             ))}
@@ -478,133 +564,17 @@ export default function StrategyStudio({
             )}
             <div ref={chatEndRef} />
           </div>
-          <div className="border-t border-[rgba(138,149,166,0.12)] p-3">
+
+          <div className="border-t border-[rgba(138,149,166,0.12)] p-3 shrink-0">
             <div className="flex gap-2">
               <input value={chatInput} onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleChatSubmit()}
-                placeholder={animating ? "Agent working..." : "Describe your strategy…"}
+                placeholder={animating ? "Agent working..." : "Ask anything… (e.g. onboarding, publish to leaderboard, analyze BTC)"}
                 disabled={isRunning || animating}
                 className="flex-1 rounded-xl border border-[rgba(138,149,166,0.18)] bg-[rgba(6,8,11,0.45)] px-3 py-2 text-[12px] text-white placeholder-[rgba(226,232,240,0.3)] outline-none focus:border-[rgba(0,212,170,0.35)] disabled:opacity-40" />
               <button onClick={handleChatSubmit} disabled={isRunning || animating || !chatInput.trim()}
                 className="rounded-xl bg-[rgba(0,212,170,0.15)] px-3 py-2 text-[11px] font-semibold text-[rgba(0,215,170,0.95)] disabled:opacity-30 hover:bg-[rgba(0,212,170,0.22)]">Send</button>
             </div>
-          </div>
-        </div>
-
-        {/* Right: Canvas */}
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {/* Templates */}
-            <section>
-              <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-[rgba(138,149,166,0.5)]">Templates</div>
-              <div className="grid grid-cols-2 gap-2">
-                {TEMPLATES.map((t) => (
-                  <button key={t.name} onClick={() => loadTemplate(t)}
-                    className="rounded-xl border border-[rgba(138,149,166,0.12)] bg-[rgba(6,8,11,0.25)] px-3 py-2 text-left hover:border-[rgba(0,212,170,0.2)]">
-                    <div className="text-[11px] font-semibold text-[rgba(226,232,240,0.88)]">{t.name}</div>
-                    <div className="mt-0.5 text-[10px] text-[rgba(138,149,166,0.6)]">{t.desc}</div>
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            {/* Agents */}
-            <section>
-              <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-[rgba(138,149,166,0.5)]">Agents ({config.agent_ids.length}/14)</div>
-              <div className="flex flex-wrap gap-1.5">
-                {Object.entries(AGENT_NAMES).map(([id, name]) => {
-                  const active = config.agent_ids.includes(id);
-                  return (
-                    <button key={id} onClick={() => toggleAgent(id)}
-                      className={`rounded-lg px-2 py-1 text-[10px] font-medium transition-colors ${
-                        active
-                          ? "border border-[rgba(0,212,170,0.25)] bg-[rgba(0,212,170,0.10)] text-[rgba(0,215,170,0.9)]"
-                          : "border border-[rgba(138,149,166,0.10)] bg-[rgba(6,8,11,0.2)] text-[rgba(138,149,166,0.6)] hover:border-[rgba(138,149,166,0.25)]"
-                      }`}>{id}:{name.split(" ")[0]}</button>
-                  );
-                })}
-              </div>
-            </section>
-
-            {/* Config */}
-            <section>
-              <div className="mb-2 text-[10px] uppercase tracking-[0.16em] text-[rgba(138,149,166,0.5)]">Config</div>
-              <div className="grid grid-cols-3 gap-2">
-                <ConfigField label="Pair" value={config.ticker} onChange={(v) => setConfig((p) => ({ ...p, ticker: v }))} />
-                <ConfigField label="Interval" value={`${config.interval_sec}s`} onChange={(v) => setConfig((p) => ({ ...p, interval_sec: parseInt(v) || 3600 }))} />
-                <ConfigField label="Bars" value={String(config.n_bars)} onChange={(v) => setConfig((p) => ({ ...p, n_bars: parseInt(v) || 1000 }))} />
-                <ConfigField label="Fee (bps)" value={String(config.fee_bps)} onChange={(v) => setConfig((p) => ({ ...p, fee_bps: parseInt(v) || 5 }))} />
-                <ConfigField label="Capital ($)" value={String(config.initial_cash)} onChange={(v) => setConfig((p) => ({ ...p, initial_cash: parseInt(v) || 10000 }))} />
-              </div>
-            </section>
-
-            {/* Run */}
-            <button onClick={handleChatSubmit} disabled={isRunning || animating}
-              className="w-full rounded-xl border border-[rgba(0,212,170,0.25)] bg-[rgba(0,212,170,0.10)] py-3 text-[12px] font-semibold text-[rgba(226,232,240,0.95)] hover:bg-[rgba(0,212,170,0.17)] disabled:opacity-40">
-              {isRunning ? (
-                <span className="inline-flex items-center gap-2">
-                  <span className="h-3 w-3 animate-spin rounded-full border-2 border-[rgba(0,212,170,0.3)] border-t-[rgba(0,212,170,0.9)]" />
-                  Running…
-                </span>
-              ) : animating ? (
-                <span className="inline-flex items-center gap-2">
-                  <span className="h-3 w-3 animate-pulse rounded-full bg-[rgba(99,102,241,0.7)]" />
-                  Agent is working…
-                </span>
-              ) : "▶ Run Backtest"}
-            </button>
-
-            {/* Results */}
-            {result && metrics && (
-              <section className="rounded-2xl border border-[rgba(138,149,166,0.15)] bg-[rgba(6,8,11,0.3)] p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <div className="text-[10px] uppercase tracking-[0.16em] text-[rgba(138,149,166,0.5)]">Backtest Results — {config.ticker}</div>
-                  <div className="flex gap-1">
-                    <button onClick={() => setViewTab("metrics")}
-                      className={`rounded-lg px-2 py-1 text-[10px] font-medium ${viewTab === "metrics" ? "bg-[rgba(0,212,170,0.12)] text-[rgba(0,212,170,0.9)]" : "text-[rgba(138,149,166,0.5)] hover:text-white"}`}>Metrics</button>
-                    <button onClick={() => setViewTab("trades")}
-                      className={`rounded-lg px-2 py-1 text-[10px] font-medium ${viewTab === "trades" ? "bg-[rgba(0,212,170,0.12)] text-[rgba(0,212,170,0.9)]" : "text-[rgba(138,149,166,0.5)] hover:text-white"}`}>Trades ({trades.length})</button>
-                  </div>
-                </div>
-
-                {viewTab === "metrics" ? (
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-5 gap-2">
-                      <MetricCard label="Return" value={fmtPct(totalReturn)} color={(totalReturn ?? 0) >= 0 ? "text-[rgba(0,212,170,0.92)]" : "text-[rgba(242,92,84,0.95)]"} />
-                      <MetricCard label="Sharpe" value={fmtN(metrics.sharpe, 2)} color={(metrics.sharpe ?? 0) >= 1 ? "text-[rgba(0,212,170,0.92)]" : "text-[rgba(242,92,84,0.95)]"} />
-                      <MetricCard label="Max DD" value={fmtPct(metrics.max_drawdown)} color="text-[rgba(242,92,84,0.8)]" />
-                      <MetricCard label="Win Rate" value={`${fmtN(metrics.win_rate, 1)}%`} color="text-[rgba(226,232,240,0.88)]" />
-                      <MetricCard label="PF" value={fmtN(metrics.profit_factor, 2)} color="text-[rgba(226,232,240,0.88)]" />
-                    </div>
-                    {equityPoints.length > 0 && (
-                      <div className="h-[200px]">
-                        <BacktestEquityChart points={equityPoints} initialCash={config.initial_cash} trades={trades} />
-                      </div>
-                    )}
-
-                    {/* Save action */}
-                    <div className="flex gap-2">
-                      <button onClick={handleSave} disabled={saved}
-                        className="flex items-center gap-1.5 rounded-xl border border-[rgba(0,212,170,0.2)] bg-[rgba(0,212,170,0.08)] px-3 py-2 text-[10px] font-medium text-[rgba(0,212,170,0.9)] hover:bg-[rgba(0,212,170,0.14)] disabled:opacity-40">
-                        <Save className="h-3 w-3" />
-                        {saved ? "Saved ✓" : "Save Strategy"}
-                      </button>
-                      <button onClick={() => { setResult(null); setEquityPoints([]); setTrades([]); }}
-                        className="flex items-center gap-1.5 rounded-xl border border-[rgba(138,149,166,0.12)] px-3 py-2 text-[10px] text-[rgba(138,149,166,0.6)] hover:border-[rgba(242,92,84,0.3)] hover:text-[rgba(242,92,84,0.8)]">
-                        <Trash2 className="h-3 w-3" />
-                        Clear
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <BacktestTradesTable trades={trades} />
-                )}
-              </section>
-            )}
-
-            {error && (
-              <div className="rounded-xl border border-[rgba(242,92,84,0.2)] bg-[rgba(242,92,84,0.08)] px-3 py-2 text-[11px] text-[rgba(242,92,84,0.9)]">{error}</div>
-            )}
           </div>
         </div>
       </div>
@@ -650,15 +620,30 @@ function ChatMessageBubble({ msg, isAnimating }: { msg: ChatMsg; isAnimating: bo
   }
 
   // user / assistant / system
+  const align =
+    msg.role === "user"
+      ? "flex justify-end"
+      : "flex justify-start";
+
   return (
-    <div className={`rounded-xl px-3 py-2 text-[11px] leading-relaxed ${
-      msg.role === "user"
-        ? "ml-6 bg-[rgba(0,212,170,0.10)] border border-[rgba(0,212,170,0.18)] text-[rgba(226,232,240,0.9)]"
-        : msg.role === "system"
-          ? "bg-[rgba(138,149,166,0.06)] text-[rgba(226,232,240,0.55)] italic"
-          : "mr-6 bg-[rgba(99,102,241,0.08)] border border-[rgba(99,102,241,0.15)] text-[rgba(226,232,240,0.88)]"
-    }`}>
-      <div className="whitespace-pre-wrap">{msg.text}</div>
+    <div className={align}>
+      <div
+        className={`rounded-2xl px-3 py-2 text-[11px] leading-relaxed break-words ${
+          msg.role === "user"
+            ? "max-w-[82%] bg-[rgba(0,212,170,0.10)] border border-[rgba(0,212,170,0.18)] text-[rgba(226,232,240,0.9)]"
+            : msg.role === "system"
+              ? "max-w-[92%] bg-[rgba(138,149,166,0.06)] border border-[rgba(138,149,166,0.10)] text-[rgba(226,232,240,0.55)] italic"
+              : "max-w-[82%] bg-[rgba(99,102,241,0.08)] border border-[rgba(99,102,241,0.15)] text-[rgba(226,232,240,0.88)]"
+        }`}
+      >
+        {msg.role === "user" ? (
+          <div className="whitespace-pre-wrap break-words overflow-hidden">{msg.text}</div>
+        ) : (
+          <div className="prose prose-invert max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0 prose-pre:my-2 prose-pre:bg-[rgba(6,8,11,0.45)] prose-pre:border prose-pre:border-[rgba(138,149,166,0.18)] prose-code:text-[rgba(226,232,240,0.92)]">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.text}</ReactMarkdown>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

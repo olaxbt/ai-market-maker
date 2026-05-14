@@ -30,10 +30,13 @@ def run_tool_calling_chat(
     temperature: Optional[float] = None,
     max_tool_rounds: int = 3,
     max_tokens: Optional[int] = None,
+    conversation_history: Optional[List[Dict[str, str]]] = None,
 ) -> Tuple[str, List[Dict[str, Any]]]:
     """Run an OpenAI chat with optional tool calls (bounded).
 
     Returns (final_text, tool_events) where tool_events is a list of {name, args, result}.
+
+    conversation_history: prior user/assistant turns (excluding the latest user message in ``user``).
     """
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
@@ -72,10 +75,14 @@ def run_tool_calling_chat(
             model_name,
         )
 
-    messages: List[Dict[str, Any]] = [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user},
-    ]
+    messages: List[Dict[str, Any]] = [{"role": "system", "content": system}]
+    for prior in conversation_history or []:
+        role = prior.get("role")
+        content = (prior.get("content") or "").strip()
+        if role not in ("user", "assistant") or not content:
+            continue
+        messages.append({"role": role, "content": content})
+    messages.append({"role": "user", "content": user})
 
     tool_events: List[Dict[str, Any]] = []
     tool_payload = openai_tools_payload(tool_specs)

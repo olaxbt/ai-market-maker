@@ -46,6 +46,18 @@ def test_put_creates_row_then_get_roundtrip(client: TestClient, tmp_path: Path) 
     assert isinstance(data, list) and len(data) == 1
 
 
+def test_get_synthetic_prompt_when_node_missing_from_file(client: TestClient) -> None:
+    """Topology nodes (e.g. n0) exist in NODE_REGISTRY before a row is written to JSON."""
+    r = client.get("/agent-prompts/n0")
+    assert r.status_code == 200
+    out = r.json()
+    assert out["node_id"] == "n0"
+    assert out["actor_id"] == "policy_orchestrator"
+    assert "system_prompt" in out and "task_prompt" in out
+    assert "applies_to_runtime" in out and out["applies_to_runtime"] is False
+    assert out.get("mode") == "deterministic"
+
+
 def test_payload_includes_default_agent_prompts(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

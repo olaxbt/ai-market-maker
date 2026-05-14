@@ -19,6 +19,15 @@ def test_sharpe_zero_when_flat():
     assert sharpe_ratio([0.0, 0.0, 0.0]) == 0.0
 
 
+def test_sharpe_capped_when_sample_vol_near_zero():
+    """Many identical bars then one small move → sample std ~0; Sharpe must stay bounded."""
+    eq = [10000.0] * 50 + [9980.0]
+    rets = returns_from_equity(eq)
+    s = sharpe_ratio(rets, periods_per_year=105_120)
+    assert -15.0 <= s <= 15.0
+    assert abs(s) < 1000.0
+
+
 def test_win_rate():
     assert win_rate([1, -1, 2, 0]) == 0.5
 

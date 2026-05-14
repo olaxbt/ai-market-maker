@@ -32,9 +32,11 @@ def backtest_momentum_score_delta(state: HedgeFundState) -> tuple[int, int, str 
     if c0 <= 0:
         return (0, 0, None)
     r = (c1 - c0) / c0
-    if r >= 0.002:
+    # Lower threshold in backtests so short runs still produce directional stances.
+    # This is only a small "nudge" when Tier-0 signals are otherwise flat/offline.
+    if r >= 0.0005:
         return (1, 0, f"backtest_momentum_r={r:.4f}")
-    if r <= -0.002:
+    if r <= -0.0005:
         return (0, 1, f"backtest_momentum_r={r:.4f}")
     return (0, 0, None)
 

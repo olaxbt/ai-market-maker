@@ -14,12 +14,16 @@ from fastapi.responses import JSONResponse
 from starlette.requests import Request
 from starlette.status import HTTP_401_UNAUTHORIZED
 
+from config.runs_paths import runs_dir as _resolved_runs_dir
+
 from .agent_prompt_routes import router as agent_prompt_router
 from .auth_routes import router as auth_router
 from .backtest_routes import router as backtest_router
+from .capabilities_routes import router as capabilities_router
 from .copy_routes import router as copy_router
 from .follow_routes import router as follow_router
 from .leadpage_routes import router as leadpage_router
+from .ops_routes import router as ops_router
 from .paper_routes import router as paper_router
 from .payload_adapter import build_nexus_payload
 from .pm_routes import router as pm_router
@@ -28,11 +32,13 @@ from .public_provider_routes import router as public_provider_router
 from .runtime_settings_routes import router as runtime_settings_router
 from .schema_validation import validate_nexus_payload
 from .signal_routes import router as signal_router
+from .studio_routes import router as studio_router
+from .tools_routes import router as tools_router
 
 _REPO_ROOT_DOTENV = Path(__file__).resolve().parents[2] / ".env"
 load_dotenv(dotenv_path=_REPO_ROOT_DOTENV)
 
-RUNS_DIR = Path(".runs")
+RUNS_DIR = _resolved_runs_dir()
 LATEST_RUN_FILE = RUNS_DIR / "latest_run.txt"
 
 DEFAULT_TAIL_EVENTS = int((os.getenv("AIMM_UI_TAIL_EVENTS") or "1200").strip() or "1200")
@@ -110,6 +116,10 @@ app.include_router(follow_router)
 app.include_router(copy_router)
 app.include_router(paper_router)
 app.include_router(public_provider_router)
+app.include_router(studio_router)
+app.include_router(tools_router)
+app.include_router(capabilities_router)
+app.include_router(ops_router)
 
 
 def _resolve_run_log(run_id: str) -> Path:

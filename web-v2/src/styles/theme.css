@@ -1,0 +1,706 @@
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --font-size: 16px;
+  --background: #ffffff;
+  --foreground: oklch(0.145 0 0);
+  --card: #ffffff;
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: #030213;
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.95 0.0058 264.53);
+  --secondary-foreground: #030213;
+  --muted: #ececf0;
+  --muted-foreground: #717182;
+  --accent: #e9ebef;
+  --accent-foreground: #030213;
+  --destructive: #d4183d;
+  --destructive-foreground: #ffffff;
+  --border: rgba(0, 0, 0, 0.1);
+  --input: transparent;
+  --input-background: #f3f3f5;
+  --switch-background: #cbced4;
+  --font-weight-medium: 500;
+  --font-weight-normal: 400;
+  --ring: oklch(0.708 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: #030213;
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  /* Slightly stronger hover/active surface */
+  --sidebar-accent: oklch(0.955 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+
+  /* ── Star-system (Console hero) ────────────────────────────────────── */
+  /* Light: warm solar / dust (subtle, readable on white) */
+  --nexus-stars-core-rgb: 245, 158, 11;
+  --nexus-stars-accent-rgb: 180, 83, 9;
+  --nexus-stars-dust-rgb: 15, 23, 42;
+  --nexus-stars-bad-rgb: 220, 38, 38;
+
+  /* ── Legacy Nexus console tokens (ported from web/) ─────────────────── */
+  --nexus-input-bg: rgba(255, 255, 255, 0.75);
+  --nexus-input-border: rgba(15, 23, 42, 0.10);
+  --nexus-input-focus-border: rgba(0, 212, 170, 0.22);
+  --nexus-bg: #f7f6f2;
+  --nexus-surface: rgba(255, 255, 255, 0.8);
+  --nexus-panel: rgba(255, 255, 255, 0.72);
+  --nexus-border: rgba(15, 23, 42, 0.08);
+  --nexus-card-stroke: rgba(15, 23, 42, 0.08);
+  --nexus-glow: #00d4aa;
+  --nexus-glow-dim: rgba(0, 212, 170, 0.10);
+  --nexus-text: #0b1220;
+  --nexus-muted: rgba(15, 23, 42, 0.62);
+  --nexus-accent: #00d4aa;
+  --nexus-danger: #f25c54;
+  --nexus-success: #00d4aa;
+  --nexus-toggle-shell-bg: rgba(255, 255, 255, 0.75);
+  --nexus-toggle-shell-border: rgba(15, 23, 42, 0.08);
+  --nexus-toggle-active-bg: rgba(0, 212, 170, 0.10);
+  --nexus-toggle-active-fg: var(--nexus-glow);
+  --nexus-toggle-active-border: rgba(0, 212, 170, 0.22);
+  --nexus-toggle-active-shadow: 0 10px 40px rgba(2, 6, 23, 0.06);
+  --nexus-toggle-idle-fg: rgba(15, 23, 42, 0.86);
+  --nexus-toggle-idle-hover-fg: rgba(2, 6, 23, 0.92);
+  --nexus-toggle-idle-hover-bg: rgba(255, 255, 255, 0.92);
+  --nexus-rule-strong: rgba(15, 23, 42, 0.08);
+  --nexus-rule-soft: rgba(15, 23, 42, 0.06);
+  --nexus-cot-rule: var(--nexus-card-stroke);
+
+  /*
+   * NexusStarSystem · light (“aurora paper”)
+   * One primary chroma: teal chrome. Pearl-mint surfaces + filament warm kick on the nucleus only.
+   */
+  --nexus-hub-frame: rgba(51, 70, 75, 0.12);
+  /* Triplet lists (used as rgba(var(--…), α)); keep numeric, do not nest var() here */
+  --nexus-hub-chrome-rgb: 20, 184, 166;
+  /* Orbital field: graphite-teal dust + airy aqua mesh */
+  --nexus-hub-canvas-rgb: 61, 99, 110;
+  --nexus-hub-mesh-rgb: 153, 246, 228;
+  /* Corona / bloom hue (same chroma family as instrumentation) */
+  --nexus-hub-glow-rgb: 20, 184, 166;
+  --nexus-hub-core-fill: #f6fefb;
+  --nexus-hub-hud-text: #134e4a;
+  --nexus-hub-agent-label-ink: #446563;
+  --nexus-agent-shadow-rgb: 20, 184, 166;
+  --nexus-agent-star-idle-bg: #2a4f55;
+  --nexus-hub-edge-0: #0d9488;
+  --nexus-hub-edge-1: #ccfbf1;
+  --nexus-hub-ring-alpha-scale: 1;
+  --nexus-hub-ring-stroke-alpha: 0.2;
+  --nexus-hub-ring-dot-boost: 0.1;
+  --nexus-hub-ring-stroke-width: 1;
+}
+
+.dark {
+  --input-background: oklch(0.22 0 0);
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.145 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.145 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.396 0.141 25.723);
+  --destructive-foreground: oklch(0.637 0.237 25.331);
+  --border: oklch(0.269 0 0);
+  --input: oklch(0.269 0 0);
+  --ring: oklch(0.439 0 0);
+  --font-weight-medium: 500;
+  --font-weight-normal: 400;
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  /* Slightly stronger hover/active surface */
+  --sidebar-accent: oklch(0.305 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(0.269 0 0);
+  --sidebar-ring: oklch(0.439 0 0);
+
+  /* Dark: cool starfield (low contrast, premium) */
+  --nexus-stars-core-rgb: 34, 211, 238;
+  --nexus-stars-accent-rgb: 0, 212, 170;
+  --nexus-stars-dust-rgb: 226, 232, 240;
+  --nexus-stars-bad-rgb: 242, 92, 84;
+
+  /* Legacy Nexus console tokens (dark) */
+  --nexus-input-bg: rgba(13, 15, 20, 0.6);
+  --nexus-input-border: rgba(138, 149, 166, 0.22);
+  --nexus-input-focus-border: rgba(0, 212, 170, 0.35);
+  --nexus-bg: #06080b;
+  --nexus-surface: #0a0d12;
+  --nexus-panel: #0d0f14;
+  --nexus-border: #1a1f2e;
+  --nexus-card-stroke: rgba(138, 149, 166, 0.22);
+  --nexus-glow: #00d4aa;
+  --nexus-glow-dim: rgba(0, 212, 170, 0.15);
+  --nexus-text: #e2e8f0;
+  --nexus-muted: #8a95a6;
+  --nexus-accent: #00d4aa;
+  --nexus-danger: #f25c54;
+  --nexus-success: #00d4aa;
+  --nexus-toggle-shell-bg: rgba(10, 13, 18, 0.7);
+  --nexus-toggle-shell-border: var(--nexus-border);
+  --nexus-toggle-active-bg: rgba(0, 212, 170, 0.15);
+  --nexus-toggle-active-fg: var(--nexus-glow);
+  --nexus-toggle-active-border: rgba(0, 212, 170, 0.35);
+  --nexus-toggle-active-shadow: 0 0 14px rgba(0, 212, 170, 0.14);
+  --nexus-toggle-idle-fg: #e2e8f0;
+  --nexus-toggle-idle-hover-fg: #ffffff;
+  --nexus-toggle-idle-hover-bg: rgba(10, 13, 18, 0.9);
+  --nexus-rule-strong: rgba(226, 232, 240, 0.12);
+  --nexus-rule-soft: rgba(226, 232, 240, 0.06);
+  --nexus-cot-rule: var(--nexus-card-stroke);
+
+  /* NexusStarSystem (hub) tokens (dark) */
+  --nexus-hub-frame: var(--nexus-card-stroke);
+  --nexus-hub-chrome-rgb: 34, 211, 238;
+  --nexus-hub-canvas-rgb: 34, 211, 238;
+  --nexus-hub-mesh-rgb: 96, 231, 255;
+  --nexus-hub-glow-rgb: 34, 211, 238;
+  --nexus-hub-core-fill: #ffffff;
+  --nexus-agent-shadow-rgb: 0, 212, 170;
+  --nexus-agent-star-idle-bg: #475569;
+  --nexus-hub-edge-0: #00d4aa;
+  --nexus-hub-edge-1: #00d4aa;
+  --nexus-hub-ring-alpha-scale: 1;
+  --nexus-hub-ring-stroke-alpha: 0.12;
+  --nexus-hub-ring-dot-boost: 0;
+  --nexus-hub-ring-stroke-width: 1;
+}
+
+/* ── Studio landing micro-animations ─────────────────────────────────── */
+@keyframes aimm-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.aimm-fade-up {
+  animation: aimm-fade-up 260ms ease-out both;
+}
+
+/* ── NexusStarSystem styling (ported minimal subset) ──────────────────── */
+@keyframes nexus-core-shine {
+  0%,
+  100% {
+    opacity: 0.65;
+    filter: drop-shadow(0 0 14px rgba(180, 255, 240, 0.55)) drop-shadow(0 0 28px rgba(0, 212, 170, 0.45));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 22px rgba(255, 255, 255, 0.75)) drop-shadow(0 0 42px rgba(0, 212, 170, 0.65));
+  }
+}
+
+@keyframes nexus-core-shine-light {
+  0%,
+  100% {
+    opacity: 0.78;
+    filter: drop-shadow(0 0 10px rgba(20, 184, 166, 0.38)) drop-shadow(0 0 20px rgba(94, 234, 212, 0.2))
+      drop-shadow(0 0 18px rgba(253, 230, 138, 0.12));
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 14px rgba(45, 212, 191, 0.5)) drop-shadow(0 0 26px rgba(20, 184, 166, 0.28))
+      drop-shadow(0 0 14px rgba(254, 215, 170, 0.16));
+  }
+}
+
+.nexus-core-star-nucleus {
+  animation: nexus-core-shine 3.2s ease-in-out infinite;
+  background-color: rgba(var(--nexus-hub-glow-rgb), 0.28);
+}
+
+html:not(.dark) .nexus-hub-card .nexus-core-star-nucleus {
+  animation-name: nexus-core-shine-light;
+  background: radial-gradient(
+    circle at 35% 30%,
+    rgba(255, 255, 255, 0.95),
+    rgba(240, 253, 250, 0.45) 38%,
+    rgba(20, 184, 166, 0.18) 72%,
+    rgba(253, 230, 138, 0.12) 100%
+  );
+}
+
+.nexus-ambient-rings {
+  transform-origin: 50% 50%;
+  animation: nexus-ambient-spin 48s linear infinite;
+  opacity: 0.92;
+}
+
+@keyframes nexus-ambient-spin {
+  0% {
+    transform: rotate(0deg) scale(1);
+  }
+  100% {
+    transform: rotate(360deg) scale(1);
+  }
+}
+
+.nexus-core-aura {
+  background: conic-gradient(
+    from 0deg,
+    rgba(34, 211, 238, 0),
+    rgba(34, 211, 238, 0.18),
+    rgba(0, 212, 170, 0.08),
+    rgba(255, 255, 255, 0.05),
+    rgba(34, 211, 238, 0)
+  );
+  filter: blur(0.4px);
+  mask-image: radial-gradient(circle, transparent 52%, black 58%, black 66%, transparent 72%);
+  opacity: 0.7;
+}
+
+html:not(.dark) .nexus-core-aura {
+  background: conic-gradient(
+    from 220deg,
+    rgba(94, 234, 212, 0),
+    rgba(45, 212, 191, 0.12),
+    rgba(20, 184, 166, 0.18),
+    rgba(253, 230, 138, 0.1),
+    rgba(255, 255, 255, 0.14),
+    rgba(94, 234, 212, 0)
+  );
+  opacity: 0.52;
+  filter: blur(0.42px);
+}
+
+.nexus-scan-sweep {
+  background-image: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0) 0%,
+    rgba(34, 211, 238, 0) 35%,
+    rgba(34, 211, 238, 0.18) 50%,
+    rgba(0, 212, 170, 0.08) 55%,
+    rgba(0, 0, 0, 0) 75%
+  );
+  background-size: 220% 100%;
+  background-repeat: no-repeat;
+  mix-blend-mode: screen;
+  filter: blur(0.2px);
+  mask-image: radial-gradient(circle at 50% 50%, black 0%, black 58%, transparent 78%);
+}
+
+html:not(.dark) .nexus-scan-sweep {
+  mix-blend-mode: soft-light;
+  background-image: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0) 0%,
+    rgba(45, 212, 191, 0) 36%,
+    rgba(167, 243, 208, 0.16) 50%,
+    rgba(45, 212, 191, 0.1) 55%,
+    rgba(255, 255, 255, 0.08) 60%,
+    rgba(0, 0, 0, 0) 78%
+  );
+}
+
+.nexus-hub-radial-bed {
+  background: radial-gradient(ellipse at 50% 40%, rgba(var(--nexus-hub-glow-rgb), 0.08), transparent 55%);
+}
+
+html:not(.dark) .nexus-hub-radial-bed {
+  background:
+    radial-gradient(ellipse 105% 78% at 50% 44%, rgba(236, 253, 251, 0.65), transparent 66%),
+    radial-gradient(ellipse 58% 48% at 50% 43%, rgba(255, 251, 235, 0.35), transparent 58%),
+    radial-gradient(ellipse at 52% 40%, rgba(20, 184, 166, 0.07), transparent 54%);
+}
+
+.nexus-hub-grid-lines {
+  background-image: linear-gradient(rgba(var(--nexus-hub-glow-rgb), 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--nexus-hub-glow-rgb), 0.035) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+html:not(.dark) .nexus-hub-grid-lines {
+  background-image:
+    linear-gradient(rgba(20, 184, 166, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.032) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(circle at 50% 45%, black 0%, black 74%, transparent 94%);
+}
+
+.nexus-hub-vignette {
+  opacity: 0.12;
+  mix-blend-mode: overlay;
+  background: radial-gradient(circle at 20% 30%, rgba(255, 255, 255, 0.15), transparent 50%);
+}
+
+html:not(.dark) .nexus-hub-vignette {
+  opacity: 0.045;
+  mix-blend-mode: multiply;
+  background: radial-gradient(circle at 22% 32%, rgba(15, 23, 42, 0.05), transparent 58%);
+}
+
+.nexus-hub-bloom {
+  background-color: rgba(var(--nexus-hub-glow-rgb), 0.2);
+}
+
+html:not(.dark) .nexus-hub-bloom {
+  background-image: radial-gradient(
+    circle at 50% 48%,
+    rgba(167, 243, 208, 0.22),
+    rgba(94, 234, 212, 0.08) 42%,
+    transparent 72%
+  );
+  background-color: transparent;
+  opacity: 0.92;
+}
+
+html:not(.dark) .nexus-hub-card {
+  background-color: #f3fbfb !important;
+  background-image: radial-gradient(ellipse 100% 88% at 50% 50%, rgba(255, 255, 255, 0.92), transparent 70%),
+    radial-gradient(ellipse 85% 70% at 18% 12%, rgba(224, 242, 241, 0.45), transparent 55%),
+    radial-gradient(ellipse 60% 50% at 88% 8%, rgba(204, 251, 241, 0.35), transparent 50%) !important;
+  border-color: rgba(61, 99, 110, 0.14) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.88), inset 0 0 0 1px rgba(255, 255, 255, 0.45),
+    0 12px 42px rgba(15, 40, 45, 0.06), 0 2px 8px rgba(20, 184, 166, 0.04);
+}
+
+html:not(.dark) .nexus-ambient-rings {
+  opacity: 0.96;
+}
+
+.nexus-hub-hud {
+  color: rgba(var(--nexus-hub-glow-rgb), 0.52);
+}
+
+html:not(.dark) .nexus-hub-hud {
+  color: var(--nexus-hub-hud-text);
+  opacity: 0.93;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.85);
+  letter-spacing: 0.055em;
+  font-variant-numeric: tabular-nums;
+}
+
+html:not(.dark) .nexus-hub-core-disk {
+  border: 2px solid rgba(var(--nexus-hub-chrome-rgb), 0.32);
+  outline: 1px solid rgba(255, 255, 255, 0.9);
+  outline-offset: -3px;
+  box-sizing: border-box;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    0 0 28px rgba(var(--nexus-hub-chrome-rgb), 0.18);
+}
+
+html:not(.dark) .nexus-hub-orbit-wire {
+  border-color: rgba(var(--nexus-hub-chrome-rgb), 0.28) !important;
+}
+
+html:not(.dark) .nexus-hub-particle {
+  background-color: rgb(var(--nexus-hub-chrome-rgb)) !important;
+  box-shadow: 0 0 9px 3px rgba(var(--nexus-hub-chrome-rgb), 0.32) !important;
+}
+
+/* Dark-only: luminous label halos — on paper they read as blurry “mud” */
+.dark .nexus-hub-card .nexus-agent-label {
+  text-shadow:
+    0 0 10px rgba(0, 0, 0, 0.95),
+    0 0 20px rgba(0, 0, 0, 0.8),
+    0 1px 2px rgba(0, 0, 0, 1);
+}
+
+/* Light: crisp ink + airy lift off the canvas */
+html:not(.dark) .nexus-hub-card .nexus-agent-label {
+  text-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.98),
+    0 1px 2px rgba(var(--nexus-hub-chrome-rgb), 0.08);
+  letter-spacing: 0.13em;
+  font-size: 10px !important;
+  line-height: 1.35;
+}
+
+/* Idle agent titles: tinted ink (neutral slate reads flat on aurora paper) */
+html:not(.dark) .nexus-hub-agent-label-idle.nexus-agent-label {
+  color: var(--nexus-hub-agent-label-ink);
+}
+
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-input-background: var(--input-background);
+  --color-switch-background: var(--switch-background);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  /**
+  * Default typography styles for HTML elements (h1-h4, p, label, button, input).
+  * These are in @layer base, so Tailwind utility classes (like text-sm, text-lg) automatically override them.
+  */
+
+  html {
+    font-size: var(--font-size);
+  }
+
+  h1 {
+    font-size: var(--text-2xl);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+
+  h2 {
+    font-size: var(--text-xl);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+
+  h3 {
+    font-size: var(--text-lg);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+
+  h4 {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+
+  label {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+
+  button {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
+  }
+
+  input {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-normal);
+    line-height: 1.5;
+  }
+}
+
+/* ── Star-system hero styles ─────────────────────────────────────────── */
+.nexus-star-hero {
+  min-height: 240px;
+}
+
+.nexus-star-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 85% 70% at 50% 35%, rgba(var(--nexus-stars-core-rgb), 0.10), transparent 62%),
+    radial-gradient(ellipse 55% 45% at 18% 28%, rgba(var(--nexus-stars-accent-rgb), 0.06), transparent 55%),
+    radial-gradient(ellipse 55% 45% at 82% 22%, rgba(var(--nexus-stars-accent-rgb), 0.05), transparent 55%),
+    linear-gradient(to bottom, rgba(var(--nexus-stars-dust-rgb), 0.06), transparent 35%),
+    linear-gradient(to right, rgba(var(--nexus-stars-dust-rgb), 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(var(--nexus-stars-dust-rgb), 0.08) 1px, transparent 1px);
+  background-size: auto, auto, auto, auto, 22px 22px, 22px 22px;
+  background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0;
+  pointer-events: none;
+}
+
+.dark .nexus-star-hero::before {
+  background:
+    radial-gradient(ellipse 90% 72% at 50% 38%, rgba(var(--nexus-stars-core-rgb), 0.10), transparent 62%),
+    radial-gradient(ellipse 55% 45% at 18% 32%, rgba(var(--nexus-stars-accent-rgb), 0.06), transparent 55%),
+    radial-gradient(ellipse 55% 45% at 80% 24%, rgba(var(--nexus-stars-accent-rgb), 0.05), transparent 55%),
+    linear-gradient(to bottom, rgba(var(--nexus-stars-dust-rgb), 0.06), transparent 35%),
+    linear-gradient(to right, rgba(var(--nexus-stars-dust-rgb), 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(var(--nexus-stars-dust-rgb), 0.08) 1px, transparent 1px);
+  background-size: auto, auto, auto, auto, 22px 22px, 22px 22px;
+  background-position: 0 0, 0 0, 0 0, 0 0, 0 0, 0 0;
+}
+
+.nexus-star-hero-grain {
+  opacity: 0.26;
+  mix-blend-mode: multiply;
+  background-image:
+    radial-gradient(rgba(0, 0, 0, 0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.04), transparent 28%);
+  background-size: 18px 18px, auto;
+  mask-image: radial-gradient(circle at 50% 45%, black 0%, black 55%, transparent 78%);
+}
+
+.dark .nexus-star-hero-grain {
+  opacity: 0.16;
+  mix-blend-mode: screen;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+}
+
+.nexus-star-hero-pulse {
+  transform-origin: center;
+  animation: nexus-star-hero-pulse 2.8s ease-in-out infinite;
+}
+
+@keyframes nexus-star-hero-pulse {
+  0%,
+  100% {
+    opacity: 0.22;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nexus-star-hero-pulse {
+    animation: none;
+  }
+}
+
+/* ── Ops mesh (Topology) ─────────────────────────────────────────────── */
+.nexus-opsmesh-bg {
+  background:
+    radial-gradient(ellipse 85% 70% at 50% 35%, rgba(var(--nexus-stars-core-rgb), 0.10), transparent 62%),
+    radial-gradient(ellipse 55% 45% at 18% 28%, rgba(var(--nexus-stars-accent-rgb), 0.06), transparent 55%),
+    radial-gradient(ellipse 55% 45% at 82% 22%, rgba(var(--nexus-stars-accent-rgb), 0.05), transparent 55%),
+    linear-gradient(to right, rgba(var(--nexus-stars-dust-rgb), 0.10) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(var(--nexus-stars-dust-rgb), 0.10) 1px, transparent 1px);
+  background-size: auto, auto, auto, 22px 22px, 22px 22px;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.dark .nexus-opsmesh-bg {
+  opacity: 0.55;
+}
+
+.nexus-opsmesh-edge {
+  opacity: 0.7;
+}
+
+.nexus-opsmesh-edge-hot {
+  opacity: 1;
+  stroke-dasharray: 2 2;
+  animation: nexus-opsmesh-flow 1.4s linear infinite;
+}
+
+@keyframes nexus-opsmesh-flow {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
+
+.nexus-opsmesh-pulse {
+  transform-origin: center;
+  animation: nexus-opsmesh-pulse 2.2s ease-in-out infinite;
+}
+
+@keyframes nexus-opsmesh-pulse {
+  0%,
+  100% {
+    opacity: 0.16;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nexus-opsmesh-edge-hot,
+  .nexus-opsmesh-pulse {
+    animation: none;
+  }
+}
+
+/* ── Legacy Nexus surface classes (ported from web/) ─────────────────── */
+.nexus-bg {
+  background-color: var(--nexus-bg);
+  /* Subtle teal grid (HUD vibe). Stronger in dark; omitted in light so console matches the rest of the app. */
+  background-image:
+    linear-gradient(rgba(0, 212, 170, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 212, 170, 0.03) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+html:not(.dark) .nexus-bg {
+  background-image: none;
+}
+
+.nexus-panel {
+  background: var(--nexus-panel);
+  border: 1px solid var(--nexus-border);
+  box-shadow: 0 0 20px var(--nexus-glow-dim);
+}
+
+.nexus-agent-card {
+  background: var(--nexus-panel);
+  border: 1px solid var(--nexus-card-stroke);
+  box-shadow: 0 0 12px rgba(0, 212, 170, 0.035);
+}
+
+.nexus-agent-card-inner-rule {
+  border-top: 1px solid var(--nexus-card-stroke);
+}
+
+.nexus-glow-text {
+  text-shadow: 0 0 12px rgba(0, 212, 170, 0.5);
+}
