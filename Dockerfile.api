@@ -5,17 +5,21 @@ WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# System deps (bcrypt/psycopg wheels are bundled; keep slim).
 RUN pip install --no-cache-dir uv
 
-COPY pyproject.toml /app/pyproject.toml
-COPY README.md /app/README.md
+COPY pyproject.toml uv.lock README.md /app/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv export --frozen --no-dev --no-emit-project -o /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system -r /tmp/requirements.txt
+
 COPY src /app/src
 COPY config /app/config
 COPY alembic.ini /app/alembic.ini
 COPY alembic /app/alembic
 
-RUN uv pip install --system -e .
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system --no-deps -e .
 
 EXPOSE 8001
 

@@ -1,17 +1,14 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { flowAuthHeaders } from "../../_flowAuth";
 
 function flowBase(): string {
   return process.env.FLOW_API_BASE_URL ?? "http://127.0.0.1:8001";
 }
 
-export async function GET(
-  _req: Request,
-  ctx: { params: Promise<{ nodeId: string }> },
-) {
+export async function GET(_req: NextRequest, context: { params: Promise<{ nodeId: string }> }) {
   const base = flowBase();
-  const { nodeId: nodeIdRaw } = await ctx.params;
-  const nodeId = decodeURIComponent(nodeIdRaw);
+  const { nodeId: rawNodeId } = await context.params;
+  const nodeId = decodeURIComponent(rawNodeId);
   const res = await fetch(`${base}/agent-prompts/${encodeURIComponent(nodeId)}`, {
     cache: "no-store",
     headers: { ...flowAuthHeaders() },
@@ -23,13 +20,10 @@ export async function GET(
   });
 }
 
-export async function PUT(
-  req: Request,
-  ctx: { params: Promise<{ nodeId: string }> },
-) {
+export async function PUT(req: NextRequest, context: { params: Promise<{ nodeId: string }> }) {
   const base = flowBase();
-  const { nodeId: nodeIdRaw } = await ctx.params;
-  const nodeId = decodeURIComponent(nodeIdRaw);
+  const { nodeId: rawNodeId } = await context.params;
+  const nodeId = decodeURIComponent(rawNodeId);
   const body = await req.text();
   const res = await fetch(`${base}/agent-prompts/${encodeURIComponent(nodeId)}`, {
     method: "PUT",

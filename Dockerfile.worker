@@ -7,13 +7,18 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN pip install --no-cache-dir uv
 
-COPY pyproject.toml /app/pyproject.toml
-COPY README.md /app/README.md
+COPY pyproject.toml uv.lock README.md /app/
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv export --frozen --no-dev --no-emit-project -o /tmp/requirements.txt
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system -r /tmp/requirements.txt
+
 COPY src /app/src
 COPY config /app/config
 COPY scripts /app/scripts
 
-RUN uv pip install --system -e .
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system --no-deps -e .
 
 CMD ["python", "scripts/run_platform_worker.py"]
 

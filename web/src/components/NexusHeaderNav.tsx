@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Orbit, Trophy, MessageSquareText } from "lucide-react";
+import { Orbit, Trophy, FlaskConical } from "lucide-react";
 import { startTransition } from "react";
 
 export type HeaderNavMode = "observe" | "nexus" | "studio";
@@ -123,6 +123,14 @@ export function NexusHeaderNav({
     <div className="w-full">
       <div className="flex flex-wrap items-center gap-2">
         <PrimaryTab
+          href="/studio"
+          active={active === "studio"}
+          title="Studio: agentic chat + backtest workspace"
+          icon={<FlaskConical className="h-4 w-4 opacity-85" />}
+          label="Studio"
+        />
+
+        <PrimaryTab
           href="/leaderboard"
           active={active === "observe"}
           title="Leaderboard: results + signals"
@@ -137,18 +145,12 @@ export function NexusHeaderNav({
           icon={<Orbit className="h-4 w-4 opacity-85" />}
           label="Nexus"
         />
-
-        <PrimaryTab
-          href="/studio"
-          active={active === "studio"}
-          title="Studio: guided chat entry point"
-          icon={<MessageSquareText className="h-4 w-4 opacity-85" />}
-          label="Studio"
-        />
       </div>
 
       <div className="mt-2 w-full">
-        {active === "observe" ? (
+        {active === "studio" ? (
+          <StudioSecondaryBar pathname={pathname} />
+        ) : active === "observe" ? (
           <SecondaryBar label="Leaderboard">
             <SecondaryTab
               href="/leaderboard"
@@ -217,15 +219,27 @@ export function NexusHeaderNav({
               </>
             )}
           </SecondaryBar>
-        ) : active === "studio" ? (
-          <SecondaryBar label="Studio">
-            <SecondaryTab href="/get-started" label="Get Started" active={pathname === "/get-started"} title="Clone + run locally" />
-            <SecondaryTab href="/control" label="Control" active={pathname === "/control"} title="Control Center (ops)" />
-            <SecondaryTab href="/tools" label="Tools" active={pathname === "/tools"} title="Browse platform tools" />
-          </SecondaryBar>
         ) : null}
       </div>
     </div>
   );
 }
 
+function StudioSecondaryBar({ pathname }: { pathname: string }) {
+  const isChat = pathname === "/studio";
+  const isWorkspace = pathname === "/studio/workspace";
+  const isStrategies = pathname === "/studio/strategies";
+  const isPaper = pathname === "/paper";
+
+  return (
+    <SecondaryBar label="Studio">
+      <SecondaryTab href="/studio" label="Chat" active={isChat} title="Agentic studio chat" />
+      <SecondaryTab href="/studio/workspace" label="Workspace" active={isWorkspace} title="Backtest workspace" />
+      <SecondaryTab href="/studio/strategies" label="Strategies" active={isStrategies} title="Saved strategies" />
+      <SecondaryTab href="/get-started" label="Get Started" active={pathname === "/get-started"} title="Clone + run locally" />
+      <SecondaryTab href="/control" label="Control" active={pathname === "/control"} title="Control Center (ops)" />
+      <SecondaryTab href="/tools" label="Tools" active={pathname === "/tools"} title="Browse platform tools" />
+      <SecondaryTab href="/paper" label="Paper" active={isPaper} title="Paper portfolio + fills" />
+    </SecondaryBar>
+  );
+}

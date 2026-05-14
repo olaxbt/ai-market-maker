@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import os
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional
 
+from adapters.exchange_protocol import ExchangeOrderResult
 from config.app_settings import load_app_settings
 from config.fund_policy import load_fund_policy
 from config.nexus_env import load_nexus_data_base_url
@@ -178,24 +180,217 @@ class NexusAdapter:
 
         return base
 
+    # ------------------------------------------------------------------
+    # ExchangeAdapter Protocol compatibility methods
+    # ------------------------------------------------------------------
 
-_adapter: NexusAdapter | None = None
+    def place_order(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        qty: float,
+        order_type: str,
+        price: float | None,
+        client_order_id: str | None,
+    ) -> ExchangeOrderResult:
+        """Bridge over place_smart_order() to satisfy ExchangeAdapter Protocol."""
+        now = int(time.time())
+        raw = self.place_smart_order(
+            symbol=symbol,
+            side=side,
+            qty=qty,
+            order_type=order_type,
+            price=price,
+            client_order_id=client_order_id,
+        )
+        status = raw.get("status", "unknown")
+        if status == "accepted":
+            mapped = "accepted"
+        elif status == "rejected":
+            mapped = "rejected"
+        else:
+            mapped = "unknown"
+        kwargs: dict[str, Any] = {
+            "status": mapped,
+            "exchange_order_id": None,
+            "client_order_id": client_order_id,
+            "symbol": symbol,
+            "side": side,
+            "qty": float(qty),
+            "price": float(price) if price is not None else None,
+            "filled_qty": 0.0,
+            "ts": now,
+            "raw": raw,
+        }
+        if mapped == "rejected":
+            kwargs["error"] = str(raw.get("reason", "rejected"))
+        return ExchangeOrderResult(**kwargs)
+
+    def cancel_order(
+        self,
+        *,
+        symbol: str,
+        exchange_order_id: str,
+    ) -> ExchangeOrderResult:
+        """Paper adapter: acknowledge cancel locally, no exchange call."""
+        return ExchangeOrderResult(
+            status="cancelled",
+            exchange_order_id=exchange_order_id,
+            client_order_id=None,
+            symbol=symbol,
+            side="",
+            qty=0.0,
+            price=None,
+            filled_qty=0.0,
+            ts=int(time.time()),
+            raw={},
+        )
+
+    def get_order_status(
+        self,
+        *,
+        symbol: str,
+        exchange_order_id: str,
+    ) -> ExchangeOrderResult:
+        """Paper adapter: all tracked orders are considered accepted."""
+        return ExchangeOrderResult(
+            status="accepted",
+            exchange_order_id=exchange_order_id,
+            client_order_id=None,
+            symbol=symbol,
+            side="",
+            qty=0.0,
+            price=None,
+            filled_qty=0.0,
+            ts=int(time.time()),
+            raw={},
+        )
 
 
-def get_nexus_adapter() -> NexusAdapter:
+class OmsNexusAdapter:
+    """Routes place_smart_order() through Oms lifecycle. Drop-in replacement for NexusAdapter.
+
+    Used when AI_MARKET_MAKER_EXECUTION_ENGINE=oms. main.py requires no changes.
+    get_portfolio_health() and fetch_market_depth() delegate to the wrapped exchange adapter.
+    """
+
+    def __init__(self, *, oms: Any, exchange_adapter: Any) -> None:
+        self._oms = oms
+        self._exchange = exchange_adapter
+
+    def place_smart_order(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        qty: float,
+        order_type: str = "market",
+        price: Optional[float] = None,
+        post_only: bool = False,
+        max_slippage_bps: Optional[float] = None,
+        client_order_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        nonce = uuid.uuid4().hex
+        order = self._oms.submit_order(
+            symbol=symbol,
+            side=side,
+            order_type=order_type,
+            quantity=qty,
+            price=price,
+            strategy="oms",
+            run_id="default",
+            nonce=nonce,
+            client_order_id=client_order_id,
+        )
+        return {
+            "status": order.state.value,
+            "symbol": symbol,
+            "side": side,
+            "qty": float(qty),
+            "price": float(price) if price is not None else None,
+            "type": order_type,
+            "mode": "oms",
+            "venue": "oms",
+            "client_order_id": order.client_order_id,
+            "exchange_order_id": order.venue_order_id,
+            "oms_state": order.state.value,
+        }
+
+    def get_portfolio_health(self, *, account_id: Optional[str] = None) -> Dict[str, Any]:
+        return self._exchange.get_portfolio_health(account_id=account_id)
+
+    def fetch_market_depth(self, *, symbol: str, limit: int = 5) -> Dict[str, Any]:
+        return self._exchange.fetch_market_depth(symbol=symbol, limit=limit)
+
+
+_adapter: Any = None
+
+
+def get_nexus_adapter() -> Any:
+    """Return the singleton execution adapter.
+
+    Default (AI_MARKET_MAKER_EXECUTION_ENGINE=legacy): NexusAdapter paper path, unchanged.
+    Opt-in (AI_MARKET_MAKER_EXECUTION_ENGINE=oms): OmsNexusAdapter routes through OMS.
+    """
     global _adapter
-    if _adapter is None:
+    if _adapter is not None:
+        return _adapter
+
+    from config.execution_engine import ExecutionEngine, load_execution_engine
+
+    engine = load_execution_engine()
+
+    if engine == ExecutionEngine.LEGACY:
         mode = (os.getenv("MODE") or "paper").strip().lower()
         _adapter = NexusAdapter(
-            NexusAdapterConfig(
-                mode=mode,
-                nexus_data_base_url=load_nexus_data_base_url(),
-            )
+            NexusAdapterConfig(mode=mode, nexus_data_base_url=load_nexus_data_base_url())
         )
+        return _adapter
+
+    # OMS path — requires explicit AI_MARKET_MAKER_EXECUTION_ENGINE=oms
+    from config.exchange_env import load_exchange_config
+    from config.oms_config import load_oms_config
+    from oms.ledger import SqliteLedger
+    from oms.oms import Oms
+
+    cfg = load_exchange_config()
+    oms_cfg = load_oms_config()
+    ledger = SqliteLedger(oms_cfg.sqlite_path) if oms_cfg.ledger_type == "sqlite" else None
+
+    if cfg.exchange_name == "paper":
+        mode = (os.getenv("MODE") or "paper").strip().lower()
+        inner = NexusAdapter(
+            NexusAdapterConfig(mode=mode, nexus_data_base_url=load_nexus_data_base_url())
+        )
+        oms = Oms(adapter=inner, dry_run=cfg.dry_run, ledger=ledger)
+        _adapter = OmsNexusAdapter(oms=oms, exchange_adapter=inner)
+
+    elif cfg.exchange_name == "hyperliquid":
+        # Raise before touching SDK import so the error is clear regardless of SDK presence
+        if not cfg.dry_run:
+            raise RuntimeError(
+                "Hyperliquid live SDK execution is not implemented in this PR. "
+                "Set HYPERLIQUID_DRY_RUN=1 to use dry-run mode, or use exchange=paper."
+            )
+        # dry_run=True: HyperliquidAdapter.place_order() returns immediately without
+        # calling the client, so inject FakeHyperliquidClient to avoid SDK import.
+        from adapters.hyperliquid_adapter import FakeHyperliquidClient, HyperliquidAdapter
+
+        hl_adapter = HyperliquidAdapter(config=cfg, client=FakeHyperliquidClient())
+        oms = Oms(adapter=hl_adapter, dry_run=cfg.dry_run, ledger=ledger)
+        _adapter = OmsNexusAdapter(oms=oms, exchange_adapter=hl_adapter)
+
+    else:
+        raise RuntimeError(
+            f"Unsupported exchange {cfg.exchange_name!r} for OMS engine. "
+            "Supported: 'paper', 'hyperliquid' (with HYPERLIQUID_DRY_RUN=1)."
+        )
+
     return _adapter
 
 
-def set_nexus_adapter(adapter: NexusAdapter | None) -> None:
+def set_nexus_adapter(adapter: Any) -> None:
     global _adapter
     _adapter = adapter
 
@@ -203,6 +398,7 @@ def set_nexus_adapter(adapter: NexusAdapter | None) -> None:
 __all__ = [
     "NexusAdapter",
     "NexusAdapterConfig",
+    "OmsNexusAdapter",
     "get_nexus_adapter",
     "set_nexus_adapter",
 ]
