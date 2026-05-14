@@ -20,7 +20,6 @@ function Pill({ status, label }: { status: Status; label: string }) {
 
 export function SystemStatusPanel() {
   const [flowApi, setFlowApi] = useState<Status>("unknown");
-  const [leaderboard, setLeaderboard] = useState<Status>("unknown");
 
   useEffect(() => {
     let cancelled = false;
@@ -30,12 +29,6 @@ export function SystemStatusPanel() {
         if (!cancelled) setFlowApi(res.ok ? "ok" : "degraded");
       } catch {
         if (!cancelled) setFlowApi("degraded");
-      }
-      try {
-        const res = await fetch("/api/leadpage/leaderboard?limit=1", { cache: "no-store" });
-        if (!cancelled) setLeaderboard(res.ok ? "ok" : "degraded");
-      } catch {
-        if (!cancelled) setLeaderboard("degraded");
       }
     }
     void check();
@@ -53,10 +46,8 @@ export function SystemStatusPanel() {
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Pill status={flowApi} label={`Flow API: ${flowApi}`} />
-        <Pill status={leaderboard} label={`Leaderboard: ${leaderboard}`} />
         <span className="ml-auto text-[10px] text-[var(--nexus-muted)]">auto-refresh 15s</span>
       </div>
     </section>
   );
 }
-

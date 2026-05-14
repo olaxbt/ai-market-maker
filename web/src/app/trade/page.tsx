@@ -43,7 +43,7 @@ export default function TradePage() {
         <section className="rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/55 p-4">
           <div className="text-[11px] text-[rgba(226,232,240,0.9)]">
             If you&apos;re new: open <b>Account</b> first for the checklist. If you&apos;re operating: use Nexus for live
-            console + monitor, and Leaderboard for results + signals. For backtests and strategy iteration, open{" "}
+            console + monitor, and <b>Signals</b> for the provider feed. For backtests and strategy iteration, open{" "}
             <b>Research</b>.
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -60,10 +60,10 @@ export default function TradePage() {
               Open Research
             </Link>
             <Link
-              href="/leaderboard"
+              href="/feed"
               className="rounded-xl border border-[rgba(138,149,166,0.18)] bg-[rgba(6,8,11,0.35)] px-3 py-2 text-[11px] text-[rgba(226,232,240,0.88)] hover:border-[rgba(0,212,170,0.32)] hover:text-white"
             >
-              Open Leaderboard
+              Open Signals
             </Link>
           </div>
         </section>
@@ -88,16 +88,16 @@ export default function TradePage() {
             cta="Open Monitor"
           />
           <Tile
-            title="Results"
-            body="Compare performance across local runs and published providers."
-            href="/leaderboard"
-            cta="Open Results"
+            title="Signals feed"
+            body="Read provider strategy notes and ops updates (global or provider-filtered)."
+            href="/feed"
+            cta="Open Signals"
           />
           <Tile
-            title="Signals"
-            body="Read provider strategy notes and ops updates (global or provider-filtered)."
-            href="/leaderboard?focus=signals"
-            cta="Open Signals"
+            title="Public providers"
+            body="Open a provider’s public stream and SSE-backed preview."
+            href="/platform/providers"
+            cta="Provider keys"
           />
         </div>
       </div>

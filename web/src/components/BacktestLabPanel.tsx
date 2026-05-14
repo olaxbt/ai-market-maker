@@ -1382,11 +1382,11 @@ export function BacktestLabPanel({
                   </div>
                 ) : null}
                 {embeddedTab === "saved" ? (
-                  <div className="flex w-full max-w-none min-h-0 flex-1 flex-col gap-3">
+                  <div className="flex w-full max-w-none flex-col gap-3">
                     {!historyLoading && kpis ? (
-                      <section className="flex min-h-0 flex-1 flex-col gap-3">
+                      <section className="flex flex-col gap-3">
                         <div className="min-w-0 shrink-0">{renderResultsDetail("embedded")}</div>
-                        <section id="backtest-timeline" className="flex min-h-0 flex-1 flex-col">
+                        <section id="backtest-timeline" className="flex flex-col gap-3">
                           <h2 className="shrink-0 font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-muted)]">
                             Timeline
                           </h2>
@@ -1394,17 +1394,15 @@ export function BacktestLabPanel({
                             Expand a bar: chain-of-thought and event log sit in two columns when the
                             panel is wide enough.
                           </p>
-                          <div className="mt-1.5 flex min-h-[min(44vh,520px)] flex-1 flex-col overflow-hidden rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)]/30">
-                            <div className="min-h-0 flex-1 overflow-hidden p-1">
-                              <BacktestBarTimeline
-                                entries={messageLog}
-                                traces={tracesToShow}
-                                streaming={streamingThoughts}
-                                emptyHint={timelineEmptyHint}
-                                compact
-                                className="h-full min-h-0 w-full text-[10px]"
-                              />
-                            </div>
+                          <div className="mt-1.5 rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)]/30 p-1">
+                            <BacktestBarTimeline
+                              entries={messageLog}
+                              traces={tracesToShow}
+                              streaming={streamingThoughts}
+                              emptyHint={timelineEmptyHint}
+                              compact
+                              className="max-h-[min(70vh,920px)] min-h-[200px] w-full text-[10px]"
+                            />
                           </div>
                         </section>
                       </section>

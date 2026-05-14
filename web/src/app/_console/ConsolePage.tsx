@@ -216,7 +216,7 @@ function ConsoleInner() {
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden px-4 py-3">
               <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] gap-3">
-                <section className="min-h-0 overflow-hidden rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/45">
+                <section className="flex min-h-0 min-w-0 flex-col overflow-y-auto overflow-x-hidden rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/45">
                   <BacktestLabPanel embedded embeddedView="research" initialRunId={backtestRunParam} />
                 </section>
                 <section className="min-h-0 overflow-hidden rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/45 p-3">

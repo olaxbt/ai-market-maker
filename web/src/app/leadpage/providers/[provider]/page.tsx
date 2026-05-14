@@ -17,7 +17,7 @@ export default function LegacyLeadpageProviderRedirect({
   params: { provider: string };
   searchParams: Record<string, string | string[] | undefined>;
 }) {
-  const base = `/leaderboard/providers/${encodeURIComponent(params.provider)}`;
+  const base = `/p/${encodeURIComponent(params.provider)}`;
   const qs = toQuery(searchParams);
   redirect(qs ? `${base}?${qs}` : base);
 }

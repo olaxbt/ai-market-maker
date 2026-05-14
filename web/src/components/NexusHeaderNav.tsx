@@ -23,7 +23,7 @@ function SecondaryTab({
   const emphasis = emphasize
     ? "rounded-lg border border-[rgba(0,212,170,0.38)] bg-[rgba(0,212,170,0.10)] shadow-[0_0_14px_rgba(0,212,170,0.07)]"
     : "";
-  const cls = `${emphasis} relative px-3 py-2 text-[11px] transition ${
+  const cls = `${emphasis} relative shrink-0 whitespace-nowrap px-3 py-2 text-[11px] transition ${
     active ? "text-[var(--nexus-text)]" : "text-[var(--nexus-muted)] hover:text-[var(--nexus-text)]"
   } ${
     active
@@ -60,7 +60,9 @@ function SecondaryBar({
           {label}
         </div>
       ) : null}
-      <div className="flex flex-wrap items-center gap-1 px-1 pb-1">{children}</div>
+      <div className="flex flex-nowrap items-center gap-1.5 overflow-x-auto overflow-y-hidden overscroll-x-contain px-1 pb-1 [-ms-overflow-style:none] [scrollbar-width:thin] lg:flex-wrap lg:overflow-x-visible [&::-webkit-scrollbar]:h-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[rgba(138,149,166,0.25)]">
+        {children}
+      </div>
     </div>
   );
 }
@@ -70,7 +72,7 @@ function Divider() {
 }
 
 /**
- * Single Nexus navigation strip (console, leaderboard header, section pages).
+ * Single Nexus navigation strip (console and section pages).
  * Leaderboard is reached via direct URL/bookmarks — not duplicated here.
  */
 export function NexusHeaderNav() {

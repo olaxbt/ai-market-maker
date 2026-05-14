@@ -18,8 +18,8 @@ export default function GetStartedPage() {
           Clone and run AI Market Maker locally
         </h1>
         <p className="mt-2 text-[12px] leading-relaxed text-[rgba(138,149,166,0.75)]">
-          This hosted site is best for exploring the leaderboard and published results. To run backtests, paper
-          trading, and the full agent workflow, clone the repo and run the stack locally.
+          This site exposes the Nexus console, signals feed, and ops tools. To run backtests, paper trading, and the
+          full agent workflow, clone the repo and run the stack locally.
         </p>
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -32,10 +32,10 @@ export default function GetStartedPage() {
             Open GitHub repo
           </a>
           <Link
-            href="/leaderboard"
+            href="/console"
             className="rounded-xl border border-[rgba(138,149,166,0.16)] bg-[rgba(138,149,166,0.06)] px-4 py-2 text-[11px] text-[rgba(226,232,240,0.9)] hover:bg-[rgba(138,149,166,0.10)]"
           >
-            Back to Leaderboard
+            Open console
           </Link>
           <Link
             href="/tools"
@@ -67,7 +67,7 @@ cd ai-market-maker`}
 docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head`}
           </pre>
           <div className="mt-2 text-[11px] text-[rgba(138,149,166,0.75)]">
-            Then open <code>http://localhost:3000/leaderboard</code> and <code>http://localhost:3000/console</code>.
+            Then open <code>http://localhost:3000/console</code> and <code>http://localhost:3000/feed</code>.
           </div>
         </Section>
       </div>

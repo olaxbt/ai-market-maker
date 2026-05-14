@@ -16,5 +16,5 @@ export default function LegacyLeadpageIndexRedirect({
   searchParams: Record<string, string | string[] | undefined>;
 }) {
   const qs = toQuery(searchParams);
-  redirect(qs ? `/leaderboard?${qs}` : "/leaderboard");
+  redirect(qs ? `/feed?${qs}` : "/feed");
 }

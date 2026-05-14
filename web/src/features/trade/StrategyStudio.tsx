@@ -114,7 +114,7 @@ export default function StrategyStudio({
     {
       role: "system",
       text:
-        "Welcome to Studio.\n\nIf you’re using a hosted demo, I can **answer questions** and **guide you** — but to run the full system (backtests, worker, paper runs) you should clone the repo and run locally.\n\nTry: `onboarding` (recommended), `help`, `publish to leaderboard`, `leaderboard`, or describe a strategy idea.",
+        "Welcome to Studio.\n\nIf you’re using a hosted demo, I can **answer questions** and **guide you** — but to run the full system (backtests, worker, paper runs) you should clone the repo and run locally.\n\nTry: `onboarding` (recommended), `help`, or describe a strategy idea.",
     },
   ]);
   const [chatInput, setChatInput] = useState("");
@@ -154,7 +154,7 @@ export default function StrategyStudio({
             {
               role: "system",
               text:
-                "Welcome to Studio.\n\nIf you’re using a hosted demo, I can **answer questions** and **guide you** — but to run the full system (backtests, worker, paper runs) you should clone the repo and run locally.\n\nTry: `onboarding` (recommended), `help`, `publish to leaderboard`, `leaderboard`, or describe a strategy idea.",
+                "Welcome to Studio.\n\nIf you’re using a hosted demo, I can **answer questions** and **guide you** — but to run the full system (backtests, worker, paper runs) you should clone the repo and run locally.\n\nTry: `onboarding` (recommended), `help`, or describe a strategy idea.",
             },
           ]);
         },
@@ -476,7 +476,7 @@ export default function StrategyStudio({
                   {
                     role: "system",
                     text:
-                      "I can help you navigate the system end-to-end: design strategies, run backtests, and publish results to the leaderboard.\n\nTry: `help`, `onboarding`, `publish to leaderboard`, `leaderboard`, or describe a strategy idea.",
+                      "I can help you navigate the system end-to-end: design strategies and run backtests.\n\nTry: `help`, `onboarding`, or describe a strategy idea.",
                   },
                 ]);
                 setResult(null);
@@ -569,7 +569,7 @@ export default function StrategyStudio({
             <div className="flex gap-2">
               <input value={chatInput} onChange={(e) => setChatInput(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleChatSubmit()}
-                placeholder={animating ? "Agent working..." : "Ask anything… (e.g. onboarding, publish to leaderboard, analyze BTC)"}
+                placeholder={animating ? "Agent working..." : "Ask anything… (e.g. onboarding, help, analyze BTC)"}
                 disabled={isRunning || animating}
                 className="flex-1 rounded-xl border border-[rgba(138,149,166,0.18)] bg-[rgba(6,8,11,0.45)] px-3 py-2 text-[12px] text-white placeholder-[rgba(226,232,240,0.3)] outline-none focus:border-[rgba(0,212,170,0.35)] disabled:opacity-40" />
               <button onClick={handleChatSubmit} disabled={isRunning || animating || !chatInput.trim()}

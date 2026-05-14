@@ -133,48 +133,50 @@ export function NexusConsoleHeader({
           </div>
         </div>
 
-        <div className="w-full mt-2 border-t border-[var(--nexus-rule-soft)] pt-2 flex flex-wrap items-center justify-start gap-3">
-          <div className="min-w-0 flex-1">
+        <div className="mt-2 flex w-full flex-col gap-2 border-t border-[var(--nexus-rule-soft)] pt-2 lg:flex-row lg:flex-wrap lg:items-center lg:justify-start lg:gap-3">
+          <div className="min-w-0 w-full lg:flex-1">
             <Suspense fallback={<div className="h-10 w-full max-w-md rounded-lg bg-[var(--nexus-surface)]" />}>
               <NexusHeaderNav />
             </Suspense>
           </div>
-          {traceDataSource ? (
+          <div className="flex w-full min-w-0 flex-wrap items-center gap-2 lg:w-auto lg:shrink-0 lg:gap-3">
+            {traceDataSource ? (
+              <span
+                className={`rounded-lg border px-2 py-1 text-[10px] font-mono ${
+                  traceDataSource === "live"
+                    ? "border-[rgba(0,212,170,0.22)] bg-[rgba(0,212,170,0.06)] text-[var(--nexus-text)]"
+                    : traceDataSource === "mock-offline"
+                      ? "border-[rgba(59,130,246,0.28)] bg-[rgba(59,130,246,0.08)] text-[rgba(147,197,253,0.95)]"
+                      : "border-[rgba(245,158,11,0.28)] bg-[rgba(245,158,11,0.08)] text-[rgba(245,158,11,0.95)]"
+                }`}
+                title="Initial graph payload source: live = from your Flow run log; mock = bundled demo only (NEXT_PUBLIC_USE_MOCK=1); mock-fallback = Flow unreachable; not related to LLM on/off."
+              >
+                payload: {traceDataSource}
+              </span>
+            ) : null}
             <span
               className={`rounded-lg border px-2 py-1 text-[10px] font-mono ${
-                traceDataSource === "live"
-                  ? "border-[rgba(0,212,170,0.22)] bg-[rgba(0,212,170,0.06)] text-[var(--nexus-text)]"
-                  : traceDataSource === "mock-offline"
-                    ? "border-[rgba(59,130,246,0.28)] bg-[rgba(59,130,246,0.08)] text-[rgba(147,197,253,0.95)]"
-                    : "border-[rgba(245,158,11,0.28)] bg-[rgba(245,158,11,0.08)] text-[rgba(245,158,11,0.95)]"
+                wsConnected
+                  ? "border-[rgba(0,212,170,0.22)] bg-[rgba(0,212,170,0.08)] text-[var(--nexus-text)]"
+                  : "border-[var(--nexus-border)] bg-[var(--nexus-surface)] text-[var(--nexus-muted)]"
               }`}
-              title="Initial graph payload source: live = from your Flow run log; mock = bundled demo only (NEXT_PUBLIC_USE_MOCK=1); mock-fallback = Flow unreachable; not related to LLM on/off."
+              title="WebSocket stream connection"
             >
-              payload: {traceDataSource}
+              {wsConnected ? "stream: connected" : "stream: offline"}
             </span>
-          ) : null}
-          <span
-            className={`rounded-lg border px-2 py-1 text-[10px] font-mono ${
-              wsConnected
-                ? "border-[rgba(0,212,170,0.22)] bg-[rgba(0,212,170,0.08)] text-[var(--nexus-text)]"
-                : "border-[var(--nexus-border)] bg-[var(--nexus-surface)] text-[var(--nexus-muted)]"
-            }`}
-            title="WebSocket stream connection"
-          >
-            {wsConnected ? "stream: connected" : "stream: offline"}
-          </span>
-          <span
-            className="rounded-lg border border-[var(--nexus-border)] bg-[var(--nexus-surface)] px-2 py-1 text-[10px] font-mono text-[var(--nexus-muted)]"
-            title="Last payload update time"
-          >
-            {loading ? "updating…" : lastUpdateIso ? `last: ${new Date(lastUpdateIso).toLocaleTimeString()}` : "last: —"}
-          </span>
-          {metadata?.run_id ? (
-            <span className="rounded-lg border border-[var(--nexus-border)] bg-[var(--nexus-surface)] px-2 py-1 text-[10px] font-mono text-[var(--nexus-muted)]">
-              run: <span className="text-[var(--nexus-text)]">{metadata.run_id}</span>
+            <span
+              className="rounded-lg border border-[var(--nexus-border)] bg-[var(--nexus-surface)] px-2 py-1 text-[10px] font-mono text-[var(--nexus-muted)]"
+              title="Last payload update time"
+            >
+              {loading ? "updating…" : lastUpdateIso ? `last: ${new Date(lastUpdateIso).toLocaleTimeString()}` : "last: —"}
             </span>
-          ) : null}
-          <KpiStrip kpis={metadata?.kpis ?? {}} />
+            {metadata?.run_id ? (
+              <span className="rounded-lg border border-[var(--nexus-border)] bg-[var(--nexus-surface)] px-2 py-1 text-[10px] font-mono text-[var(--nexus-muted)]">
+                run: <span className="text-[var(--nexus-text)]">{metadata.run_id}</span>
+              </span>
+            ) : null}
+            <KpiStrip kpis={metadata?.kpis ?? {}} />
+          </div>
         </div>
       </div>
     </header>

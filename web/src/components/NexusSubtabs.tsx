@@ -31,7 +31,7 @@ function Tab({
 
 function isPathActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
-  if (href === "/leaderboard") return pathname === "/leaderboard" || pathname.startsWith("/leaderboard/");
+  if (href === "/feed") return pathname === "/feed";
   if (href === "/console") return pathname === "/console";
   if (href.startsWith("/console?")) return pathname === "/console";
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -42,10 +42,7 @@ export function NexusSubtabs({ active }: { active: HeaderNavMode }) {
 
   const tabs = useMemo(() => {
     if (active === "observe") {
-      return [
-        { href: "/leaderboard", label: "Results", title: "Leaderboard results" },
-        { href: "/feed", label: "Signals", title: "Provider signals feed" },
-      ];
+      return [{ href: "/feed", label: "Signals", title: "Provider signals feed" }];
     }
     if (active === "nexus") {
       return [

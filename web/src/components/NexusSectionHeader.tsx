@@ -73,26 +73,28 @@ export function NexusSectionHeader({
           </div>
         </div>
 
-        <div className="w-full mt-2 min-h-[48px] border-t border-[var(--nexus-rule-soft)] pt-2 flex flex-nowrap items-center justify-start gap-3 overflow-x-auto">
-          <div className="min-w-0 flex-1">
+        <div className="mt-2 flex w-full min-h-0 flex-col gap-2 border-t border-[var(--nexus-rule-soft)] pt-2 lg:min-h-[48px] lg:flex-row lg:items-center lg:justify-start lg:gap-3">
+          <div className="min-w-0 w-full lg:flex-1">
             <Suspense fallback={<div className="h-10 w-full max-w-md rounded-lg bg-[rgba(6,8,11,0.35)]" />}>
               <NexusHeaderNav />
             </Suspense>
           </div>
-          {active === "observe" && lastRunId ? (
-            <div className="rounded-lg border border-[rgba(138,149,166,0.18)] bg-[rgba(0,0,0,0.15)] px-2 py-1 text-[10px] text-[var(--nexus-muted)]">
-              Run: <span className="text-[rgba(226,232,240,0.92)]">{lastRunId}</span>
-            </div>
-          ) : null}
-          {active === "nexus" && authed === false ? (
-            <Link
-              href="/platform/login"
-              className="rounded-xl border border-[rgba(0,212,170,0.25)] bg-[rgba(0,212,170,0.10)] px-3 py-2 text-[11px] font-semibold text-[rgba(226,232,240,0.95)] hover:border-[rgba(0,212,170,0.45)]"
-              title="Sign in to access approvals, paper, and publishing"
-            >
-              Sign in
-            </Link>
-          ) : null}
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {active === "observe" && lastRunId ? (
+              <div className="rounded-lg border border-[rgba(138,149,166,0.18)] bg-[rgba(0,0,0,0.15)] px-2 py-1 text-[10px] text-[var(--nexus-muted)]">
+                Run: <span className="text-[rgba(226,232,240,0.92)]">{lastRunId}</span>
+              </div>
+            ) : null}
+            {active === "nexus" && authed === false ? (
+              <Link
+                href="/platform/login"
+                className="rounded-xl border border-[rgba(0,212,170,0.25)] bg-[rgba(0,212,170,0.10)] px-3 py-2 text-[11px] font-semibold text-[rgba(226,232,240,0.95)] hover:border-[rgba(0,212,170,0.45)]"
+                title="Sign in to access approvals, paper, and publishing"
+              >
+                Sign in
+              </Link>
+            ) : null}
+          </div>
         </div>
 
         <div className="mt-2">
