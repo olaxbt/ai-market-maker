@@ -1417,7 +1417,9 @@ export function BacktestLabPanel({
                     id="backtest-setup"
                     className="scroll-mt-1 rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/75 p-3"
                   >
-                    {renderSetupForm(true)}
+                    <div className="max-h-[calc(100vh-22rem)] overflow-y-auto pr-1">
+                      {renderSetupForm(true)}
+                    </div>
 
                     {streamingThoughts || tracesToShow.length > 0 || messageLog.length > 0 ? (
                       <section className="mt-3 border-t border-[color:var(--nexus-rule-soft)] pt-3">
@@ -1550,7 +1552,9 @@ export function BacktestLabPanel({
               id="backtest-setup"
               className="scroll-mt-4 rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/80 p-5 shadow-[0_0_24px_rgba(0,212,170,0.06)]"
             >
-              {renderSetupForm()}
+              <div className="max-h-[calc(100vh-18rem)] overflow-y-auto pr-1">
+                {renderSetupForm()}
+              </div>
             </section>
 
             {error ? (
