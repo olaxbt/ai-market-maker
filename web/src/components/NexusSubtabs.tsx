@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { HeaderNavMode } from "@/components/NexusHeaderNav";
 
 function Tab({
@@ -31,7 +31,7 @@ function Tab({
 
 function isPathActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";
-  if (href === "/leaderboard") return pathname === "/leaderboard" || pathname.startsWith("/leaderboard/");
+  if (href === "/feed") return pathname === "/feed";
   if (href === "/console") return pathname === "/console";
   if (href.startsWith("/console?")) return pathname === "/console";
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -39,30 +39,10 @@ function isPathActive(pathname: string, href: string): boolean {
 
 export function NexusSubtabs({ active }: { active: HeaderNavMode }) {
   const pathname = usePathname() || "/";
-  const [authed, setAuthed] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function check() {
-      try {
-        const res = await fetch("/api/platform/providers", { cache: "no-store" });
-        if (!cancelled) setAuthed(res.status !== 401);
-      } catch {
-        if (!cancelled) setAuthed(null);
-      }
-    }
-    void check();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const tabs = useMemo(() => {
     if (active === "observe") {
-      return [
-        { href: "/leaderboard", label: "Results", title: "Leaderboard results" },
-        { href: "/feed", label: "Signals", title: "Provider signals feed" },
-      ];
+      return [{ href: "/feed", label: "Signals", title: "Provider signals feed" }];
     }
     if (active === "nexus") {
       return [
@@ -70,11 +50,11 @@ export function NexusSubtabs({ active }: { active: HeaderNavMode }) {
         { href: "/console?view=grid", label: "Agents", title: "Agent grid + detail panel" },
         { href: "/console?view=research", label: "Research", title: "Backtest + supervisor together" },
         { href: "/console?view=monitor", label: "Monitor", title: "Balances, positions, and last decisions" },
+        { href: "/console?view=futu", label: "Futu", title: "Futu OpenD HK/US stocks" },
       ];
     }
-    // Fallback (shouldn't happen).
-    return authed != null ? [] : [];
-  }, [active, authed]);
+    return [];
+  }, [active]);
 
   return (
     <div className="inline-flex rounded-xl nexus-segmented-toggle p-1">

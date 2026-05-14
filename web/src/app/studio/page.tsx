@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { BarChart3, Network, MessageSquareText, ChevronDown } from "lucide-react";
+import { Rss, Network, MessageSquareText, ChevronDown } from "lucide-react";
 
 type Step =
   | { action: "message"; text: string }
@@ -44,7 +44,7 @@ function defaultSession(): StudioSession {
       {
         role: "system",
         text:
-          "Studio is the guided entry point.\n\nUse it to understand the system, learn how to reproduce results locally, and publish to the leaderboard.\n\nTry: `onboarding`, `publish to leaderboard`, or describe your strategy idea.",
+          "Studio is the guided entry point.\n\nUse it to understand the system and learn how to reproduce results locally.\n\nTry: `onboarding`, `help`, or describe your strategy idea.",
       },
     ],
   };
@@ -178,7 +178,7 @@ export default function StudioPage() {
         <aside className="min-h-0 border-r border-[rgba(15,23,42,0.08)] bg-[rgba(255,255,255,0.55)] p-4 backdrop-blur">
           {/* App tabs */}
           <div className="mb-4 space-y-1">
-            <RailTab href="/leaderboard" label="Leaderboard" icon={<BarChart3 className="h-4 w-4" />} />
+            <RailTab href="/feed" label="Signals" icon={<Rss className="h-4 w-4" />} />
             <RailTab href="/console" label="Nexus" icon={<Network className="h-4 w-4" />} />
             <RailTab
               href="/studio"
@@ -238,7 +238,7 @@ export default function StudioPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => void send("publish to leaderboard")}
+                  onClick={() => void send("how do I publish backtest results")}
                   disabled={busy}
                   className="w-full rounded-2xl border border-[rgba(15,23,42,0.10)] bg-[rgba(255,255,255,0.55)] px-3 py-2 text-left text-[11px] text-[rgba(15,23,42,0.88)] shadow-sm hover:bg-[rgba(255,255,255,0.75)] disabled:opacity-40"
                 >
@@ -338,7 +338,7 @@ export default function StudioPage() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && void send()}
-                    placeholder={busy ? "Thinking…" : "Ask: onboarding, publish to leaderboard, or a strategy idea…"}
+                    placeholder={busy ? "Thinking…" : "Ask: onboarding, help, or a strategy idea…"}
                     disabled={busy}
                     className="flex-1 rounded-[20px] border border-[rgba(15,23,42,0.10)] bg-white/80 px-5 py-4 text-[13px] text-[rgba(15,23,42,0.92)] outline-none placeholder:text-[rgba(15,23,42,0.45)] focus:border-[rgba(0,212,170,0.30)] disabled:opacity-50"
                   />

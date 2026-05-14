@@ -106,7 +106,7 @@ export function NexusThoughtStreamPanel({
             </h2>
           </div>
           <div className="p-3 space-y-3">
-            {streaming && !hasTraces && (
+            {streaming && !hasTraces && !selectedNodeId && (
               <motion.div
                 animate={{ opacity: [0.5, 1, 0.5] }}
                 transition={{ repeat: Infinity, duration: 1.2 }}
@@ -115,6 +115,11 @@ export function NexusThoughtStreamPanel({
                 Waiting for traces…
               </motion.div>
             )}
+            {streaming && !hasTraces && selectedNodeId ? (
+              <p className="text-[var(--nexus-muted)] text-xs">
+                No traces for this node yet (live stream). Pick another node or wait for the next bar.
+              </p>
+            ) : null}
             {logToShow.length > 0 ? (
               <div className="space-y-2">
                 <div className="text-[10px] font-mono uppercase tracking-widest text-[var(--nexus-muted)]">

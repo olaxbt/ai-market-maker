@@ -10,6 +10,14 @@ import {
 import { BacktestEquityChart } from "@/components/backtest/BacktestEquityChart";
 import { BacktestTradesTable } from "@/components/backtest/BacktestTradesTable";
 import { copyText } from "@/components/backtest/embeddedBacktestUtils";
+import {
+  StrategyCardSelector,
+  ConfigReceiptPanel,
+  ReasoningPreviewCard,
+  type StrategyOption,
+  type StrategyCategory,
+} from "@/components/StrategyCardSelector";
+import { FutuTickerCombobox } from "@/components/FutuTickerCombobox";
 import { BacktestPriceChart } from "@/features/backtest/components/BacktestPriceChart";
 import { format, parseISO } from "date-fns";
 import { createPortal } from "react-dom";
@@ -34,18 +42,7 @@ import type {
   TradesResponse,
 } from "@/types/backtest";
 
-type StrategyRow = {
-  id: string;
-  title: string;
-  description: string;
-  defaults: {
-    n_bars: number;
-    interval_sec: number;
-    max_steps: number;
-    fee_bps: number;
-    initial_cash: number;
-  };
-};
+type StrategyRow = StrategyOption;
 
 type BacktestJob = {
   status: "queued" | "running" | "completed" | "failed";
@@ -228,6 +225,7 @@ export function BacktestLabPanel({
   const [strategies, setStrategies] = useState<StrategyRow[]>([]);
   const [presetId, setPresetId] = useState("macd_risk_v1");
   const [ticker, setTicker] = useState("BTC/USDT");
+  const [dataExchange, setDataExchange] = useState<"binance" | "futu">("binance");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -308,7 +306,7 @@ export function BacktestLabPanel({
     const body: Record<string, unknown> = {
       preset_id: presetId,
       ticker,
-      exchange_id: "binance",
+      exchange_id: dataExchange,
     };
     if (!selected) return body;
     const nb = parseInt(nBars, 10);
@@ -327,7 +325,7 @@ export function BacktestLabPanel({
 
     const s = sinceIso.trim();
     const u = untilIso.trim();
-    if (windowMode === "range" && s && u) {
+    if (windowMode === "range" && s && u && dataExchange !== "futu") {
       body.since_iso = s;
       body.until_iso = u;
     }
@@ -336,6 +334,7 @@ export function BacktestLabPanel({
     advancedOpen,
     presetId,
     ticker,
+    dataExchange,
     nBars,
     intervalAmount,
     intervalUnit,
@@ -379,7 +378,7 @@ export function BacktestLabPanel({
       if (!runId) return false;
       lastUrlRunRef.current = runId;
       router.replace(
-        `/?view=${embedded ? embeddedView : "backtest"}&run=${encodeURIComponent(runId)}`,
+        `/console?view=${embedded ? embeddedView : "backtest"}&run=${encodeURIComponent(runId)}`,
         {
           scroll: false,
         },
@@ -436,7 +435,7 @@ export function BacktestLabPanel({
         // Now that we know this run is actually persisted, update the URL + full series.
         lastUrlRunRef.current = runId;
         router.replace(
-          `/?view=${embedded ? embeddedView : "backtest"}&run=${encodeURIComponent(runId)}`,
+          `/console?view=${embedded ? embeddedView : "backtest"}&run=${encodeURIComponent(runId)}`,
           {
             scroll: false,
           },
@@ -501,7 +500,7 @@ export function BacktestLabPanel({
           if (j.result.run_id) {
             lastUrlRunRef.current = j.result.run_id;
             router.replace(
-              `/?view=${embedded ? embeddedView : "backtest"}&run=${encodeURIComponent(j.result.run_id)}`,
+              `/console?view=${embedded ? embeddedView : "backtest"}&run=${encodeURIComponent(j.result.run_id)}`,
               {
                 scroll: false,
               },
@@ -608,7 +607,7 @@ export function BacktestLabPanel({
     setSelectedHistoryId("");
     setError(null);
     lastUrlRunRef.current = null;
-    router.replace(`/?view=${embedded ? embeddedView : "backtest"}`, { scroll: false });
+    router.replace(`/console?view=${embedded ? embeddedView : "backtest"}`, { scroll: false });
   }, [embedded, embeddedView, router]);
 
   useEffect(() => {
@@ -701,44 +700,82 @@ export function BacktestLabPanel({
       : "mt-2 w-full rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)] px-3 py-2.5 font-mono text-xs text-[var(--nexus-text)]";
     return (
       <>
-        <div className={`flex flex-wrap items-end ${compactForm ? "gap-3" : "gap-6"}`}>
-          <div className={`min-w-0 flex-1 ${compactForm ? "min-w-[140px]" : "min-w-[200px]"}`}>
-            <label className={lb}>Strategy preset</label>
-            <select
-              className={sel}
-              value={presetId}
-              onChange={(e) => setPresetId(e.target.value)}
-              disabled={formBusy}
-            >
-              {strategies.length === 0 ? (
-                <option value="macd_risk_v1">macd_risk_v1</option>
-              ) : (
-                strategies.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.title}
-                  </option>
-                ))
-              )}
-            </select>
-            {selected ? (
-              <p
-                className={`mt-1.5 text-[var(--nexus-muted)] ${compactForm ? "line-clamp-2 text-[10px] leading-snug" : "mt-2 text-[11px] leading-relaxed"}`}
-              >
-                {selected.description}
-              </p>
-            ) : null}
-          </div>
-          <div
-            className={`w-full min-w-[120px] ${compactForm ? "max-w-[11rem]" : "max-w-xs min-w-[160px]"}`}
-          >
-            <label className={lb}>Ticker</label>
-            <input
-              className={inp}
-              value={ticker}
-              onChange={(e) => setTicker(e.target.value)}
-              placeholder="BTC/USDT"
+        <div className={`flex flex-col ${compactForm ? "gap-2" : "gap-3"}`}>
+          <label className={lb}>Trading strategy</label>
+          {strategies.length > 0 && (
+            <StrategyCardSelector
+              strategies={strategies}
+              selectedId={presetId}
+              onSelect={setPresetId}
               disabled={formBusy}
             />
+          )}
+          {strategies.length === 0 && (
+            <div className="rounded-xl border border-[rgba(138,149,166,0.12)] bg-[rgba(6,8,11,0.2)] p-3 text-[10px] text-[var(--nexus-muted)]">
+              Loading strategies…
+            </div>
+          )}
+
+          {/* CoT reasoning preview */}
+          {selected && selected.reasoning_preview && (
+            <ReasoningPreviewCard
+              reasoning={selected.reasoning_preview}
+              title={selected.title}
+            />
+          )}
+        </div>
+
+        <div className={`flex flex-wrap items-start ${compactForm ? "gap-2" : "gap-4"}`}>
+          <div
+            className={`w-full min-w-[120px] ${compactForm ? "max-w-[12rem]" : "max-w-xs min-w-[180px]"}`}
+          >
+            <label className={lb}>Ticker</label>
+            {dataExchange === "futu" ? (
+              <FutuTickerCombobox
+                value={ticker}
+                onChange={setTicker}
+                disabled={formBusy}
+                compact={compactForm}
+              />
+            ) : (
+              <input
+                className={inp}
+                value={ticker}
+                onChange={(e) => setTicker(e.target.value)}
+                placeholder="BTC/USDT"
+                disabled={formBusy}
+              />
+            )}
+          </div>
+          <div className={`w-full min-w-[120px] ${compactForm ? "max-w-[9rem]" : "max-w-[10rem]"}`}>
+            <label className={lb}>Data source</label>
+            <select
+              className={sel}
+              value={dataExchange}
+              onChange={(e) => {
+                const v = e.target.value as "binance" | "futu";
+                setDataExchange(v);
+                if (v === "futu") {
+                  setWindowMode("latest");
+                  setSinceIso("");
+                  setUntilIso("");
+                  setTicker((cur) => (cur.includes("/") && !cur.includes("HK.") ? "HK.00700" : cur));
+                } else {
+                  setTicker((cur) => (cur.startsWith("HK.") || cur.startsWith("US.") ? "BTC/USDT" : cur));
+                }
+              }}
+              disabled={formBusy}
+              aria-label="OHLCV data source"
+            >
+              <option value="binance">Binance (CCXT)</option>
+              <option value="futu">Futu OpenD</option>
+            </select>
+            {!compactForm ? (
+              <p className="mt-0.5 text-[10px] text-[var(--nexus-muted)]">
+                Futu: HK/US symbols (e.g. HK.00700). Date-range windows are not supported yet; use latest N
+                candles.
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -778,7 +815,7 @@ export function BacktestLabPanel({
                   <button
                     type="button"
                     onClick={() => setWindowMode("range")}
-                    disabled={formBusy}
+                    disabled={formBusy || dataExchange === "futu"}
                     className={`rounded-lg px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest ring-1 transition focus:outline-none focus:ring-1 focus:ring-cyan-500/40 ${
                       windowMode === "range"
                         ? "bg-[rgba(34,211,238,0.14)] text-[#22d3ee] ring-[rgba(34,211,238,0.35)]"
@@ -966,6 +1003,29 @@ export function BacktestLabPanel({
             ))}
           </div>
         ) : null}
+
+        {/* Config receipt */}
+        {selected && !formBusy && (
+          <div className={`${compactForm ? "mt-2" : "mt-4"}`}>
+            <ConfigReceiptPanel
+              strategy={selected}
+              resolvedParams={{
+                ticker,
+                n_bars: Number(nBars) || 500,
+                interval_amount: windowMode === "range" ? "—" : String(Number(nBars) || 500),
+                interval_unit: "candles",
+                interval_sec: (() => { try { return amountUnitToIntervalSec(parseFloat(intervalAmount) || 5, intervalUnit); } catch { return 300; } })(),
+                max_steps: Number(maxSteps) || 200,
+                fee_bps: Number(feeBps) || 10,
+                initial_cash: Number(initialCash) || 10000,
+                data_source: dataExchange === "futu" ? "Futu OpenD" : "Binance",
+                window_mode: windowMode,
+                since_iso: sinceIso || "—",
+                until_iso: untilIso || "—",
+              }}
+            />
+          </div>
+        )}
 
         <div className={`flex flex-col ${compactForm ? "mt-3 gap-2" : "mt-6 gap-4"}`}>
           <div className="flex flex-wrap items-center gap-2">
@@ -1191,7 +1251,7 @@ export function BacktestLabPanel({
                   // In Research mode, keep the user in the split workspace.
                   const nextView =
                     embedded && embeddedView === "research" ? "research" : "supervisor";
-                  router.replace(`/?view=${nextView}&run=${encodeURIComponent(activeRunId)}`, {
+                  router.replace(`/console?view=${nextView}&run=${encodeURIComponent(activeRunId)}`, {
                     scroll: false,
                   });
                 }}
@@ -1298,11 +1358,11 @@ export function BacktestLabPanel({
                   </div>
                 ) : null}
                 {embeddedTab === "saved" ? (
-                  <div className="flex w-full max-w-none min-h-0 flex-1 flex-col gap-3">
+                  <div className="flex w-full max-w-none flex-col gap-3">
                     {!historyLoading && kpis ? (
-                      <section className="flex min-h-0 flex-1 flex-col gap-3">
+                      <section className="flex flex-col gap-3">
                         <div className="min-w-0 shrink-0">{renderResultsDetail("embedded")}</div>
-                        <section id="backtest-timeline" className="flex min-h-0 flex-1 flex-col">
+                        <section id="backtest-timeline" className="flex flex-col gap-3">
                           <h2 className="shrink-0 font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-muted)]">
                             Timeline
                           </h2>
@@ -1310,17 +1370,15 @@ export function BacktestLabPanel({
                             Expand a bar: chain-of-thought and event log sit in two columns when the
                             panel is wide enough.
                           </p>
-                          <div className="mt-1.5 flex min-h-[min(44vh,520px)] flex-1 flex-col overflow-hidden rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)]/30">
-                            <div className="min-h-0 flex-1 overflow-hidden p-1">
-                              <BacktestBarTimeline
-                                entries={messageLog}
-                                traces={tracesToShow}
-                                streaming={streamingThoughts}
-                                emptyHint={timelineEmptyHint}
-                                compact
-                                className="h-full min-h-0 w-full text-[10px]"
-                              />
-                            </div>
+                          <div className="mt-1.5 rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)]/30 p-1">
+                            <BacktestBarTimeline
+                              entries={messageLog}
+                              traces={tracesToShow}
+                              streaming={streamingThoughts}
+                              emptyHint={timelineEmptyHint}
+                              compact
+                              className="max-h-[min(70vh,920px)] min-h-[200px] w-full text-[10px]"
+                            />
                           </div>
                         </section>
                       </section>
@@ -1333,7 +1391,9 @@ export function BacktestLabPanel({
                     id="backtest-setup"
                     className="scroll-mt-1 rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/75 p-3"
                   >
-                    {renderSetupForm(true)}
+                    <div className="max-h-[calc(100vh-22rem)] overflow-y-auto pr-1">
+                      {renderSetupForm(true)}
+                    </div>
 
                     {streamingThoughts || tracesToShow.length > 0 || messageLog.length > 0 ? (
                       <section className="mt-3 border-t border-[color:var(--nexus-rule-soft)] pt-3">
@@ -1342,9 +1402,11 @@ export function BacktestLabPanel({
                             <h2 className="font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-muted)]">
                               Live timeline
                             </h2>
-                            <p className="mt-0.5 font-mono text-[8px] text-[var(--nexus-muted)]">
-                              Updates while the replay runs (soft payload). Expand a bar for CoT +
-                              log.
+                            <p className="mt-0.5 font-mono text-[8px] leading-snug text-[var(--nexus-muted)]">
+                              Same multi-agent graph as live (scan, risk, execution). While the
+                              replay runs, new steps appear here. If the server tags each candle,
+                              you will see &quot;Bar 1&quot;, &quot;Bar 2&quot;, … otherwise one
+                              &quot;Live workflow&quot; group until the run finishes.
                             </p>
                           </div>
                         </div>
@@ -1450,7 +1512,7 @@ export function BacktestLabPanel({
                       if (!activeRunId) return;
                       const nextView =
                         embedded && embeddedView === "research" ? "research" : "supervisor";
-                      router.replace(`/?view=${nextView}&run=${encodeURIComponent(activeRunId)}`, {
+                      router.replace(`/console?view=${nextView}&run=${encodeURIComponent(activeRunId)}`, {
                         scroll: false,
                       });
                     }}
@@ -1466,7 +1528,9 @@ export function BacktestLabPanel({
               id="backtest-setup"
               className="scroll-mt-4 rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/80 p-5 shadow-[0_0_24px_rgba(0,212,170,0.06)]"
             >
-              {renderSetupForm()}
+              <div className="max-h-[calc(100vh-18rem)] overflow-y-auto pr-1">
+                {renderSetupForm()}
+              </div>
             </section>
 
             {error ? (
@@ -1477,7 +1541,7 @@ export function BacktestLabPanel({
 
             {kpis || streamingThoughts || tracesToShow.length > 0 || messageLog.length > 0 ? (
               <section className="grid w-full grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_420px]">
-                <div className="min-w-0 space-y-4">
+                <div className="min-w-0 space-y-4 max-h-[calc(100vh-16rem)] overflow-y-auto">
                   <div className="min-w-0">{kpis ? renderResultsDetail("standalone") : null}</div>
 
                   <section className="flex min-h-[320px] w-full flex-col overflow-hidden rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 shadow-[0_0_24px_rgba(0,212,170,0.04)]">
@@ -1504,8 +1568,8 @@ export function BacktestLabPanel({
                   </section>
                 </div>
 
-                <aside className="flex min-h-0 flex-col gap-4">
-                  <section className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 p-4 shadow-[0_0_24px_rgba(0,212,170,0.04)]">
+                <aside className="flex min-h-0 flex-col gap-4 max-h-[calc(100vh-16rem)] overflow-y-auto">
+                  <section className="shrink-0 rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 p-4 shadow-[0_0_24px_rgba(0,212,170,0.04)]">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
@@ -1550,7 +1614,7 @@ export function BacktestLabPanel({
                           const nextView =
                             embedded && embeddedView === "research" ? "research" : "supervisor";
                           router.replace(
-                            `/?view=${nextView}&run=${encodeURIComponent(activeRunId)}`,
+                            `/console?view=${nextView}&run=${encodeURIComponent(activeRunId)}`,
                             { scroll: false },
                           );
                         }}

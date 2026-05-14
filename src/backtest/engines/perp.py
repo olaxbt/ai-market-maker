@@ -515,6 +515,30 @@ class PerpEngine:
             )
         pd.DataFrame(eq_records).to_json(out_dir / "equity.jsonl", orient="records", lines=True)
 
+        # Persist OHLCV bars for the charts API (/bars endpoint).
+        bar_rows = [
+            {
+                "ts": int(row[0]),
+                "o": float(row[1]),
+                "h": float(row[2]),
+                "l": float(row[3]),
+                "c": float(row[4]),
+                "v": float(row[5]),
+            }
+            for row in (rows or [])
+        ]
+        if bar_rows:
+            (out_dir / "bars.json").write_text(
+                json.dumps(
+                    {
+                        "ticker": symbols[0] if symbols else "",
+                        "interval_sec": self.interval_sec,
+                        "bars": bar_rows,
+                    },
+                    indent=1,
+                )
+            )
+
         trade_records = []
         for t in self.trades:
             rec: dict[str, Any] = {

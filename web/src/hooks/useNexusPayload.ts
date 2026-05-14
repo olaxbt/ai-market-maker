@@ -1,16 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fetchNexusPayload } from "@/lib/api/traces";
+import { fetchNexusPayloadWithSource } from "@/lib/api/traces";
 import type { NexusPayload } from "@/types/nexus-payload";
 import mockTraces from "@/data/mock-traces.json";
 
 function resolveFlowWsUrl(): string {
   const explicit = process.env.NEXT_PUBLIC_FLOW_WS_URL?.trim();
   if (explicit) {
-    // Allow either:
-    // - full endpoint: ws(s)://host/ws/runs/latest
-    // - base host: ws(s)://host
     if (explicit.includes("/ws/")) return explicit;
     return `${explicit.replace(/\/$/, "")}/ws/runs/latest`;
   }
@@ -29,13 +26,17 @@ export function useNexusPayload() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
+  /** `mock` | `mock-fallback` | `mock-offline` | `live` | null — from /api/traces, client mock, or WS */
+  const [traceDataSource, setTraceDataSource] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    const useMock = process.env.NEXT_PUBLIC_USE_MOCK === "1";
+    // Live Flow by default. Set NEXT_PUBLIC_USE_MOCK=1 for bundled demo topology (no Flow / no LLM required).
+    const useMock = process.env.NEXT_PUBLIC_USE_MOCK?.trim() === "1";
     if (useMock) {
       setPayload(mockTraces as NexusPayload);
+      setTraceDataSource("mock");
       setError(null);
       setLoading(false);
       setWsConnected(false);
@@ -44,17 +45,19 @@ export function useNexusPayload() {
       };
     }
 
-    fetchNexusPayload()
-      .then((data) => {
+    fetchNexusPayloadWithSource()
+      .then(({ payload: data, dataSource }) => {
         if (!cancelled) {
           setPayload(data);
+          setTraceDataSource(dataSource ?? "live");
           setError(null);
         }
       })
       .catch((e) => {
         if (!cancelled) {
-          setPayload(null);
-          setError(e instanceof Error ? e : new Error(String(e)));
+          setPayload(mockTraces as NexusPayload);
+          setTraceDataSource("mock-offline");
+          setError(null);
         }
       })
       .finally(() => {
@@ -69,7 +72,7 @@ export function useNexusPayload() {
   }, []);
 
   useEffect(() => {
-    const useMock = process.env.NEXT_PUBLIC_USE_MOCK === "1";
+    const useMock = process.env.NEXT_PUBLIC_USE_MOCK?.trim() === "1";
     if (useMock) return;
 
     let closed = false;
@@ -101,6 +104,7 @@ export function useNexusPayload() {
           };
           if (data.type === "payload" && data.payload) {
             setPayload(data.payload);
+            setTraceDataSource("live");
             setLoading(false);
             setError(null);
           }
@@ -117,14 +121,13 @@ export function useNexusPayload() {
       socket.onclose = () => {
         setWsConnected(false);
         if (closed) return;
-        // Exponential-ish backoff capped so local dev restarts recover quickly.
         const delay = Math.min(8000, 400 * 2 ** attempt);
         attempt = Math.min(attempt + 1, 6);
         reconnectTimer = window.setTimeout(connect, delay);
       };
 
       socket.onerror = () => {
-        // Keep page usable with the last HTTP payload; reconnect is handled by onclose.
+        // Reconnect via onclose
       };
     };
 
@@ -137,5 +140,5 @@ export function useNexusPayload() {
     };
   }, []);
 
-  return { payload, loading, error, wsConnected };
+  return { payload, loading, error, wsConnected, traceDataSource };
 }

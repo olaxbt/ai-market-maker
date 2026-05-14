@@ -25,6 +25,15 @@ services:
       AIMM_AUTH_SECRET: ${AIMM_AUTH_SECRET}
       AIMM_API_KEY: ${AIMM_API_KEY:-}
       AIMM_CORS_ORIGINS: ${AIMM_CORS_ORIGINS:-*}
+      # Futu: inside the container 127.0.0.1 is NOT your Mac/Windows host. Point at OpenD explicitly:
+      #   OpenD on host → FUTU_OPEND_HOST=host.docker.internal (see extra_hosts below)
+      #   OpenD in compose → docker compose --profile with-futu up … then FUTU_OPEND_HOST=futu-opend
+      FUTU_OPEND_HOST: ${FUTU_OPEND_HOST:-host.docker.internal}
+      FUTU_OPEND_QUOTE_PORT: ${FUTU_OPEND_QUOTE_PORT:-11111}
+      FUTU_OPEND_TRADE_PORT: ${FUTU_OPEND_TRADE_PORT:-11112}
+    extra_hosts:
+      # Lets Linux Docker reach the host; Mac/Windows Desktop also resolve host.docker.internal.
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy
@@ -41,8 +50,13 @@ services:
       dockerfile: Dockerfile.worker
     env_file:
       - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       DATABASE_URL: ${DATABASE_URL}
+      FUTU_OPEND_HOST: ${FUTU_OPEND_HOST:-host.docker.internal}
+      FUTU_OPEND_QUOTE_PORT: ${FUTU_OPEND_QUOTE_PORT:-11111}
+      FUTU_OPEND_TRADE_PORT: ${FUTU_OPEND_TRADE_PORT:-11112}
       PLATFORM_WORKER_AUTO_EXECUTE: ${PLATFORM_WORKER_AUTO_EXECUTE:-0}
       PLATFORM_WORKER_INTERVAL_SEC: ${PLATFORM_WORKER_INTERVAL_SEC:-2.0}
       PLATFORM_WORKER_BATCH: ${PLATFORM_WORKER_BATCH:-200}
@@ -77,13 +91,25 @@ services:
       context: ./web
       dockerfile: Dockerfile
     environment:
-      FLOW_API_BASE_URL: ${FLOW_API_BASE_URL:-http://api:8001}
+      # Server-side Next `/api/*` proxies must use the Docker service name. A host `.env` often sets
+      # FLOW_API_BASE_URL=http://127.0.0.1:8001 for local uvicorn — inside this container that points at
+      # web itself and Flow appears "unreachable". Override only for the web service.
+      FLOW_API_BASE_URL: http://api:8001
       AIMM_API_KEY: ${AIMM_API_KEY:-}
       NODE_ENV: production
     depends_on:
       - api
     ports:
       - "3000:3000"
+
+  futu-opend:
+    profiles: ["with-futu"]
+    image: ${FUTU_OPEND_IMAGE:-registry.cn-hangzhou.aliyuncs.com/futu-openapi/opend:latest}
+    restart: unless-stopped
+    ports:
+      - "${FUTU_OPEND_QUOTE_PORT:-11111}:11111"
+      - "${FUTU_OPEND_TRADE_PORT:-11112}:11112"
+    # When this profile is up, set FUTU_OPEND_HOST=futu-opend in .env (not host.docker.internal).
 
 volumes:
   aimm_pgdata:

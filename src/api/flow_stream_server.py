@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,8 @@ from .tools_routes import router as tools_router
 
 _REPO_ROOT_DOTENV = Path(__file__).resolve().parents[2] / ".env"
 load_dotenv(dotenv_path=_REPO_ROOT_DOTENV)
+
+logger = logging.getLogger(__name__)
 
 RUNS_DIR = _resolved_runs_dir()
 LATEST_RUN_FILE = RUNS_DIR / "latest_run.txt"
@@ -133,6 +136,72 @@ def _resolve_run_log(run_id: str) -> Path:
 @app.get("/health")
 def health() -> dict[str, Any]:
     return {"ok": True}
+
+
+@app.get("/futu/price")
+def futu_price(
+    symbol: str = Query("HK.00700"),
+    interval: str = Query("1d"),
+    limit: int = Query(200, ge=1, le=2000),
+) -> JSONResponse:
+    """Historical OHLCV from Futu OpenD for the web Futu console.
+
+    Next.js ``/api/futu/price`` proxies here when ``FLOW_API_BASE_URL`` points at this server.
+    """
+    from adapters.futu import FutuAdapter
+
+    adapter: FutuAdapter | None = None
+    try:
+        adapter = FutuAdapter()
+        bars = adapter.get_history_kline(symbol=symbol, interval=interval, limit=limit)
+    except Exception as exc:  # noqa: BLE001 — return JSON error to the UI proxy
+        logger.warning("GET /futu/price failed symbol=%s interval=%s: %s", symbol, interval, exc)
+        return JSONResponse(
+            {
+                "error": "futu_price_failed",
+                "detail": str(exc),
+                "hint": "Run Futu OpenD (quote port 11111), install futu-api, set FUTU_OPEND_HOST / FUTU_OPEND_QUOTE_PORT.",
+            },
+            status_code=502,
+        )
+    finally:
+        if adapter is not None:
+            adapter.close()
+
+    return JSONResponse({"bars": bars, "symbol": symbol, "source": "flow"})
+
+
+@app.get("/futu/status")
+def futu_status() -> JSONResponse:
+    """Quote channel health for Futu OpenD (used by the web Futu console status badge)."""
+    from adapters.futu import FutuAdapter, FutuEnvConfig
+
+    cfg = FutuEnvConfig.from_env()
+    meta: dict[str, Any] = {
+        "host": cfg.host,
+        "quote_port": cfg.quote_port,
+        "trade_port": cfg.trade_port,
+        "source": "flow",
+    }
+    adapter: FutuAdapter | None = None
+    try:
+        adapter = FutuAdapter()
+        hc = adapter.healthcheck()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("GET /futu/status failed: %s", exc)
+        return JSONResponse(
+            {
+                **meta,
+                "status": "error",
+                "opend_connected": False,
+                "detail": str(exc),
+            }
+        )
+    finally:
+        if adapter is not None:
+            adapter.close()
+
+    return JSONResponse({**meta, **hc})
 
 
 @app.get("/runs/latest")

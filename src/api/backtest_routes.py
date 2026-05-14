@@ -20,6 +20,7 @@ from backtest.bars import (
     align_bars_by_min_length,
     fetch_ccxt_ohlcv_bars,
     fetch_ccxt_ohlcv_range,
+    fetch_futu_ohlcv_bars,
     interval_sec_to_ccxt_timeframe,
     iso_utc_to_ms,
     load_ohlcv_json,
@@ -136,7 +137,7 @@ class QuickBacktestRequest(BaseModel):
     )
     exchange_id: str = Field(
         "binance",
-        description="CCXT exchange id for real OHLCV (e.g. binance).",
+        description='Data source: CCXT id (e.g. "binance") or "futu" for Futu OpenD (HK/US symbols like HK.00700).',
     )
     since_iso: str | None = Field(
         None,
@@ -154,7 +155,8 @@ class DemoBacktestRequest(BaseModel):
     symbols: str = Field(
         "BTC/USDT,ETH/USDT,SOL/USDT",
         min_length=3,
-        description="Comma-separated ccxt pairs (min 2).",
+        description="Comma-separated symbols, min 2. CCXT pairs for binance (e.g. BTC/USDT); "
+        "Futu codes for exchange_id=futu (e.g. HK.00700,HK.09988).",
     )
     steps: int = Field(100, ge=20, le=20_000, description="Candles to fetch and replay.")
     interval_sec: int = Field(
@@ -163,7 +165,10 @@ class DemoBacktestRequest(BaseModel):
         le=86_400,
         description="Bar size in seconds (default: 1d).",
     )
-    exchange_id: str = Field("binance", description="CCXT exchange id (default: binance).")
+    exchange_id: str = Field(
+        "binance",
+        description='CCXT exchange id or "futu" for OpenD multi-symbol runs.',
+    )
     initial_cash: float = Field(10_000.0, gt=0)
     fee_bps: float = Field(10.0, ge=0, le=500)
 
@@ -177,11 +182,19 @@ def _execute_quick_backtest(
 ) -> dict[str, Any]:
     cap = _max_api_steps()
     tf = interval_sec_to_ccxt_timeframe(int(req.interval_sec))
-    ex_id = (req.exchange_id or "binance").strip()
+    ex_id = (req.exchange_id or "binance").strip().lower()
     if req.since_iso or req.until_iso:
         if not req.since_iso or not req.until_iso:
             raise HTTPException(
                 status_code=400, detail="since_iso and until_iso must both be set (or both omitted)"
+            )
+        if ex_id == "futu":
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "exchange_id=futu does not support since_iso/until_iso yet; "
+                    "omit the date range for latest-N candles, or use a CCXT exchange for fixed windows."
+                ),
             )
         bars = fetch_ccxt_ohlcv_range(
             req.ticker,
@@ -190,6 +203,12 @@ def _execute_quick_backtest(
             until_ms=iso_utc_to_ms(req.until_iso),
             exchange_id=ex_id,
             max_rows=int(req.n_bars),
+        )
+    elif ex_id == "futu":
+        bars = fetch_futu_ohlcv_bars(
+            req.ticker,
+            int(req.n_bars),
+            interval_sec=int(req.interval_sec),
         )
     else:
         bars = fetch_ccxt_ohlcv_bars(
@@ -260,7 +279,7 @@ def _execute_demo_backtest(
     cap = _max_api_steps()
     want = int(req.steps)
     effective = max(1, min(want, cap))
-    ex_id = (req.exchange_id or "binance").strip()
+    ex_id = (req.exchange_id or "binance").strip().lower()
     tf = interval_sec_to_ccxt_timeframe(int(req.interval_sec))
     syms = [s.strip() for s in (req.symbols or "").split(",") if s.strip()]
     if len(syms) < 2:
@@ -274,7 +293,16 @@ def _execute_demo_backtest(
 
     bars_by_symbol: dict[str, list[list[float]]] = {}
     for sym in syms:
-        bars = fetch_ccxt_ohlcv_bars(exchange_id=ex_id, symbol=sym, timeframe=tf, limit=effective)
+        if ex_id == "futu":
+            bars = fetch_futu_ohlcv_bars(
+                sym,
+                effective,
+                interval_sec=int(req.interval_sec),
+            )
+        else:
+            bars = fetch_ccxt_ohlcv_bars(
+                exchange_id=ex_id, symbol=sym, timeframe=tf, limit=effective
+            )
         if not bars:
             raise HTTPException(
                 status_code=400, detail=f"No OHLCV returned for {sym} ({ex_id}, {tf})"
@@ -436,6 +464,10 @@ def post_demo_backtest_async(req: DemoBacktestRequest) -> dict[str, Any]:
 class PresetBacktestRequest(BaseModel):
     preset_id: str = Field(DEFAULT_QUANT_STRATEGY_ID, min_length=1)
     ticker: str = Field("BTC/USDT", min_length=3)
+    exchange_id: str | None = Field(
+        None,
+        description='Optional: "binance" (default) or "futu" for Futu OpenD (use HK.00700 style tickers).',
+    )
     n_bars: int | None = Field(None, ge=20, le=100_000)
     interval_sec: int | None = Field(None, ge=60, le=86_400)
     max_steps: int | None = Field(None, ge=1)
@@ -457,6 +489,7 @@ def post_preset_backtest(req: PresetBacktestRequest) -> dict[str, Any]:
         merged = merge_preset_quick_request(
             req.preset_id,
             ticker=req.ticker,
+            exchange_id=req.exchange_id,
             n_bars=req.n_bars,
             interval_sec=req.interval_sec,
             max_steps=req.max_steps,
@@ -489,6 +522,7 @@ def post_preset_backtest_async(req: PresetBacktestRequest) -> dict[str, Any]:
         merged = merge_preset_quick_request(
             req.preset_id,
             ticker=req.ticker,
+            exchange_id=req.exchange_id,
             n_bars=req.n_bars,
             interval_sec=req.interval_sec,
             max_steps=req.max_steps,

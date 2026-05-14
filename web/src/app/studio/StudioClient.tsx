@@ -138,7 +138,7 @@ export default function StudioClient() {
                   } else if (path === "panel:paper") {
                     window.location.href = "/paper";
                   } else if (path === "panel:leaderboard") {
-                    window.location.href = "/leaderboard";
+                    window.location.href = "/feed";
                   } else if (path.startsWith("/")) {
                     window.location.href = path;
                   }

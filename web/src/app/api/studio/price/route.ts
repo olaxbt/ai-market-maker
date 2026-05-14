@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { flowApiBase } from "@/server/flowProxy";
 
 /**
  * GET /api/studio/price?symbol=BTC/USDT&interval=1h&limit=200
@@ -15,7 +16,7 @@ export async function GET(request: Request) {
 
   try {
     // Try Flow backend first
-    const flowBase = process.env.FLOW_API_BASE_URL ?? "http://127.0.0.1:8001";
+    const flowBase = flowApiBase();
     const flowRes = await fetch(
       `${flowBase}/studio/price?symbol=${encodeURIComponent(symbol)}&interval=${interval}&limit=${limit}`,
       { cache: "no-store", signal: AbortSignal.timeout(3000) },

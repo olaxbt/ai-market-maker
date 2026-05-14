@@ -13,13 +13,19 @@ export interface FetchNexusPayloadOptions {
   baseDelayMs?: number;
 }
 
+export interface FetchNexusPayloadResult {
+  payload: NexusPayload;
+  /** From `GET /api/traces` response header `x-flow-data-source` when present */
+  dataSource: string | null;
+}
+
 /**
- * Fetch the Nexus payload with retries for startup/transient backend failures.
+ * Fetch the Nexus payload with retries; exposes Flow data source header for UI badges.
  */
-export async function fetchNexusPayload(
+export async function fetchNexusPayloadWithSource(
   url: string = DEFAULT_TRACES_PATH,
   options?: FetchNexusPayloadOptions,
-): Promise<NexusPayload> {
+): Promise<FetchNexusPayloadResult> {
   const maxAttempts = options?.maxAttempts ?? 8;
   const baseDelayMs = options?.baseDelayMs ?? 400;
 
@@ -29,7 +35,9 @@ export async function fetchNexusPayload(
     try {
       const res = await fetch(url, { cache: "no-store" });
       if (res.ok) {
-        return res.json() as Promise<NexusPayload>;
+        const dataSource = res.headers.get("x-flow-data-source");
+        const payload = (await res.json()) as NexusPayload;
+        return { payload, dataSource };
       }
 
       lastMessage = `Failed to load traces: ${res.status}`;
@@ -53,4 +61,13 @@ export async function fetchNexusPayload(
   }
 
   throw new Error(lastMessage);
+}
+
+/** @deprecated Prefer fetchNexusPayloadWithSource when you need mock vs live labeling */
+export async function fetchNexusPayload(
+  url: string = DEFAULT_TRACES_PATH,
+  options?: FetchNexusPayloadOptions,
+): Promise<NexusPayload> {
+  const { payload } = await fetchNexusPayloadWithSource(url, options);
+  return payload;
 }

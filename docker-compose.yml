@@ -15,6 +15,13 @@ services:
       timeout: 3s
       retries: 10
 
+  futu-opend:
+    profiles: ["with-futu"]
+    image: ${FUTU_OPEND_IMAGE:-registry.cn-hangzhou.aliyuncs.com/futu-openapi/opend:latest}
+    restart: unless-stopped
+    ports:
+      - "${FUTU_OPEND_QUOTE_PORT:-11111}:11111"
+      - "${FUTU_OPEND_TRADE_PORT:-11112}:11112"
+
 volumes:
   aimm_pgdata:
-

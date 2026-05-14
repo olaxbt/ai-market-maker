@@ -16,16 +16,16 @@ export default function WhatIsThisPage() {
         </h1>
         <p className="mt-2 text-[12px] leading-relaxed text-[rgba(138,149,166,0.75)]">
           AI Market Maker is an agentic trading system (hedge-fund style workflow) with a strict governance layer
-          (“Risk Guard”) and full traceability. This hosted site is mainly for evaluating results and published
-          signals; execution happens when you run the stack locally.
+          (“Risk Guard”) and full traceability. This site focuses on the console, signals, and ops; full execution happens
+          when you run the stack locally.
         </p>
 
         <div className="mt-4 flex flex-wrap gap-2">
           <Link
-            href="/studio"
+            href="/console?view=research"
             className="rounded-xl border border-[rgba(138,149,166,0.16)] bg-[rgba(138,149,166,0.06)] px-3 py-2 text-[11px] text-[rgba(226,232,240,0.9)] hover:bg-[rgba(138,149,166,0.10)]"
           >
-            Open Studio
+            Open Research
           </Link>
           <Link
             href="/get-started"
@@ -57,12 +57,12 @@ export default function WhatIsThisPage() {
             <div>2) Portfolio desk proposes positions</div>
             <div>3) Risk Guard can veto any execution</div>
             <div>4) Runs produce trace + artifacts (equity/trades/events)</div>
-            <div>5) You publish results/signals to the hosted leaderboard</div>
+            <div>5) You publish results/signals via the Flow API (e.g. provider keys + curl)</div>
           </div>
         </Card>
         <Card title="What you can do here (hosted)">
           <div className="space-y-2 text-[12px] text-[rgba(226,232,240,0.86)]">
-            <div>- Browse leaderboard results + provider profiles</div>
+            <div>- Read the signals feed and public provider streams</div>
             <div>- Read published signals</div>
             <div>- Inspect the platform tool surface</div>
             <div>- Learn how to run locally (Get Started)</div>
@@ -73,7 +73,7 @@ export default function WhatIsThisPage() {
             <div>- Run backtests (reproducible artifacts)</div>
             <div>- Run paper/live simulation</div>
             <div>- Generate signals/results</div>
-            <div>- Publish to the hosted leaderboard</div>
+            <div>- Publish results/signals using provider keys (see Control)</div>
           </div>
         </Card>
         <Card title="OpenClaw usage (quick path)">

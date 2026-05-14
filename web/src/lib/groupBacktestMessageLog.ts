@@ -69,14 +69,13 @@ function inferStatus(
     /\berror:\s/i.test(lines);
   if (hardErr) return "error";
 
-  if (
-    streaming &&
-    group.barStep0 !== null &&
-    globalMaxBar !== null &&
-    group.barStep0 === globalMaxBar
-  ) {
-    return "running";
-  }
+  if (!streaming) return "complete";
+
+  // Soft / partial payloads often omit `bar_step`: everything lands in one bucket — still live.
+  if (group.barStep0 === null) return "running";
+
+  if (globalMaxBar !== null && group.barStep0 === globalMaxBar) return "running";
+
   return "complete";
 }
 
@@ -124,7 +123,8 @@ export function groupBacktestMessageLog(
   return keys.map((key) => {
     const entries = buckets.get(key)!;
     const { step0, time } = meta.get(key)!;
-    const title = step0 !== null ? `Bar ${step0 + 1}` : "Timeline (no bar index)";
+    // When the backend omits bar_step, we still show one group (same LangGraph steps as per-bar runs).
+    const title = step0 !== null ? `Bar ${step0 + 1}` : "Live workflow";
     const g: BarTimelineGroup = {
       key,
       barStep0: step0,

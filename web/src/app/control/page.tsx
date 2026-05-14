@@ -222,7 +222,7 @@ export default function ControlCenterPage() {
 
   return (
     <div className="nexus-bg min-h-screen">
-      <NexusSectionHeader title="CONTROL" subtitle="Setup • Operate • Observe (operator console)." active="studio" />
+      <NexusSectionHeader title="CONTROL" subtitle="Setup • Operate • Observe (operator console)." active="nexus" />
       <div className="mx-auto w-full max-w-5xl px-6 py-10">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
@@ -281,10 +281,10 @@ export default function ControlCenterPage() {
               Clone + run
             </Link>
             <Link
-              href="/studio"
+              href="/console?view=research"
               className="rounded-xl border border-[rgba(138,149,166,0.14)] bg-[rgba(6,8,11,0.30)] px-3 py-2 text-[11px] font-semibold text-[rgba(226,232,240,0.9)] hover:border-[rgba(0,212,170,0.22)]"
             >
-              Open Studio
+              Open Research
             </Link>
             <Link
               href="/tools"
@@ -383,8 +383,8 @@ export default function ControlCenterPage() {
                 <div>
                   Run: <code className="text-[rgba(226,232,240,0.92)]">{bt.run_id}</code>
                 </div>
-                <Link href="/leaderboard" className="text-[rgba(0,212,170,0.92)] hover:underline">
-                  View leaderboard
+                <Link href="/console?view=research" className="text-[rgba(0,212,170,0.92)] hover:underline">
+                  Open in Research
                 </Link>
               </div>
               <div className="mt-2 grid gap-2 md:grid-cols-2">
@@ -403,7 +403,7 @@ export default function ControlCenterPage() {
         <div className="rounded-2xl border border-[rgba(138,149,166,0.10)] bg-[rgba(6,8,11,0.20)] p-4">
           <div className="text-[12px] font-semibold text-[rgba(226,232,240,0.92)]">Operate: publish a backtest</div>
           <div className="mt-2 text-[11px] text-[rgba(138,149,166,0.7)]">
-            Publishes <code>.runs/backtests/&lt;run_id&gt;/summary.json</code> into the leaderboard database as provider <code>local</code>.
+            Publishes <code>.runs/backtests/&lt;run_id&gt;/summary.json</code> into the leadpage database as provider <code>local</code>.
           </div>
 
           <div className="mt-3 flex items-end gap-2">
@@ -433,8 +433,10 @@ export default function ControlCenterPage() {
           ) : null}
 
           <div className="mt-4 rounded-xl border border-[rgba(138,149,166,0.10)] bg-[rgba(6,8,11,0.25)] px-4 py-3 text-[11px] text-[rgba(138,149,166,0.75)]">
-            Next: use <Link className="text-[rgba(0,212,170,0.92)] hover:underline" href="/leaderboard">Leaderboard</Link> to see published results,
-            then <Link className="text-[rgba(0,212,170,0.92)] hover:underline" href="/studio">Studio</Link> to iterate strategy + policy.
+            Next: open <Link className="text-[rgba(0,212,170,0.92)] hover:underline" href="/feed">Signals</Link> for published
+            updates, then{" "}
+            <Link className="text-[rgba(0,212,170,0.92)] hover:underline" href="/console?view=research">Research</Link> to
+            iterate strategy + policy.
           </div>
         </div>
       </div>

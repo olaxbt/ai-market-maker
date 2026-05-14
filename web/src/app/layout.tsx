@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { JetBrains_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import { InitialBootOverlay } from "@/components/InitialBootOverlay";
 import { ThemeProvider } from "@/components/ThemeProvider";
@@ -21,8 +22,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={jetbrains.variable}>
+    <html lang="en" className={jetbrains.variable} suppressHydrationWarning>
       <body className="min-h-screen antialiased nexus-bg">
+        <Script
+          id="nexus-theme-boot"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{
+            __html: `(()=>{try{var t=localStorage.getItem('nexus-theme');if(t==='light')document.documentElement.classList.add('light');else document.documentElement.classList.remove('light');}catch(e){}})();`,
+          }}
+        />
         <InitialBootOverlay />
         <ThemeProvider>
           {children}
