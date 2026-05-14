@@ -36,7 +36,7 @@ export default function ToolsPage() {
 
   return (
     <div className="nexus-bg min-h-screen">
-      <NexusSectionHeader title="TOOLS" subtitle="Browse backend capabilities (tool registry)." active="studio" />
+      <NexusSectionHeader title="TOOLS" subtitle="Browse backend capabilities (tool registry)." active="nexus" />
       <div className="mx-auto w-full max-w-5xl px-6 py-10">
       <div className="flex items-end justify-between gap-4">
         <div>

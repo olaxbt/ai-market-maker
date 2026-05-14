@@ -43,7 +43,8 @@ export default function TradePage() {
         <section className="rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/55 p-4">
           <div className="text-[11px] text-[rgba(226,232,240,0.9)]">
             If you&apos;re new: open <b>Account</b> first for the checklist. If you&apos;re operating: use Nexus for live
-            console + monitor, and Leaderboard for results + signals. For strategy building, open <b>Studio</b>.
+            console + monitor, and Leaderboard for results + signals. For backtests and strategy iteration, open{" "}
+            <b>Research</b>.
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <Link
@@ -53,10 +54,10 @@ export default function TradePage() {
               Start here → Account
             </Link>
             <Link
-              href="/studio"
+              href="/console?view=research"
               className="rounded-xl border border-[rgba(138,149,166,0.18)] bg-[rgba(6,8,11,0.35)] px-3 py-2 text-[11px] text-[rgba(226,232,240,0.88)] hover:border-[rgba(0,212,170,0.32)] hover:text-white"
             >
-              Open Strategy Studio
+              Open Research
             </Link>
             <Link
               href="/leaderboard"
@@ -69,10 +70,10 @@ export default function TradePage() {
 
         <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
           <Tile
-            title="Strategy Studio"
-            body="Build, backtest, and deploy AI-powered trading strategies in a visual workspace — no code required."
-            href="/studio"
-            cta="Open Studio"
+            title="Research workspace"
+            body="Run backtests and inspect supervisor output in the Nexus Research view."
+            href="/console?view=research"
+            cta="Open Research"
           />
           <Tile
             title="Run backtest"

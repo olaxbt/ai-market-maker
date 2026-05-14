@@ -24,11 +24,33 @@ from __future__ import annotations
 
 import os
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from adapters.exchange_protocol import ExchangeOrderResult
 from config.exchange_env import ExchangeConfig
+
+
+def _time_key_to_epoch_ms(value: Any) -> int:
+    """Map Futu history ``time_key`` (str or numeric) to unix milliseconds for web charts."""
+    if value is None:
+        return 0
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        x = int(float(value))
+        return x if x > 1_000_000_000_000 else int(x * 1000)
+    text = str(value).strip()
+    if not text:
+        return 0
+    try:
+        if len(text) >= 19 and text[10] == " ":
+            return int(datetime.strptime(text[:19], "%Y-%m-%d %H:%M:%S").timestamp() * 1000)
+        if len(text) >= 10:
+            return int(datetime.strptime(text[:10], "%Y-%m-%d").timestamp() * 1000)
+    except ValueError:
+        pass
+    return 0
+
 
 # ---------------------------------------------------------------------------
 # Default OpenD ports
@@ -142,10 +164,10 @@ class FakeFutuClient:
             ts = now - (limit - i) * 86_400_000
             o = base_price + i * 0.5
             h = o + 1.0
-            l = o - 0.5
+            low = o - 0.5
             c = o + 0.3
             v = 1_000_000 + i * 10_000
-            bars.append([float(ts), o, h, l, c, v])
+            bars.append([float(ts), o, h, low, c, v])
         return bars
 
     def get_rt_data(self, *, symbol: str) -> dict[str, Any]:
@@ -218,21 +240,53 @@ class FakeFutuClient:
             return {"status": "unknown", "order_id": None, "symbol": symbol}
 
     def cancel_order(self, *, symbol: str, order_id: str) -> dict[str, Any]:
-        self.cancelled_orders.append({"symbol": symbol, "order_id": order_id, "ts": int(time.time())})
+        self.cancelled_orders.append(
+            {"symbol": symbol, "order_id": order_id, "ts": int(time.time())}
+        )
         return {"status": "cancelled", "order_id": order_id}
 
     def get_order_status(self, *, order_id: str) -> dict[str, Any]:
         r = self.default_response
         if r == "accepted":
-            return {"status": "submitted", "order_id": order_id, "filled_qty": 0, "qty": 100, "price": 100.0}
+            return {
+                "status": "submitted",
+                "order_id": order_id,
+                "filled_qty": 0,
+                "qty": 100,
+                "price": 100.0,
+            }
         elif r == "filled":
-            return {"status": "filled", "order_id": order_id, "filled_qty": 100, "qty": 100, "price": 100.0}
+            return {
+                "status": "filled",
+                "order_id": order_id,
+                "filled_qty": 100,
+                "qty": 100,
+                "price": 100.0,
+            }
         elif r == "rejected":
-            return {"status": "rejected", "order_id": order_id, "filled_qty": 0, "qty": 0, "price": 0}
+            return {
+                "status": "rejected",
+                "order_id": order_id,
+                "filled_qty": 0,
+                "qty": 0,
+                "price": 0,
+            }
         elif r == "cancelled":
-            return {"status": "cancelled", "order_id": order_id, "filled_qty": 0, "qty": 100, "price": 100.0}
+            return {
+                "status": "cancelled",
+                "order_id": order_id,
+                "filled_qty": 0,
+                "qty": 100,
+                "price": 100.0,
+            }
         elif r == "partial":
-            return {"status": "partial", "order_id": order_id, "filled_qty": 50, "qty": 100, "price": 100.0}
+            return {
+                "status": "partial",
+                "order_id": order_id,
+                "filled_qty": 50,
+                "qty": 100,
+                "price": 100.0,
+            }
         else:
             return {"status": r, "order_id": order_id, "filled_qty": 0, "qty": 0, "price": 0}
 
@@ -312,6 +366,56 @@ class _SdkFutuClient:
 
     # -- Quotes / Data -------------------------------------------------------
 
+    def _interval_to_ktype(self, interval: str) -> Any:
+        ft = self._ft
+        s = (interval or "1d").strip().lower()
+        if s in ("1m", "1min"):
+            return getattr(ft.KLType, "K_1M", ft.KLType.K_5M)
+        if s in ("3m", "3min"):
+            return getattr(ft.KLType, "K_3M", ft.KLType.K_5M)
+        if s in ("5m", "5min"):
+            return ft.KLType.K_5M
+        if s in ("15m",):
+            return ft.KLType.K_15M
+        if s in ("30m",):
+            return ft.KLType.K_30M
+        if s in ("60m", "1h", "1hr"):
+            return ft.KLType.K_60M
+        if s in ("4h", "4hr"):
+            return getattr(ft.KLType, "K_240M", ft.KLType.K_60M)
+        if s in ("1d", "d"):
+            return ft.KLType.K_DAY
+        if s in ("1w", "w"):
+            return ft.KLType.K_WEEK
+        if s in ("1mon", "1mo"):
+            return getattr(ft.KLType, "K_MON", ft.KLType.K_DAY)
+        return ft.KLType.K_DAY
+
+    def _span_days_for_kline(self, interval: str, limit: int) -> int:
+        s = (interval or "1d").strip().lower()
+        lim = max(2, int(limit))
+        if s in ("1w", "w"):
+            return max(lim * 14, 42)
+        if s in ("1mon", "1mo"):
+            return min(max(lim * 40, 400), 3650)
+        if s in ("1d", "d"):
+            return max(int(lim * 1.8), 30)
+        if s in ("4h", "4hr"):
+            return min(max(lim // 2 + 20, 120), 730)
+        if s in ("60m", "1h", "1hr"):
+            return min(max(lim // 6 + 10, 20), 400)
+        if s in ("30m",):
+            return min(max(lim // 14 + 10, 14), 200)
+        if s in ("15m",):
+            return min(max(lim // 26 + 10, 10), 120)
+        if s in ("5m", "5min"):
+            return min(max(lim // 80 + 7, 7), 90)
+        if s in ("3m", "3min"):
+            return min(max(lim // 130 + 7, 7), 60)
+        if s in ("1m", "1min"):
+            return min(max(lim // 400 + 5, 5), 30)
+        return max(int(lim * 1.8), 30)
+
     def get_history_kline(
         self,
         *,
@@ -320,31 +424,33 @@ class _SdkFutuClient:
         limit: int = 100,
     ) -> list[list[float]]:
         ctx = self._ensure_quote_ctx()
-        ktype = self._ft.KLType.K_DAY if interval in ("1d", "D") else (
-            self._ft.KLType.K_60M if interval in ("60m", "1h") else (
-                self._ft.KLType.K_30M if interval == "30m" else (
-                    self._ft.KLType.K_15M if interval == "15m" else (
-                        self._ft.KLType.K_5M if interval == "5m" else (
-                            self._ft.KLType.K_WEEK if interval in ("1w", "W") else self._ft.KLType.K_DAY
-                        )
-                    )
-                )
-            )
-        )
+        ktype = self._interval_to_ktype(interval)
         nsymbol = normalize_futu_symbol(symbol)
-        ret, data = ctx.get_history_kline(nsymbol, ktype, limit)
+        end_day = date.today()
+        span_days = self._span_days_for_kline(interval, limit)
+        start_day = end_day - timedelta(days=span_days)
+
+        ret, data, _page = ctx.request_history_kline(
+            nsymbol,
+            start=start_day.strftime("%Y-%m-%d"),
+            end=end_day.strftime("%Y-%m-%d"),
+            ktype=ktype,
+            max_count=int(limit),
+        )
         if ret != self._ft.RET_OK:
             raise RuntimeError(f"Failed to get history kline for {nsymbol}: {data}")
-        # Convert DataFrame to list of [ts, open, high, low, close, volume]
+        if data is None or getattr(data, "empty", True):
+            return []
+        # Convert DataFrame to list of [ts_ms, open, high, low, close, volume]
         bars: list[list[float]] = []
         for _, row in data.iterrows():
-            ts = int(row.get("time_key", 0))
+            ts = _time_key_to_epoch_ms(row.get("time_key"))
             o = float(row.get("open", 0))
             h = float(row.get("high", 0))
-            l = float(row.get("low", 0))
+            low = float(row.get("low", 0))
             c = float(row.get("close", 0))
             v = float(row.get("volume", 0))
-            bars.append([ts, o, h, l, c, v])
+            bars.append([float(ts), o, h, low, c, v])
         return bars
 
     def get_rt_data(self, *, symbol: str) -> dict[str, Any]:
@@ -401,7 +507,9 @@ class _SdkFutuClient:
         ctx = self._ensure_trade_ctx()
         nsymbol = normalize_futu_symbol(symbol)
         trd_side = self._ft.TrdSide.BUY if side.lower() == "buy" else self._ft.TrdSide.SELL
-        trd_env_e = self._ft.TrdEnv.SIMULATE if trd_env.upper() == "SIMULATE" else self._ft.TrdEnv.REAL
+        trd_env_e = (
+            self._ft.TrdEnv.SIMULATE if trd_env.upper() == "SIMULATE" else self._ft.TrdEnv.REAL
+        )
         order_type_e = (
             self._ft.OrderType.NORMAL if order_type == "limit" else self._ft.OrderType.MARKET
         )
@@ -432,7 +540,13 @@ class _SdkFutuClient:
         # Query all orders and filter by id
         ret, data = ctx.get_order_list()
         if ret != self._ft.RET_OK or data is None:
-            return {"status": "unknown", "order_id": order_id, "filled_qty": 0, "qty": 0, "price": 0}
+            return {
+                "status": "unknown",
+                "order_id": order_id,
+                "filled_qty": 0,
+                "qty": 0,
+                "price": 0,
+            }
         for _, row in data.iterrows():
             if str(row.get("order_id", "")) == order_id:
                 return {
@@ -446,34 +560,42 @@ class _SdkFutuClient:
 
     def get_account_balance(self, *, trd_env: str = "SIMULATE") -> list[dict[str, Any]]:
         ctx = self._ensure_trade_ctx()
-        trd_env_e = self._ft.TrdEnv.SIMULATE if trd_env.upper() == "SIMULATE" else self._ft.TrdEnv.REAL
+        trd_env_e = (
+            self._ft.TrdEnv.SIMULATE if trd_env.upper() == "SIMULATE" else self._ft.TrdEnv.REAL
+        )
         ret, data = ctx.get_account_list(trd_env=trd_env_e)
         if ret != self._ft.RET_OK or data is None:
             return []
         balances: list[dict[str, Any]] = []
         for _, row in data.iterrows():
-            balances.append({
-                "currency": str(row.get("currency", "")),
-                "cash": float(row.get("cash", 0)),
-                "market_value": float(row.get("market_val", 0)),
-                "power": float(row.get("power", 0)),
-            })
+            balances.append(
+                {
+                    "currency": str(row.get("currency", "")),
+                    "cash": float(row.get("cash", 0)),
+                    "market_value": float(row.get("market_val", 0)),
+                    "power": float(row.get("power", 0)),
+                }
+            )
         return balances
 
     def get_positions(self, *, trd_env: str = "SIMULATE") -> list[dict[str, Any]]:
         ctx = self._ensure_trade_ctx()
-        trd_env_e = self._ft.TrdEnv.SIMULATE if trd_env.upper() == "SIMULATE" else self._ft.TrdEnv.REAL
+        trd_env_e = (
+            self._ft.TrdEnv.SIMULATE if trd_env.upper() == "SIMULATE" else self._ft.TrdEnv.REAL
+        )
         ret, data = ctx.get_position_list(trd_env=trd_env_e)
         if ret != self._ft.RET_OK or data is None:
             return []
         positions: list[dict[str, Any]] = []
         for _, row in data.iterrows():
-            positions.append({
-                "symbol": str(row.get("code", "")),
-                "qty": int(row.get("qty", 0)),
-                "cost_price": float(row.get("cost_price", 0)),
-                "market_price": float(row.get("market_price", 0)),
-            })
+            positions.append(
+                {
+                    "symbol": str(row.get("code", "")),
+                    "qty": int(row.get("qty", 0)),
+                    "cost_price": float(row.get("cost_price", 0)),
+                    "market_price": float(row.get("market_price", 0)),
+                }
+            )
         return positions
 
     def healthcheck(self) -> dict[str, Any]:

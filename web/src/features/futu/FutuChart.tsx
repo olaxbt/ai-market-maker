@@ -1,10 +1,18 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useEffect } from "react";
-import { ColorType, createChart, type IChartApi, type ISeriesApi, type CandlestickData, type HistogramData, type Time } from "lightweight-charts";
+import {
+  ColorType,
+  createChart,
+  type IChartApi,
+  type ISeriesApi,
+  type CandlestickData,
+  type HistogramData,
+  type Time,
+} from "lightweight-charts";
 
 export interface FutuBar {
-  ts: number;    // epoch ms
+  ts: number; // epoch ms (normalized upstream)
   open: number;
   high: number;
   low: number;
@@ -15,30 +23,39 @@ export interface FutuBar {
 export interface FutuChartProps {
   bars: FutuBar[];
   symbol: string;
+  /** Affects how `time` is encoded for the library (daily vs intraday). */
+  interval?: "1d" | "1w" | "1h" | string;
   width?: number;
   height?: number;
 }
 
+function utcDayString(tsMs: number): string {
+  const d = new Date(tsMs);
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 /**
  * FutuChart — Lightweight candlestick chart for Futu stock data.
- *
- * Uses lightweight-charts (TradingView) for professional-grade rendering.
- * Already a dependency in web/package.json.
+ * Chart is created once; bars update via setData (avoids full teardown on each fetch).
  */
-export function FutuChart({ bars, symbol, width, height = 420 }: FutuChartProps) {
+export function FutuChart({ bars, symbol, interval = "1d", width, height = 420 }: FutuChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
 
-  // Convert bars to lightweight-charts format
   const { candleData, volumeData } = useMemo(() => {
     const candles: CandlestickData[] = [];
     const vols: HistogramData[] = [];
+    const useBusinessDay = interval === "1d" || interval === "1w";
 
     for (const b of bars) {
-      // lightweight-charts uses seconds for Time
-      const time = Math.floor(b.ts / 1000) as Time;
+      const time: Time = useBusinessDay
+        ? (utcDayString(b.ts) as Time)
+        : (Math.floor(b.ts / 1000) as Time);
       candles.push({
         time,
         open: b.open,
@@ -49,21 +66,30 @@ export function FutuChart({ bars, symbol, width, height = 420 }: FutuChartProps)
       vols.push({
         time,
         value: b.volume,
-        color: b.close >= b.open
-          ? "rgba(60, 255, 170, 0.35)"
-          : "rgba(242, 92, 84, 0.35)",
+        color:
+          b.close >= b.open ? "rgba(60, 255, 170, 0.35)" : "rgba(242, 92, 84, 0.35)",
       });
     }
 
     return { candleData: candles, volumeData: vols };
-  }, [bars]);
+  }, [bars, interval]);
+
+  const applyData = useCallback(() => {
+    const chart = chartRef.current;
+    const candleSeries = candleSeriesRef.current;
+    const volSeries = volumeSeriesRef.current;
+    if (!chart || !candleSeries || !volSeries) return;
+    candleSeries.setData(candleData);
+    volSeries.setData(volumeData);
+    chart.timeScale().fitContent();
+  }, [candleData, volumeData]);
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    const el = containerRef.current;
+    if (!el) return;
 
-    // Create chart
-    const chart = createChart(containerRef.current, {
-      width: width ?? containerRef.current.clientWidth,
+    const chart = createChart(el, {
+      width: width ?? el.clientWidth,
       height,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
@@ -96,14 +122,13 @@ export function FutuChart({ bars, symbol, width, height = 420 }: FutuChartProps)
       },
       timeScale: {
         borderColor: "rgba(138, 149, 166, 0.1)",
-        timeVisible: true,
+        timeVisible: interval === "1h",
         secondsVisible: false,
       },
       handleScroll: true,
       handleScale: true,
     });
 
-    // Candlestick series
     const candleSeries = chart.addCandlestickSeries({
       upColor: "rgba(60, 255, 170, 0.85)",
       downColor: "rgba(242, 92, 84, 0.85)",
@@ -112,9 +137,7 @@ export function FutuChart({ bars, symbol, width, height = 420 }: FutuChartProps)
       wickUpColor: "rgba(60, 255, 170, 0.75)",
       wickDownColor: "rgba(242, 92, 84, 0.75)",
     });
-    candleSeries.setData(candleData);
 
-    // Volume histogram
     const volSeries = chart.addHistogramSeries({
       priceFormat: { type: "volume" },
       priceScaleId: "volume",
@@ -122,22 +145,34 @@ export function FutuChart({ bars, symbol, width, height = 420 }: FutuChartProps)
     chart.priceScale("volume").applyOptions({
       scaleMargins: { top: 0.8, bottom: 0 },
     });
-    volSeries.setData(volumeData);
 
     chartRef.current = chart;
     candleSeriesRef.current = candleSeries;
     volumeSeriesRef.current = volSeries;
 
-    // Fit content
+    const ro = new ResizeObserver(() => {
+      const w = width ?? el.clientWidth;
+      if (w > 0) chart.applyOptions({ width: w });
+    });
+    ro.observe(el);
+
+    candleSeries.setData(candleData);
+    volSeries.setData(volumeData);
     chart.timeScale().fitContent();
 
     return () => {
+      ro.disconnect();
       chart.remove();
       chartRef.current = null;
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
     };
-  }, [candleData, volumeData, width, height]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- init once per mount / size mode
+  }, [height, width, interval]);
+
+  useEffect(() => {
+    applyData();
+  }, [applyData, symbol]);
 
   return (
     <div

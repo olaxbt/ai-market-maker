@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { BacktestLabPanel } from "@/features/backtest";
 import { SupervisorPanel } from "@/features/supervisor";
 import {
@@ -12,6 +12,7 @@ import {
   type NexusViewMode,
 } from "@/features/nexus";
 import { LiveMonitorPanel } from "@/features/monitor/components/LiveMonitorPanel";
+import { FutuWorkspace } from "@/features/futu/FutuWorkspace";
 import { useNexusPayload } from "@/hooks/useNexusPayload";
 import { useNexusSignalCount } from "@/hooks/useNexusSignalCount";
 import { NEXUS_BOOT_KEY } from "@/components/InitialBootOverlay";
@@ -29,50 +30,33 @@ function hasBootedThisSession(): boolean {
 }
 
 function ConsoleInner() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const backtestRunParam = searchParams.get("run");
-  const { payload, loading, wsConnected, error: loadError } = useNexusPayload();
-  const [hubRevealDone, setHubRevealDone] = useState(() => hasBootedThisSession());
-  const [bootOverlayVisible, setBootOverlayVisible] = useState(() => !hasBootedThisSession());
+  const { payload, loading, wsConnected, error: loadError, traceDataSource } = useNexusPayload();
+  // Must match SSR: never read sessionStorage in useState initializers (server = no session → client can differ).
+  const [hubRevealDone, setHubRevealDone] = useState(false);
+  const [bootOverlayVisible, setBootOverlayVisible] = useState(true);
   const [bootBursting, setBootBursting] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<NexusViewMode>("nexus");
 
-  useEffect(() => {
-    try {
-      const done = sessionStorage.getItem(NEXUS_BOOT_KEY) === "1";
-      if (done && bootOverlayVisible) {
-        setBootOverlayVisible(false);
-        setHubRevealDone(true);
-      }
-    } catch {
-      // ignore
-    }
-  }, [bootOverlayVisible]);
+  useLayoutEffect(() => {
+    if (!hasBootedThisSession()) return;
+    setBootOverlayVisible(false);
+    setHubRevealDone(true);
+    setBootBursting(false);
+  }, []);
 
   useEffect(() => {
     const v = searchParams.get("view");
-    if (v === "backtest") setViewMode("research");
+    if (v === "backtest") setViewMode("backtest");
     else if (v === "supervisor") setViewMode("research");
+    else if (v === "futu") setViewMode("futu");
     else if (v === "grid") setViewMode("grid");
     else if (v === "monitor") setViewMode("monitor");
     else if (v === "research") setViewMode("research");
     else setViewMode("nexus");
   }, [searchParams]);
-
-  const handleViewModeChange = useCallback(
-    (mode: NexusViewMode) => {
-      if (mode === "backtest" || mode === "supervisor") mode = "research";
-      setViewMode(mode);
-      const base = "/console";
-      if (mode === "research") router.replace(`${base}?view=research`, { scroll: false });
-      else if (mode === "grid") router.replace(`${base}?view=grid`, { scroll: false });
-      else if (mode === "monitor") router.replace(`${base}?view=monitor`, { scroll: false });
-      else router.replace(base, { scroll: false });
-    },
-    [router],
-  );
 
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [traceLoadBannerDismissed, setTraceLoadBannerDismissed] = useState(false);
@@ -141,19 +125,6 @@ function ConsoleInner() {
     agentsAutoOpenedRef.current = true;
   }, [viewMode, loading, topology.nodes]);
 
-  const viewModeTitle =
-    viewMode === "nexus"
-      ? "Nexus: live topology, event stream, and mesh."
-      : viewMode === "grid"
-        ? "Agents: pick a card; detail, traces, and prompts open in the side panel (same page)."
-        : viewMode === "backtest"
-          ? "Backtest: async bar replay, per-step progress, and the same FlowEvent agent traces as live runs."
-          : viewMode === "research"
-            ? "Research: compact backtest + supervisor (shared run id)."
-            : viewMode === "monitor"
-              ? "Monitor: balances, positions, and the latest system decision."
-              : "Supervisor: ask questions and get an executive snapshot for a backtest run.";
-
   const setCardRef = useCallback((traceId: string, el: HTMLDivElement | null) => {
     if (el) cardRefs.current.set(traceId, el);
     else cardRefs.current.delete(traceId);
@@ -210,15 +181,14 @@ function ConsoleInner() {
       <NexusConsoleHeader
         metadata={metadata}
         viewMode={viewMode}
-        onViewModeChange={handleViewModeChange}
-        viewModeTitle={viewModeTitle}
         wsConnected={wsConnected}
         loading={loading}
         lastUpdateIso={lastUpdateIso}
+        traceDataSource={traceDataSource}
       />
 
       <div className="relative flex min-h-0 flex-1 flex-col">
-        {loadError && !loading && !traceLoadBannerDismissed ? (
+        {loadError && !loading && !traceLoadBannerDismissed && viewMode !== "futu" ? (
           <div
             className="flex shrink-0 items-center justify-center gap-3 border-b border-[color:var(--nexus-border-error)] bg-[color:var(--nexus-surface-error)] px-4 py-2 font-mono text-[11px] text-[var(--nexus-danger)]"
             role="alert"
@@ -258,6 +228,10 @@ function ConsoleInner() {
         ) : viewMode === "supervisor" ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-auto">
             <SupervisorPanel initialRunId={backtestRunParam} />
+          </div>
+        ) : viewMode === "futu" ? (
+          <div className="min-h-0 flex-1 overflow-auto">
+            <FutuWorkspace />
           </div>
         ) : viewMode === "monitor" ? (
           <LiveMonitorPanel payload={payload ?? null} fallbackRunId={backtestRunParam} />

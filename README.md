@@ -139,7 +139,7 @@ Run the **leaderboard stack** (DB + API, optional Web UI):
 # API + DB (leaderboard endpoints)
 docker compose -f docker-compose.leaderboard.yml up -d --build
 
-# Optional: include the web UI too
+# Optional: include the web-v2 portal UI (service `portal`; avoids clobbering Next `web` if you merge this file with prod compose)
 docker compose -f docker-compose.leaderboard.yml --profile web up -d --build
 ```
 
@@ -319,7 +319,7 @@ The stack includes a **Futu OpenD adapter** for fetching real-time HK and US sto
 FUTU_OPEND_HOST=127.0.0.1       # OpenD host
 FUTU_OPEND_QUOTE_PORT=11111     # Quote API port
 FUTU_OPEND_TRADE_PORT=11112     # Trade API port
-FUTU_DRY_RUN=1                  # 1 = parse only, never send real orders (safe default)
+FUTU_DRY_RUN=0                  # 1 = parse only, never send real orders (safe default)
 # FUTU_UNLOCK_PWD=              # Required for order placement
 ```
 

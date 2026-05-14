@@ -52,6 +52,25 @@ def interval_sec_to_ccxt_timeframe(interval_sec: int) -> str:
     }.get(int(interval_sec), "1d")
 
 
+def interval_sec_to_futu_interval(interval_sec: int) -> str:
+    """Map bar length in seconds to :meth:`FutuAdapter.get_history_kline` interval strings.
+
+    Monthly (~30d) uses ``1mon`` to avoid clashing with minute ``1m``.
+    """
+    return {
+        60: "1m",
+        180: "3m",
+        300: "5m",
+        900: "15m",
+        1800: "30m",
+        3600: "1h",
+        14400: "4h",
+        86400: "1d",
+        604800: "1w",
+        2_592_000: "1mon",
+    }.get(int(interval_sec), "1d")
+
+
 def nominal_interval_sec_for_timeframe(tf: str) -> int:
     """Approximate spacing in seconds for labeling / synthetic bars when using explicit CCXT tf."""
     key = (tf or "1d").strip()
@@ -145,6 +164,35 @@ def fetch_ccxt_ohlcv_range(
         )
     out.sort(key=lambda r: r[0])
     return out[:cap]
+
+
+def fetch_futu_ohlcv_bars(
+    symbol: str,
+    limit: int,
+    *,
+    interval_sec: int = 86400,
+) -> list[list[float]]:
+    """Fetch the last ``limit`` candles from Futu OpenD (HK/US equities, etc.).
+
+    Requires ``futu-api``, OpenD reachable at ``FUTU_OPEND_HOST`` / ``FUTU_OPEND_QUOTE_PORT``.
+    Returns rows ``[ts_ms, open, high, low, close, volume]`` like CCXT helpers.
+    """
+    if limit < 2:
+        raise ValueError("limit must be >= 2")
+    from adapters.futu import FutuAdapter, normalize_futu_symbol
+
+    futu_interval = interval_sec_to_futu_interval(int(interval_sec))
+    nsym = normalize_futu_symbol(symbol)
+    adapter: Any = None
+    try:
+        adapter = FutuAdapter()
+        raw = adapter.get_history_kline(symbol=nsym, interval=futu_interval, limit=int(limit))
+    finally:
+        if adapter is not None and hasattr(adapter, "close"):
+            adapter.close()
+    if len(raw) < 2:
+        raise RuntimeError(f"Futu returned {len(raw)} rows for {nsym!r}; need at least 2.")
+    return [list(map(float, row)) for row in raw]
 
 
 def align_bars_by_min_length(

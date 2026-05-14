@@ -1,5 +1,6 @@
-import { FutuPage } from "@/features/futu/FutuPage";
+import { redirect } from "next/navigation";
 
+/** Standalone URL; console shell + nav live at `/console?view=futu`. */
 export default function Page() {
-  return <FutuPage />;
+  redirect("/console?view=futu");
 }

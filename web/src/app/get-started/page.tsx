@@ -8,7 +8,7 @@ const REPO_URL = "https://github.com/olaxbt/ai-market-maker";
 export default function GetStartedPage() {
   return (
     <div className="nexus-bg min-h-screen">
-      <NexusSectionHeader title="GET STARTED" subtitle="Clone and run locally (full capabilities)." active="studio" />
+      <NexusSectionHeader title="GET STARTED" subtitle="Clone and run locally (full capabilities)." active="nexus" />
       <div className="mx-auto w-full max-w-4xl px-6 py-10">
         <div className="rounded-2xl border border-[rgba(138,149,166,0.12)] bg-[rgba(6,8,11,0.20)] p-6">
         <div className="text-[11px] uppercase tracking-[0.18em] text-[rgba(138,149,166,0.55)]">

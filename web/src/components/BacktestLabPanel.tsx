@@ -228,6 +228,7 @@ export function BacktestLabPanel({
   const [strategies, setStrategies] = useState<StrategyRow[]>([]);
   const [presetId, setPresetId] = useState("macd_risk_v1");
   const [ticker, setTicker] = useState("BTC/USDT");
+  const [dataExchange, setDataExchange] = useState<"binance" | "futu">("binance");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -308,7 +309,7 @@ export function BacktestLabPanel({
     const body: Record<string, unknown> = {
       preset_id: presetId,
       ticker,
-      exchange_id: "binance",
+      exchange_id: dataExchange,
     };
     if (!selected) return body;
     const nb = parseInt(nBars, 10);
@@ -327,7 +328,7 @@ export function BacktestLabPanel({
 
     const s = sinceIso.trim();
     const u = untilIso.trim();
-    if (windowMode === "range" && s && u) {
+    if (windowMode === "range" && s && u && dataExchange !== "futu") {
       body.since_iso = s;
       body.until_iso = u;
     }
@@ -336,6 +337,7 @@ export function BacktestLabPanel({
     advancedOpen,
     presetId,
     ticker,
+    dataExchange,
     nBars,
     intervalAmount,
     intervalUnit,
@@ -379,7 +381,7 @@ export function BacktestLabPanel({
       if (!runId) return false;
       lastUrlRunRef.current = runId;
       router.replace(
-        `/?view=${embedded ? embeddedView : "backtest"}&run=${encodeURIComponent(runId)}`,
+        `/console?view=${embedded ? embeddedView : "backtest"}&run=${encodeURIComponent(runId)}`,
         {
           scroll: false,
         },
@@ -436,7 +438,7 @@ export function BacktestLabPanel({
         // Now that we know this run is actually persisted, update the URL + full series.
         lastUrlRunRef.current = runId;
         router.replace(
-          `/?view=${embedded ? embeddedView : "backtest"}&run=${encodeURIComponent(runId)}`,
+          `/console?view=${embedded ? embeddedView : "backtest"}&run=${encodeURIComponent(runId)}`,
           {
             scroll: false,
           },
@@ -501,7 +503,7 @@ export function BacktestLabPanel({
           if (j.result.run_id) {
             lastUrlRunRef.current = j.result.run_id;
             router.replace(
-              `/?view=${embedded ? embeddedView : "backtest"}&run=${encodeURIComponent(j.result.run_id)}`,
+              `/console?view=${embedded ? embeddedView : "backtest"}&run=${encodeURIComponent(j.result.run_id)}`,
               {
                 scroll: false,
               },
@@ -608,7 +610,7 @@ export function BacktestLabPanel({
     setSelectedHistoryId("");
     setError(null);
     lastUrlRunRef.current = null;
-    router.replace(`/?view=${embedded ? embeddedView : "backtest"}`, { scroll: false });
+    router.replace(`/console?view=${embedded ? embeddedView : "backtest"}`, { scroll: false });
   }, [embedded, embeddedView, router]);
 
   useEffect(() => {
@@ -736,9 +738,37 @@ export function BacktestLabPanel({
               className={inp}
               value={ticker}
               onChange={(e) => setTicker(e.target.value)}
-              placeholder="BTC/USDT"
+              placeholder={dataExchange === "futu" ? "HK.00700" : "BTC/USDT"}
               disabled={formBusy}
             />
+          </div>
+          <div className={`w-full min-w-[120px] ${compactForm ? "max-w-[9rem]" : "max-w-[10rem]"}`}>
+            <label className={lb}>Data source</label>
+            <select
+              className={sel}
+              value={dataExchange}
+              onChange={(e) => {
+                const v = e.target.value as "binance" | "futu";
+                setDataExchange(v);
+                if (v === "futu") {
+                  setWindowMode("latest");
+                  setSinceIso("");
+                  setUntilIso("");
+                  setTicker((cur) => (cur.includes("/") && !cur.includes("HK.") ? "HK.00700" : cur));
+                }
+              }}
+              disabled={formBusy}
+              aria-label="OHLCV data source"
+            >
+              <option value="binance">Binance (CCXT)</option>
+              <option value="futu">Futu OpenD</option>
+            </select>
+            {!compactForm ? (
+              <p className="mt-0.5 text-[10px] text-[var(--nexus-muted)]">
+                Futu: HK/US symbols (e.g. HK.00700). Date-range windows are not supported yet; use latest N
+                candles.
+              </p>
+            ) : null}
           </div>
         </div>
 
@@ -778,7 +808,7 @@ export function BacktestLabPanel({
                   <button
                     type="button"
                     onClick={() => setWindowMode("range")}
-                    disabled={formBusy}
+                    disabled={formBusy || dataExchange === "futu"}
                     className={`rounded-lg px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest ring-1 transition focus:outline-none focus:ring-1 focus:ring-cyan-500/40 ${
                       windowMode === "range"
                         ? "bg-[rgba(34,211,238,0.14)] text-[#22d3ee] ring-[rgba(34,211,238,0.35)]"
@@ -1191,7 +1221,7 @@ export function BacktestLabPanel({
                   // In Research mode, keep the user in the split workspace.
                   const nextView =
                     embedded && embeddedView === "research" ? "research" : "supervisor";
-                  router.replace(`/?view=${nextView}&run=${encodeURIComponent(activeRunId)}`, {
+                  router.replace(`/console?view=${nextView}&run=${encodeURIComponent(activeRunId)}`, {
                     scroll: false,
                   });
                 }}
@@ -1450,7 +1480,7 @@ export function BacktestLabPanel({
                       if (!activeRunId) return;
                       const nextView =
                         embedded && embeddedView === "research" ? "research" : "supervisor";
-                      router.replace(`/?view=${nextView}&run=${encodeURIComponent(activeRunId)}`, {
+                      router.replace(`/console?view=${nextView}&run=${encodeURIComponent(activeRunId)}`, {
                         scroll: false,
                       });
                     }}
@@ -1550,7 +1580,7 @@ export function BacktestLabPanel({
                           const nextView =
                             embedded && embeddedView === "research" ? "research" : "supervisor";
                           router.replace(
-                            `/?view=${nextView}&run=${encodeURIComponent(activeRunId)}`,
+                            `/console?view=${nextView}&run=${encodeURIComponent(activeRunId)}`,
                             { scroll: false },
                           );
                         }}

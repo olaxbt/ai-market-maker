@@ -9,7 +9,8 @@ function getInitialTheme(): "light" | "dark" {
   if (typeof window === "undefined") return "dark";
   const stored = localStorage.getItem("nexus-theme");
   if (stored === "dark" || stored === "light") return stored;
-  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  // Default first visit to dark (Nexus); users can switch via header toggle.
+  return "dark";
 }
 
 /** v2 maps web-v2 semantic tokens onto `--nexus-*` (see `src/styles/theme-v2.css`). */
@@ -45,7 +46,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      {/* ThemeToggleButton is rendered in header/navigation (not floating). */}
+      {/* ThemeToggleButton is rendered in page headers (top-right), not floating. */}
       {children}
     </>
   );

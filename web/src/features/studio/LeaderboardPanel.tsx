@@ -157,7 +157,8 @@ export default function LeaderboardPanel() {
       {/* Content */}
       <div className="flex-1 overflow-auto p-3">
         <div className="mb-3 rounded-lg border border-[rgba(138,149,166,0.12)] bg-[rgba(6,8,11,0.22)] p-3 text-[10px] text-[rgba(138,149,166,0.55)]">
-          Want to contribute? Ask Studio: <span className="font-mono text-[rgba(226,232,240,0.75)]">publish to leaderboard</span>
+          Want to contribute? From Control or your local runner, use{" "}
+          <span className="font-mono text-[rgba(226,232,240,0.75)]">publish to leaderboard</span>
         </div>
         {tab === "runs" ? (
           loading && ranked.length === 0 ? (

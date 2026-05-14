@@ -1,13 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Orbit, Trophy, FlaskConical } from "lucide-react";
-import { startTransition } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 
-export type HeaderNavMode = "observe" | "nexus" | "studio";
-
-export type NexusViewMode = "nexus" | "grid" | "backtest" | "supervisor" | "monitor" | "research";
+export type HeaderNavMode = "observe" | "nexus";
 
 function SecondaryTab({
   href,
@@ -15,14 +11,19 @@ function SecondaryTab({
   active,
   title,
   onClick,
+  emphasize,
 }: {
   href: string;
   label: string;
   active: boolean;
   title?: string;
   onClick?: () => void;
+  emphasize?: boolean;
 }) {
-  const cls = `relative px-3 py-2 text-[11px] transition ${
+  const emphasis = emphasize
+    ? "rounded-lg border border-[rgba(0,212,170,0.38)] bg-[rgba(0,212,170,0.10)] shadow-[0_0_14px_rgba(0,212,170,0.07)]"
+    : "";
+  const cls = `${emphasis} relative px-3 py-2 text-[11px] transition ${
     active ? "text-[var(--nexus-text)]" : "text-[var(--nexus-muted)] hover:text-[var(--nexus-text)]"
   } ${
     active
@@ -64,51 +65,17 @@ function SecondaryBar({
   );
 }
 
-function PrimaryTab({
-  href,
-  active,
-  title,
-  icon,
-  label,
-}: {
-  href: string;
-  active: boolean;
-  title: string;
-  icon: React.ReactNode;
-  label: string;
-}) {
-  return (
-    <Link
-      href={href}
-      title={title}
-      className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-[11px] font-semibold tracking-wide transition ${
-        active
-          ? "border-[color:var(--nexus-toggle-active-border)] bg-[color:var(--nexus-toggle-active-bg)] text-[var(--nexus-text)] shadow-[var(--nexus-toggle-active-shadow)]"
-          : "border-[color:var(--nexus-border)] bg-[var(--nexus-surface)] text-[var(--nexus-muted)] hover:border-[color:var(--nexus-border-positive)] hover:text-[var(--nexus-text)]"
-      }`}
-    >
-      {icon}
-      {label}
-    </Link>
-  );
+function Divider() {
+  return <span className="mx-0.5 h-6 w-px shrink-0 bg-[rgba(138,149,166,0.18)]" aria-hidden />;
 }
 
-export function NexusHeaderNav({
-  active,
-  variant,
-  viewMode,
-  onViewModeChange,
-}: {
-  active: HeaderNavMode;
-  variant: "section" | "console";
-  viewMode?: NexusViewMode;
-  onViewModeChange?: (mode: NexusViewMode) => void;
-  viewModeTitle?: string;
-}) {
+/**
+ * Single Nexus navigation strip (console, leaderboard header, section pages).
+ * Leaderboard is reached via direct URL/bookmarks — not duplicated here.
+ */
+export function NexusHeaderNav() {
   const pathname = usePathname() || "/";
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const leaderboardFocus = searchParams.get("focus") === "signals" ? "signals" : "overview";
   const consoleView = (searchParams.get("view") ?? "").trim();
 
   const isConsoleTopology = pathname === "/console" && !consoleView;
@@ -118,129 +85,45 @@ export function NexusHeaderNav({
   const isNexusApprovals = pathname === "/inbox";
   const isNexusPaper = pathname === "/paper";
   const isNexusPublishing = pathname === "/platform/providers";
+  const isConsoleFutu = pathname === "/console" && consoleView === "futu";
 
   return (
-    <div className="w-full">
-      <div className="flex flex-wrap items-center gap-2">
-        <PrimaryTab
-          href="/studio"
-          active={active === "studio"}
-          title="Studio: agentic chat + backtest workspace"
-          icon={<FlaskConical className="h-4 w-4 opacity-85" />}
-          label="Studio"
+    <div className="min-w-0 flex-1">
+      <SecondaryBar label="Nexus">
+        <SecondaryTab href="/console" label="Topology" active={isConsoleTopology} title="Live topology + event stream" />
+        <SecondaryTab href="/console?view=grid" label="Agents" active={isConsoleAgents} title="Agent grid + detail panel" />
+        <SecondaryTab
+          href="/console?view=research"
+          label="Research"
+          active={isConsoleResearch}
+          title="Backtest + supervisor (shared run context)"
+        />
+        <SecondaryTab
+          href="/console?view=monitor"
+          label="Monitor"
+          active={isConsoleMonitor}
+          title="Balances, positions, and last decisions"
         />
 
-        <PrimaryTab
-          href="/leaderboard"
-          active={active === "observe"}
-          title="Leaderboard: results + signals"
-          icon={<Trophy className="h-4 w-4 opacity-85" />}
-          label="Leaderboard"
+        <Divider />
+
+        <SecondaryTab
+          href="/console?view=futu"
+          label="Futu"
+          active={isConsoleFutu}
+          title="Futu OpenD — HK/US stocks, quotes, paper flow (console tab)"
+          emphasize
         />
+        <SecondaryTab href="/inbox" label="Approvals" active={isNexusApprovals} title="Your approvals queue" />
+        <SecondaryTab href="/paper" label="Paper" active={isNexusPaper} title="Paper portfolio + fills" />
+        <SecondaryTab href="/platform/providers" label="Provider keys" active={isNexusPublishing} title="Publisher keys" />
 
-        <PrimaryTab
-          href="/console"
-          active={active === "nexus"}
-          title="Nexus: topology, agents, research, monitor"
-          icon={<Orbit className="h-4 w-4 opacity-85" />}
-          label="Nexus"
-        />
-      </div>
+        <Divider />
 
-      <div className="mt-2 w-full">
-        {active === "studio" ? (
-          <StudioSecondaryBar pathname={pathname} />
-        ) : active === "observe" ? (
-          <SecondaryBar label="Leaderboard">
-            <SecondaryTab
-              href="/leaderboard"
-              label="Overview"
-              active={(pathname === "/leaderboard" || pathname.startsWith("/leaderboard/")) && leaderboardFocus !== "signals"}
-              title="Leaderboard results"
-              onClick={() => {
-                startTransition(() => router.push("/leaderboard"));
-              }}
-            />
-            <SecondaryTab
-              href="/leaderboard?focus=signals"
-              label="Signals"
-              active={pathname === "/leaderboard" && leaderboardFocus === "signals"}
-              title="Signals feed (inside Leaderboard)"
-              onClick={() => {
-                startTransition(() => router.push("/leaderboard?focus=signals"));
-              }}
-            />
-          </SecondaryBar>
-        ) : active === "nexus" ? (
-          <SecondaryBar label="Nexus">
-            {variant === "console" ? (
-              <>
-                <SecondaryTab
-                  href="/console"
-                  label="Topology"
-                  active={viewMode === "nexus"}
-                  onClick={() => onViewModeChange?.("nexus")}
-                />
-                <SecondaryTab
-                  href="/console?view=grid"
-                  label="Agents"
-                  active={viewMode === "grid"}
-                  onClick={() => onViewModeChange?.("grid")}
-                />
-                <SecondaryTab
-                  href="/console?view=research"
-                  label="Research"
-                  active={viewMode === "research"}
-                  onClick={() => onViewModeChange?.("research")}
-                />
-                <SecondaryTab
-                  href="/console?view=monitor"
-                  label="Monitor"
-                  active={viewMode === "monitor"}
-                  onClick={() => onViewModeChange?.("monitor")}
-                />
-              </>
-            ) : (
-              <>
-                <SecondaryTab href="/console" label="Topology" active={isConsoleTopology} />
-                <SecondaryTab href="/console?view=grid" label="Agents" active={isConsoleAgents} />
-                <SecondaryTab href="/console?view=research" label="Research" active={isConsoleResearch} />
-                <SecondaryTab href="/console?view=monitor" label="Monitor" active={isConsoleMonitor} />
-
-                <span className="mx-1 h-6 w-px bg-[rgba(138,149,166,0.18)]" />
-                <SecondaryTab href="/inbox" label="Approvals" active={isNexusApprovals} title="Your approvals queue" />
-                <SecondaryTab href="/paper" label="Paper" active={isNexusPaper} title="Paper portfolio + fills" />
-                <SecondaryTab href="/futu" label="Futu" active={pathname === "/futu"} title="Futu OpenD HK/US stocks" />
-                <SecondaryTab
-                  href="/platform/providers"
-                  label="Provider keys"
-                  active={isNexusPublishing}
-                  title="Publisher keys"
-                />
-              </>
-            )}
-          </SecondaryBar>
-        ) : null}
-      </div>
+        <SecondaryTab href="/get-started" label="Get Started" active={pathname === "/get-started"} title="Clone + run locally" />
+        <SecondaryTab href="/control" label="Control" active={pathname === "/control"} title="Control Center (ops)" />
+        <SecondaryTab href="/tools" label="Tools" active={pathname === "/tools"} title="Browse platform tools" />
+      </SecondaryBar>
     </div>
-  );
-}
-
-function StudioSecondaryBar({ pathname }: { pathname: string }) {
-  const isChat = pathname === "/studio";
-  const isWorkspace = pathname === "/studio/workspace";
-  const isStrategies = pathname === "/studio/strategies";
-  const isPaper = pathname === "/paper";
-
-  return (
-    <SecondaryBar label="Studio">
-      <SecondaryTab href="/studio" label="Chat" active={isChat} title="Agentic studio chat" />
-      <SecondaryTab href="/studio/workspace" label="Workspace" active={isWorkspace} title="Backtest workspace" />
-      <SecondaryTab href="/studio/strategies" label="Strategies" active={isStrategies} title="Saved strategies" />
-      <SecondaryTab href="/get-started" label="Get Started" active={pathname === "/get-started"} title="Clone + run locally" />
-      <SecondaryTab href="/control" label="Control" active={pathname === "/control"} title="Control Center (ops)" />
-      <SecondaryTab href="/tools" label="Tools" active={pathname === "/tools"} title="Browse platform tools" />
-      <SecondaryTab href="/paper" label="Paper" active={isPaper} title="Paper portfolio + fills" />
-    </SecondaryBar>
   );
 }

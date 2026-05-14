@@ -22,10 +22,10 @@ export default function WhatIsThisPage() {
 
         <div className="mt-4 flex flex-wrap gap-2">
           <Link
-            href="/studio"
+            href="/console?view=research"
             className="rounded-xl border border-[rgba(138,149,166,0.16)] bg-[rgba(138,149,166,0.06)] px-3 py-2 text-[11px] text-[rgba(226,232,240,0.9)] hover:bg-[rgba(138,149,166,0.10)]"
           >
-            Open Studio
+            Open Research
           </Link>
           <Link
             href="/get-started"

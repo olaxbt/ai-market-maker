@@ -72,6 +72,7 @@ def merge_preset_quick_request(
     preset_id: str,
     *,
     ticker: str | None = None,
+    exchange_id: str | None = None,
     n_bars: int | None = None,
     interval_sec: int | None = None,
     max_steps: int | None = None,
@@ -81,7 +82,7 @@ def merge_preset_quick_request(
 ) -> dict[str, Any]:
     """Build kwargs compatible with :func:`backtest_routes.post_quick_backtest` body."""
     p = get_preset(preset_id)
-    return {
+    out: dict[str, Any] = {
         "ticker": ticker or "BTC/USDT",
         "n_bars": n_bars if n_bars is not None else p.n_bars,
         "interval_sec": interval_sec if interval_sec is not None else p.interval_sec,
@@ -90,6 +91,11 @@ def merge_preset_quick_request(
         "fee_bps": fee_bps if fee_bps is not None else p.fee_bps,
         "initial_cash": initial_cash if initial_cash is not None else p.initial_cash,
     }
+    if exchange_id is not None:
+        ex = str(exchange_id).strip()
+        if ex:
+            out["exchange_id"] = ex
+    return out
 
 
 def quant_trace_meta() -> dict[str, Any]:

@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { flowApiBase } from "@/server/flowProxy";
+import { flowAuthHeaders } from "@/app/api/_flowAuth";
 
 /**
  * POST /api/futu/place-order
@@ -34,35 +36,29 @@ export async function POST(request: Request) {
     }
 
     // Try Flow backend first
-    const flowBase = process.env.FLOW_API_BASE_URL ?? "http://127.0.0.1:8001";
+    const flowBase = flowApiBase();
     try {
       const flowRes = await fetch(`${flowBase}/futu/place-order`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...flowAuthHeaders() },
         body: JSON.stringify({ symbol, side, qty, price, order_type: order_type ?? "limit" }),
         signal: AbortSignal.timeout(5000),
       });
+      const data = await flowRes.json().catch(() => ({}));
       if (flowRes.ok) {
-        const data = await flowRes.json();
         return NextResponse.json(data);
       }
-    } catch {
-      // Flow not available, use mock response
+      return NextResponse.json(data, { status: flowRes.status });
+    } catch (e) {
+      return NextResponse.json(
+        {
+          error: "futu_flow_unreachable",
+          detail: e instanceof Error ? e.message : String(e),
+          flowBase,
+        },
+        { status: 503 },
+      );
     }
-
-    // Mock response for demo
-    const mockOrderId = `mock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    return NextResponse.json({
-      status: "submitted",
-      order_id: mockOrderId,
-      symbol,
-      side,
-      qty,
-      price: price ?? null,
-      order_type: order_type ?? "limit",
-      trd_env: "SIMULATE",
-      ts: Date.now(),
-    });
   } catch (err: any) {
     return NextResponse.json(
       { error: `Failed to place order: ${err.message}` },
