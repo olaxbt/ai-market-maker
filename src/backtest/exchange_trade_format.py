@@ -189,6 +189,24 @@ def normalize_trade_row_for_api(row: dict[str, Any]) -> dict[str, Any]:
                 out["fee_usd"] = float(c)
             except (TypeError, ValueError):
                 pass
+    # ── perp-engine field compatibility ──
+    # Perp backtest writes direction, entry_price, exit_price, size, pnl, exit_bar_index
+    # Frontend TradeRow expects price, qty, cash, side, step
+    if "price" not in out and out.get("exit_price") is not None:
+        try:
+            out["price"] = float(out["exit_price"])
+        except (TypeError, ValueError):
+            pass
+    if "qty" not in out and out.get("size") is not None:
+        try:
+            out["qty"] = float(out["size"])
+        except (TypeError, ValueError):
+            pass
+    if "cash" not in out and out.get("pnl") is not None:
+        try:
+            out["cash"] = float(out["pnl"])
+        except (TypeError, ValueError):
+            pass
     return out
 
 
