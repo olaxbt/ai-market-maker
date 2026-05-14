@@ -10,6 +10,13 @@ import {
 import { BacktestEquityChart } from "@/components/backtest/BacktestEquityChart";
 import { BacktestTradesTable } from "@/components/backtest/BacktestTradesTable";
 import { copyText } from "@/components/backtest/embeddedBacktestUtils";
+import {
+  StrategyCardSelector,
+  ConfigReceiptPanel,
+  ReasoningPreviewCard,
+  type StrategyOption,
+  type StrategyCategory,
+} from "@/components/StrategyCardSelector";
 import { BacktestPriceChart } from "@/features/backtest/components/BacktestPriceChart";
 import { format, parseISO } from "date-fns";
 import { createPortal } from "react-dom";
@@ -34,18 +41,7 @@ import type {
   TradesResponse,
 } from "@/types/backtest";
 
-type StrategyRow = {
-  id: string;
-  title: string;
-  description: string;
-  defaults: {
-    n_bars: number;
-    interval_sec: number;
-    max_steps: number;
-    fee_bps: number;
-    initial_cash: number;
-  };
-};
+type StrategyRow = StrategyOption;
 
 type BacktestJob = {
   status: "queued" | "running" | "completed" | "failed";
@@ -703,33 +699,32 @@ export function BacktestLabPanel({
       : "mt-2 w-full rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)] px-3 py-2.5 font-mono text-xs text-[var(--nexus-text)]";
     return (
       <>
-        <div className={`flex flex-wrap items-end ${compactForm ? "gap-3" : "gap-6"}`}>
-          <div className={`min-w-0 flex-1 ${compactForm ? "min-w-[140px]" : "min-w-[200px]"}`}>
-            <label className={lb}>Strategy preset</label>
-            <select
-              className={sel}
-              value={presetId}
-              onChange={(e) => setPresetId(e.target.value)}
+        <div className={`flex flex-col ${compactForm ? "gap-2" : "gap-3"}`}>
+          <label className={lb}>Trading strategy</label>
+          {strategies.length > 0 && (
+            <StrategyCardSelector
+              strategies={strategies}
+              selectedId={presetId}
+              onSelect={setPresetId}
               disabled={formBusy}
-            >
-              {strategies.length === 0 ? (
-                <option value="macd_risk_v1">macd_risk_v1</option>
-              ) : (
-                strategies.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.title}
-                  </option>
-                ))
-              )}
-            </select>
-            {selected ? (
-              <p
-                className={`mt-1.5 text-[var(--nexus-muted)] ${compactForm ? "line-clamp-2 text-[10px] leading-snug" : "mt-2 text-[11px] leading-relaxed"}`}
-              >
-                {selected.description}
-              </p>
-            ) : null}
-          </div>
+            />
+          )}
+          {strategies.length === 0 && (
+            <div className="rounded-xl border border-[rgba(138,149,166,0.12)] bg-[rgba(6,8,11,0.2)] p-3 text-[10px] text-[var(--nexus-muted)]">
+              Loading strategies…
+            </div>
+          )}
+
+          {/* CoT reasoning preview */}
+          {selected && selected.reasoning_preview && (
+            <ReasoningPreviewCard
+              reasoning={selected.reasoning_preview}
+              title={selected.title}
+            />
+          )}
+        </div>
+
+        <div className={`flex flex-wrap items-end ${compactForm ? "gap-2" : "gap-4"}`}>
           <div
             className={`w-full min-w-[120px] ${compactForm ? "max-w-[11rem]" : "max-w-xs min-w-[160px]"}`}
           >
@@ -996,6 +991,29 @@ export function BacktestLabPanel({
             ))}
           </div>
         ) : null}
+
+        {/* Config receipt */}
+        {selected && !formBusy && (
+          <div className={`${compactForm ? "mt-2" : "mt-4"}`}>
+            <ConfigReceiptPanel
+              strategy={selected}
+              resolvedParams={{
+                ticker,
+                n_bars: Number(nBars) || 500,
+                interval_amount: windowMode === "range" ? "—" : String(Number(nBars) || 500),
+                interval_unit: "candles",
+                interval_sec: (() => { try { return amountUnitToIntervalSec(parseFloat(intervalAmount) || 5, intervalUnit); } catch { return 300; } })(),
+                max_steps: Number(maxSteps) || 200,
+                fee_bps: Number(feeBps) || 10,
+                initial_cash: Number(initialCash) || 10000,
+                data_source: dataExchange === "futu" ? "Futu OpenD" : "Binance",
+                window_mode: windowMode,
+                since_iso: sinceIso || "—",
+                until_iso: untilIso || "—",
+              }}
+            />
+          </div>
+        )}
 
         <div className={`flex flex-col ${compactForm ? "mt-3 gap-2" : "mt-6 gap-4"}`}>
           <div className="flex flex-wrap items-center gap-2">
