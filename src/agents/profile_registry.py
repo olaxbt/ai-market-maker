@@ -1,0 +1,130 @@
+"""Persistent profile storage under AIMM_PROFILES_DIR (default: .profiles/)."""
+
+from __future__ import annotations
+
+import json
+import logging
+import os
+import time
+from pathlib import Path
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+_PROFILES_ENV = "AIMM_PROFILES_DIR"
+_DEFAULT_PROFILES_DIR = ".profiles"
+
+
+def _profiles_dir() -> Path:
+    override = (os.getenv(_PROFILES_ENV) or "").strip()
+    return Path(override) if override else Path(_DEFAULT_PROFILES_DIR)
+
+
+def save_profile(profile: dict[str, Any]) -> bool:
+    """Persist a profile JSON to disk.
+
+    The profile must contain a ``profile_id`` key.
+    Returns True on success.
+    """
+    pid = profile.get("profile_id", "")
+    if not pid:
+        logger.warning("Cannot save profile without profile_id")
+        return False
+    profiles_dir = _profiles_dir()
+    profiles_dir.mkdir(parents=True, exist_ok=True)
+    path = profiles_dir / f"{pid}.json"
+    try:
+        existing = {}
+        if path.is_file():
+            existing = json.loads(path.read_text())
+        existing.update(profile)
+        existing["saved_at"] = time.time()
+        path.write_text(json.dumps(existing, indent=2, default=str))
+        return True
+    except OSError as e:
+        logger.warning("Failed to save profile %s: %s", pid, e)
+        return False
+
+
+def load_profile(profile_id: str) -> dict[str, Any] | None:
+    """Load a profile from disk by profile_id.
+
+    Returns None if the profile file doesn't exist or is corrupted.
+    """
+    profiles_dir = _profiles_dir()
+    path = profiles_dir / f"{profile_id}.json"
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        logger.warning("Failed to load profile %s: %s", profile_id, e)
+        return None
+
+
+def list_profiles() -> list[dict[str, Any]]:
+    """List all stored profiles.
+
+    Returns a list of profile summaries (profile_id + narrative + created_at).
+    """
+    profiles_dir = _profiles_dir()
+    if not profiles_dir.is_dir():
+        return []
+    results: list[dict[str, Any]] = []
+    for f in sorted(profiles_dir.iterdir()):
+        if f.suffix != ".json":
+            continue
+        try:
+            data = json.loads(f.read_text())
+            results.append(
+                {
+                    "profile_id": data.get("profile_id", f.stem),
+                    "narrative": data.get("narrative", ""),
+                    "created_at": data.get("created_at", 0),
+                    "source": data.get("source", "unknown"),
+                }
+            )
+        except (json.JSONDecodeError, OSError):
+            pass
+    return results
+
+
+def delete_profile(profile_id: str) -> bool:
+    """Delete a stored profile.
+
+    Returns True if the file was removed, False if it didn't exist.
+    """
+    profiles_dir = _profiles_dir()
+    path = profiles_dir / f"{profile_id}.json"
+    if not path.is_file():
+        return False
+    try:
+        path.unlink()
+        return True
+    except OSError as e:
+        logger.warning("Failed to delete profile %s: %s", profile_id, e)
+        return False
+
+
+def get_profile_weights(profile_id: str) -> dict[str, float] | None:
+    """Convenience: load profile and return just the effective_weights dict."""
+    profile = load_profile(profile_id)
+    if not profile:
+        return None
+    raw = profile.get("effective_weights") or {}
+    result: dict[str, float] = {}
+    for k, v in raw.items():
+        try:
+            result[str(k)] = float(v)
+        except (TypeError, ValueError):
+            pass
+    return result if result else None
+
+
+__all__ = [
+    "delete_profile",
+    "get_profile_weights",
+    "list_profiles",
+    "load_profile",
+    "save_profile",
+]

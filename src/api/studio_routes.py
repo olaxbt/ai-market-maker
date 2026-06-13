@@ -35,7 +35,8 @@ from api.backtest_routes import (
 )
 from config.app_settings import load_app_settings
 from config.env_parse import env_bool
-from config.llm_env import use_llm_arbitrator
+from config.llm_env import llm_key_available
+from config.llm_mode import llm_mode_enabled
 from llm.openai_client import run_tool_calling_chat
 from llm.tool_registry import ToolSpec, nexus_tool_specs
 
@@ -675,7 +676,7 @@ async def post_studio_suggest_title(
             status_code=400,
             detail={"error": "empty", "hint": "message is required"},
         )
-    if not use_llm_arbitrator(os.environ) or not (os.getenv("OPENAI_API_KEY") or "").strip():
+    if not llm_mode_enabled(os.environ) or not llm_key_available(os.environ):
         raise HTTPException(
             status_code=503,
             detail={
@@ -769,12 +770,12 @@ async def post_studio_chat(request: Request, req: StudioChatRequest) -> dict[str
 
     # Studio chat is LLM-first: if the LLM isn't configured/reachable, fail loudly rather than
     # returning canned keyword responses (which feel "dumb").
-    if not use_llm_arbitrator(os.environ) or not (os.getenv("OPENAI_API_KEY") or "").strip():
+    if not llm_mode_enabled(os.environ) or not llm_key_available(os.environ):
         raise HTTPException(
             status_code=503,
             detail={
                 "error": "llm_required",
-                "hint": "Set OPENAI_API_KEY (and ensure AI_MARKET_MAKER_USE_LLM is not forcing LLM off).",
+                "hint": "Set OPENAI_API_KEY and ensure AIMM_LLM_MODE is not forcing LLM off.",
             },
         )
 

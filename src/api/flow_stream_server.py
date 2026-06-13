@@ -28,6 +28,7 @@ from .ops_routes import router as ops_router
 from .paper_routes import router as paper_router
 from .payload_adapter import build_nexus_payload
 from .pm_routes import router as pm_router
+from .profile_routes import router as profile_router
 from .provider_admin_routes import router as provider_admin_router
 from .public_provider_routes import router as public_provider_router
 from .runtime_settings_routes import router as runtime_settings_router
@@ -123,6 +124,7 @@ app.include_router(studio_router)
 app.include_router(tools_router)
 app.include_router(capabilities_router)
 app.include_router(ops_router)
+app.include_router(profile_router)
 
 
 def _resolve_run_log(run_id: str) -> Path:

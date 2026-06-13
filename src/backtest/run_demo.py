@@ -17,7 +17,7 @@ Multi-symbol (aligned OHLCV; same portfolio path as production graph). If you om
 
 Examples::
 
-    NEXUS_DISABLE=1 AI_MARKET_MAKER_USE_LLM=0 uv run python -m backtest.run_demo --steps 80 --online --timeframe 1d
+    NEXUS_DISABLE=1 AIMM_LLM_MODE=0 uv run python -m backtest.run_demo --steps 80 --online --timeframe 1d
 
 ~6 months daily, dynamic top-liquid universe, frequent-style env (no ``--symbols``)::
 
@@ -189,7 +189,7 @@ def build_run_demo_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--llm",
         action="store_true",
-        help="Set AI_MARKET_MAKER_USE_LLM=1 before the run (LLM per bar; requires provider keys).",
+        help="Set AIMM_ARBITRATOR_MODE=llm before the run (LLM arbitrator per bar; requires provider keys).",
     )
     parser.add_argument(
         "--runs-dir",
@@ -535,8 +535,8 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
     if args.llm:
         # Backtest LLM is intentionally **arbitrator-only** by default.
         # Rationale: full-graph LLM calls are too slow/costly per-bar for a demo backtest.
-        os.environ["AI_MARKET_MAKER_USE_LLM"] = "1"  # enables LLM signal arbitrator
-        os.environ["AIMM_LLM_MODE"] = "0"  # disable portfolio LLM nodes
+        os.environ["AIMM_ARBITRATOR_MODE"] = "llm"
+        os.environ["AIMM_LLM_MODE"] = "0"
         os.environ["AIMM_LLM_DESK_DEBATE"] = "0"  # disable extra LLM debate turns
     out = execute_run_demo(args, parser)
     print(json.dumps(out, indent=2), flush=True)

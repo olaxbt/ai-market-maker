@@ -1,111 +1,157 @@
-## Configuration
+# Configuration & Environment
 
-Default settings live in versioned JSON files under the `config/` folder.
+## Philosophy
 
-Use `.env` **only** for secrets, API endpoints, and run mode. Strategy and policy values should stay in git.
-`.env` is loaded for local development defaults only; if a variable is already set in your environment, it takes precedence.
+AIMM is designed to run **with an LLM token** — no LLM-less fallback paths.
+This eliminates the `AI_MARKET_MAKER_USE_LLM` toggle. If you have an
+`OPENAI_API_KEY` (or compatible endpoint), the system runs at full capability.
 
-### Why config-first + env override is good practice
+Three configuration layers:
 
-This repo uses a **config-first** approach for non-secret defaults (checked into git), with **environment variables**
-as *optional overrides*.
-
-- **Reproducibility**: a tagged commit + `config/*.json` fully describes default behavior.
-- **Reviewability**: behavior changes show up in diffs/PR review instead of being hidden in shell history.
-- **Deployment friendliness**: env overrides remain available for containerized deployments and emergency toggles.
-- **Secret hygiene**: `.env` stays focused on secrets/endpoints rather than “random tuning knobs.”
-
-### Run artifacts (`.runs/`) retention
-
-Runs and backtests write artifacts under `.runs/`. To prevent multi-GB accumulation, the project enforces a
-simple retention policy after each run:
-
-- **`runs.max_total_mb`**: cap total disk usage under `.runs/` (default: `500`)
-- **`runs.keep_last`**: keep at least this many newest artifacts (default: `200`)
-- **`runs.index.max_mb`**: cap `.runs/index.jsonl` size (default: `25`)
-- **`runs.index.keep_last`**: keep last N index rows (default: `20000`)
-
-Optional env overrides (emergency / one-off):
-
-- `AIMM_RUNS_MAX_TOTAL_MB`
-- `AIMM_RUNS_KEEP_LAST`
-- `AIMM_RUNS_BACKTESTS_MAX_TOTAL_MB`
-- `AIMM_RUNS_BACKTESTS_KEEP_LAST`
-
-Backtests retention is **disabled by default** to avoid surprising deletions. Enable it in `config/app.default.json`:
-
-- `runs.backtests.retention_enabled: true`
-
-### Evaluation export (benchmarking)
-
-To compare runs in a spreadsheet or against other projects, export the compact ledger plus backtest summaries:
-
-```bash
-uv run python -m eval_export --runs-dir .runs -o exports/evaluation --format csv
-uv run aimm-export-eval -o exports/evaluation.csv
+```
+.env                        → env vars (secrets, overrides)
+config/app.default.json     → app defaults (tuning params, presets)
+config/policy.default.json  → trading policy (risk, sizing, rules)
 ```
 
-Parquet output needs the optional extra: `uv sync --extra export` (installs `pyarrow`). The combined table uses `record_kind` to distinguish `index` rows (from `.runs/index.jsonl`) from `backtest` rows (from `.runs/backtests/<id>/summary.json`).
+---
 
-### Flow logging detail
+## Required Environment Variables
 
-To keep `.runs/*.events.jsonl` useful but not bloated, flow reasoning events can be compacted:
+| Variable            | Purpose                                       |
+|---------------------|-----------------------------------------------|
+| `OPENAI_API_KEY`    | LLM provider key (OpenAI / compatible)        |
+| `BINANCE_API_KEY`   | Binance API key for market data               |
+| `BINANCE_API_SECRET`| Binance API secret                            |
+| `NEXUS_API_KEY`     | Olaxbt Nexus data API key                     |
 
-- `flow.detail: full | standard | compact` (default: `standard`)
-  - `full`: include tool results and larger blobs (best for deep debugging; biggest logs)
-  - `standard`: omit large tool result payloads but keep tool call metadata
-  - `compact`: keep only the high-signal decision fields; drop bulky context
+> **No LLM key → the process exits with a clear error.** No fallback, no silent
+> degradation. This is intentional — the system is an LLM-native architecture.
 
-### Paper trading and backtest: spot vs mock perp (leverage)
+---
 
-Paper mode and multi-step backtests can simulate **spot** (full-cash) or a **USDT-linear perp-style** account with **initial margin ≈ notional / leverage**. This is a research mock (no funding, liquidation engine, or venue queue semantics); it exists so results are comparable when others run the same config.
+## Optional Environment Variables
 
-- **`paper.instrument`**: `"spot"` (default) or `"perp"`.
-- **`paper.leverage`**: used when `instrument` is `"perp"` (clamped against `fund_policy.max_leverage` where applicable).
+### Arbitrator Mode
 
-For CLI backtests, `src/backtest/run_demo.py` accepts **`--instrument spot|perp`** and **`--leverage`** (defaults follow `config/app.default.json` / `load_app_settings().paper` when omitted).
+| Variable              | Values                                     | Default                |
+|-----------------------|--------------------------------------------|------------------------|
+| `AIMM_ARBITRATOR_MODE`| `weighted_convergence` / `llm` / `legacy`  | `weighted_convergence` |
 
-### Quick Start
+- **weighted_convergence** (default): deterministic factor-weighted engine, no LLM cost
+- **llm**: LLM-based synthesis (uses OPENAI_API_KEY)
+- **legacy**: original Tier-0 consensus voting
 
-```bash
-uv run python -u src/main.py --ticker BTC/USDT
+### Agent Toggles
+
+| Variable                         | Effect                                  |
+|----------------------------------|-----------------------------------------|
+| `AIMM_ORCHESTRATOR_DISABLE`      | Skip policy orchestrator node           |
+| `AIMM_TA_TIER0_DISABLE`          | Disable technical TA agent              |
+| `AIMM_RISK_GUARD_KILL_SWITCH`    | Emergency stop — blocks all trades      |
+
+
+Each agent derives its enabled/disabled state from:
+1. Hardcoded default (e.g., Whale 4.1 is disabled by default)
+2. Environment variable override
+3. Orchestrator policy override (when orchestrator is active)
+
+### Debug & Observability
+
+| Variable                  | Purpose                                      |
+|---------------------------|----------------------------------------------|
+| `AIMM_DEBUG_RISK`         | Verbose risk calculation logs                |
+| `AIMM_FLOW_INCLUDE_FULL_DEBATE` | Include full debate transcript in output |
+| `AIMM_LLM_DESK_DEBATE`    | Enable LLM desk debate (costly)              |
+| `STRATEGY_INTERVAL_SEC`   | Graph run interval (default: 180)            |
+
+### Execution
+
+| Variable                          | Values                  | Default |
+|-----------------------------------|-------------------------|---------|
+| `AI_MARKET_MAKER_ALLOW_LIVE`      | 0 / 1                   | 0       |
+| `AI_MARKET_MAKER_EXECUTION_ENGINE`| `legacy` / `oms`        | `legacy`|
+| `MODE`                            | `paper` / `live` / `backtest` | `paper` |
+
+---
+
+
+
+## Opt-In / Opt-Out Architecture
+
+The system is designed as a **modular pipeline** where each component can be
+individually enabled or disabled:
+
+```
+policy_orchestrator ── [AIMM_ORCHESTRATOR_DISABLE]
+        │
+desk_market_scan ── [always on]
+        │
+├─ monetary_sentinel ── [config weight=0 → skip]
+├─ news_narrative_miner ── [config weight=0 → skip]
+├─ pattern_recognition_bot ── [config weight=0 → skip]
+├─ statistical_alpha_engine ── [config weight=0 → skip]
+├─ technical_ta_engine ── [AIMM_TA_TIER0_DISABLE or weight=0]
+├─ retail_hype_tracker ── [config weight=0 → skip]
+├─ pro_bias_analyst ── [config weight=0 → skip]
+├─ whale_behavior_analyst ── [disabled by default in weight config]
+├─ liquidity_order_flow ── [config weight=0 → skip]
+        │
+desk_risk ── [always on]
+desk_debate ── [always on, LLM part guarded by AIMM_LLM_DESK_DEBATE]
+signal_arbitrator ── [AIMM_ARBITRATOR_MODE selects engine]
+portfolio_proposal ── [always on]
+desk_risk_guard ── [AIMM_RISK_GUARD_KILL_SWITCH]
+portfolio_execute ── [MODE controls real vs paper]
+audit ── [always on]
 ```
 
-### Agent prompt configuration (optional)
+### Enabling/disabling agents via weight config
 
-Some LLM nodes support operator-configurable prompt settings via `config/agent_prompts` (see code: `config/agent_prompts.py`).
-This is useful when you want to tweak tone/verbosity/tools without editing the graph logic.
+Setting an agent's weight to `0.0` effectively disables it. The remaining enabled
+weights are re-normalized automatically:
 
-### LLM mode (agentic nodes)
+```python
+weights = {"2.1": 0.25, "2.3": 0.30, "4.2": 0.15}  # others set to 0
+# Normalized internally: 0.25 + 0.30 + 0.15 = 0.70 ≠ 1.0
+# Each weight scaled by 1/0.70: 0.357 + 0.429 + 0.214 = 1.0
+```
 
-LLM-driven nodes (like the Tier-2 `signal_arbitrator`) are enabled automatically when `OPENAI_API_KEY` is set,
-or explicitly when `AIMM_LLM_MODE=1`.
+This is useful for:
+- **Minimal mode** (Pattern + TA + Liquidity only → 70% of original voting power)
+- **Testing** (single agent active → verify its factor extraction)
+- **Abnormal regimes** (disable retail hype during high-vol, etc.)
 
-#### Structured output enforcement (recommended)
+---
 
-To keep trading signals reliable, the `signal_arbitrator` uses **schema-constrained prompting** plus a
-**validate + retry** loop. This prevents malformed JSON from silently degrading into default `HOLD`.
+## Layer-Specific Env Design
 
-Defaults live in `config/app.default.json` under `llm`, and can be overridden via environment variables.
+### Layer 0 — Data Sources (none required, but recommended)
+```
+BINANCE_API_KEY / SECRET   ← OHLCV data
+NEXUS_API_KEY              ← Nexus/Olaxbt data (news, KOL, OI, funding)
+TWITTER_BEARER_TOKEN        ← Social sentiment (optional, experimental)
+```
 
-Environment variables (optional overrides):
+### Layer 1 — Agents (optional toggles)
+```
+AIMM_TA_TIER0_DISABLE      ← Technical TA
+```
 
-- **`AIMM_LLM_OUTPUT_RETRIES`**: Number of retries when the model output fails validation (default: `2`, max: `5`)
-- **`AIMM_LLM_STRICT_JSON`**: If `1`, append strict “JSON only” requirements to the arbitrator prompt (default: `1`)
+### Layer 2 — Arbitrator
+```
+AIMM_ARBITRATOR_MODE       ← Engine selection
+```
 
-The run payload includes:
+### Layer 3 — Execution
+```
+MODE                       ← paper / live / backtest
+AI_MARKET_MAKER_ALLOW_LIVE ← double-gate for live
+```
 
-- `proposed_signal.params.llm_attempts`
-- `proposed_signal.params.llm_retry_reasons`
-- `proposed_signal.params.llm_json_parse_ok`
-- `proposed_signal.params.llm_validation_warnings`
+### Layer 4 — Safety
+```
+AIMM_RISK_GUARD_KILL_SWITCH ← emergency stop
+```
 
-The portfolio LLM proposal also records:
 
-- `proposal.llm_attempts`
-- `proposal.llm_retry_reasons`
-
-The portfolio LLM execution plan also records:
-
-- `execution.llm_attempts`
-- `execution.llm_retry_reasons`

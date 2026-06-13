@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import json
 import logging
 import os
 import threading
@@ -29,7 +30,6 @@ from agents.technical_ta_engine import TechnicalTaEngineAgent
 from agents.whale_behavior_analyst import WhaleBehaviorAnalystAgent
 from config.app_settings import apply_strategy_env_defaults_from_settings, load_app_settings
 from config.fund_policy import load_fund_policy
-from config.llm_env import use_llm_arbitrator
 from config.llm_mode import llm_mode_enabled
 from config.run_mode import RunMode, load_run_mode
 from flow_log import FlowEventRepo, get_flow_repo, set_flow_repo
@@ -51,14 +51,11 @@ from schemas.flow_events import FlowEvent
 from schemas.state import HedgeFundState, initial_hedge_fund_state
 from schemas.tier0_contract import build_tier0_contract_json
 from telemetry.logger import LogPublisher, get_log_publisher, set_log_publisher
-from tier1 import apply_strategy, effective_portfolio_desk_bridge, load_tier1_blueprint_from_env
-from tier1.signal_params import build_tier1_proposed_params
+from tier1 import effective_portfolio_desk_bridge
 from trading.desk_inputs import quant_analysis_for_portfolio
-from workflow.arbitrator_shadow import backtest_momentum_score_delta
 from workflow.desk_debate import desk_debate
-from workflow.execution_intent import derive_trade_intent
 from workflow.routing import route_after_risk_guard, route_after_risk_guard_mapping
-from workflow.tier2_context import build_synthesis_board, compute_legacy_arbitrator_scores
+from workflow.weighted_arbitrator import weighted_arbitrator_node
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -701,104 +698,6 @@ def risk(state: HedgeFundState) -> dict[str, Any]:
                 thought="Risk profile generated from market and valuation context.",
                 decision=risk_out,
             )
-        ],
-    }
-
-
-def signal_arbitrator(state: HedgeFundState) -> dict[str, Any]:
-    """Tier-2 synthesis: Tier-1 applier (if configured) else legacy scores from Tier-0 consensus + risk/sentiment.
-
-    Preceding ``desk_debate`` appends human-readable rows to ``debate_transcript`` (deterministic + optional LLM).
-    """
-    legacy = compute_legacy_arbitrator_scores(state)
-    debate_n = len(state.get("debate_transcript") or [])
-    bull_score = int(legacy["bull_score"])
-    bear_score = int(legacy["bear_score"])
-    high_vol_assets = int(legacy["high_vol_assets"])
-    sentiment_score = float(legacy["sentiment_score"])
-    tc = legacy["tier0_consensus"]
-
-    mb, ms, mnote = backtest_momentum_score_delta(state)
-    bull_score += mb
-    bear_score += ms
-
-    tier1_blueprint = load_tier1_blueprint_from_env()
-    if tier1_blueprint is not None:
-        ep = apply_strategy(
-            state,
-            tier1_blueprint,
-            ticker=str(state.get("ticker") or "BTC/USDT"),
-        )
-        t1_params = build_tier1_proposed_params(
-            ep,
-            tier0_summary=str(tc.get("summary", "")),
-            legacy_bull_score=bull_score,
-            legacy_bear_score=bear_score,
-        )
-        t1_params["debate_entries"] = debate_n
-        t1_params["reasons"] = [
-            *(t1_params.get("reasons") or []),
-            f"desk_debate_entries={debate_n}",
-        ]
-        proposed_signal = {
-            "action": "PROPOSAL",
-            "params": t1_params,
-            "meta": {
-                "source": "signal_arbitrator",
-                "version": "v1_tier1",
-            },
-        }
-    else:
-        stance = "neutral"
-        if bull_score > bear_score:
-            stance = "bullish"
-        elif bear_score > bull_score:
-            stance = "bearish"
-
-        confidence = round(min(0.95, 0.5 + (abs(bull_score - bear_score) * 0.15)), 2)
-        if stance != "neutral":
-            confidence = max(0.55, confidence)
-        reasons = [
-            f"bull_score={bull_score}",
-            f"bear_score={bear_score}",
-            f"sentiment={sentiment_score:.1f}",
-            f"high_vol_assets={high_vol_assets}",
-            f"tier0_consensus={tc.get('summary', '')}",
-        ]
-        reasons.append("stance_sources=risk+sentiment+tier0_contracts_legacy_scores")
-        if mnote:
-            reasons.append(mnote)
-        reasons.append(f"desk_debate_entries={debate_n}")
-        proposed_signal = {
-            "action": "PROPOSAL",
-            "params": {
-                "stance": stance,
-                "confidence": confidence,
-                "reasons": reasons,
-                "debate_entries": debate_n,
-            },
-            "meta": {
-                "source": "signal_arbitrator",
-                "version": "v1",
-            },
-        }
-    board = build_synthesis_board(state)
-    intent = derive_trade_intent(state, proposed_signal)
-    return {
-        "proposed_signal": proposed_signal,
-        "trade_intent": intent,
-        "reasoning_logs": [
-            _reasoning_entry(
-                node="signal_arbitrator",
-                thought="Synthesized proposed_signal from Tier-1 applier or legacy Tier-0 consensus scores.",
-                decision=proposed_signal,
-                extra={"synthesis_board": board},
-            ),
-            _reasoning_entry(
-                node="execution_intent",
-                thought="Execution intent derived from thesis (deterministic stance → BUY/SELL/HOLD gate).",
-                decision=intent,
-            ),
         ],
     }
 
@@ -1588,7 +1487,8 @@ def build_workflow() -> StateGraph:
     )
     workflow.add_node("desk_risk", _instrument_node("risk", risk))
     workflow.add_node("desk_debate", _instrument_node("desk_debate", desk_debate))
-    arbitrator_fn = signal_arbitrator_llm if use_llm_arbitrator() else signal_arbitrator
+    _arb_mode = (os.getenv("AIMM_ARBITRATOR_MODE") or "weighted_convergence").strip().lower()
+    arbitrator_fn = signal_arbitrator_llm if _arb_mode == "llm" else weighted_arbitrator_node
     workflow.add_node("signal_arbitrator", _instrument_node("signal_arbitrator", arbitrator_fn))
     workflow.add_node(
         "portfolio_proposal",
@@ -1629,6 +1529,25 @@ def build_workflow() -> StateGraph:
     return workflow
 
 
+def _resolve_profile(profile_id: str) -> tuple[dict[str, float], str]:
+    """Load a profile from registry or parse inline JSON."""
+    from agents.profile_registry import get_profile_weights
+
+    weights = get_profile_weights(profile_id)
+    if weights:
+        return weights, profile_id
+
+    try:
+        parsed = json.loads(profile_id)
+        if isinstance(parsed, dict):
+            return {k: float(v) for k, v in parsed.items()}, "inline"
+    except (json.JSONDecodeError, TypeError, ValueError):
+        pass
+
+    logger.warning("Profile %s not found; using default weights", profile_id)
+    return {}, ""
+
+
 def main():
     parser = argparse.ArgumentParser(description="AI Market Maker")
     _def_ticker = load_app_settings().market.default_ticker
@@ -1648,6 +1567,16 @@ def main():
             "Live requires AI_MARKET_MAKER_ALLOW_LIVE=1."
         ),
     )
+    parser.add_argument(
+        "--profile-id",
+        type=str,
+        default="",
+        help=(
+            "Profile ID or inline JSON for personalised agent weights. "
+            "Loads from .profiles/<profile_id>.json. "
+            "Also accepts inline JSON: '{\"2.1\": 0.35}'."
+        ),
+    )
     args = parser.parse_args()
 
     run_mode = load_run_mode(override=args.mode)
@@ -1660,7 +1589,20 @@ def main():
                 f"Invalid ticker: {args.ticker}. Use a valid Binance Testnet pair (e.g., BTC/USDT)."
             )
 
-    state = initial_hedge_fund_state(run_mode=run_mode.value, ticker=args.ticker)
+    profile_weights: dict[str, float] = {}
+    profile_id = ""
+    if args.profile_id:
+        profile_weights, profile_id = _resolve_profile(args.profile_id)
+        if profile_weights:
+            logger.info("Using profile %s: %s", profile_id, profile_weights)
+
+    state = initial_hedge_fund_state(
+        run_mode=run_mode.value,
+        ticker=args.ticker,
+        profile_weights=profile_weights if profile_weights else None,
+    )
+    if profile_id:
+        state["profile_id"] = profile_id
     logger.debug("Initial state: %s", state)
 
     run_id = f"run-{args.ticker.replace('/', '-')}-{int(time.time())}"

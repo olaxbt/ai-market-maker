@@ -17,12 +17,14 @@ import re
 from typing import Any
 
 from config.agent_prompts import prompt_settings_by_actor
-from config.llm_env import use_llm_arbitrator
 from llm.openai_client import run_tool_calling_chat
 from llm.tool_registry import nexus_tool_specs
 from schemas.state import HedgeFundState
-from workflow.arbitrator_shadow import legacy_deterministic_stance_preview
-from workflow.tier2_context import bear_evidence_lines, bull_evidence_lines
+from workflow.tier2_context import (
+    bear_evidence_lines,
+    bull_evidence_lines,
+    legacy_deterministic_stance_preview,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -136,8 +138,6 @@ def deterministic_debate_entries(state: HedgeFundState) -> list[dict[str, Any]]:
 
 
 def llm_desk_debate_entries(state: HedgeFundState) -> list[dict[str, Any]]:
-    if not use_llm_arbitrator():
-        return []
     if not _env_bool("AIMM_LLM_DESK_DEBATE", default=False):
         return []
     ctx = _compact_context(state)
