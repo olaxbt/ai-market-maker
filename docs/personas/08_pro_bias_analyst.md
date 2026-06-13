@@ -1,21 +1,55 @@
-# Persona: Pro Bias Analyst (Alpha Desk — Smart Money / 專業偏見分析師)
-
-> Internal role: `smart_money_flow_tracker`
+# Persona: Pro Bias / Smart Money Analyst — Agent 3.2 (聪明钱流分析)
 
 ## Position
-Alpha-generation desk — institutional & smart-money positioning (Tier-0 AIMM8).
+Tier-0 perception agent that tracks institutional flow and smart money positioning. Measures ETF accumulation/distribution trends, funding rate regimes, and open interest delta to detect where professional capital is moving.
+
+## Agent Classification
+- **Agent ID**: 3.2
+- **Type**: `pro_bias`
+- **Code Class**: `ProBiasAnalystAgent` (`src/agents/pro_bias_analyst.py`)
+- **Enabled by default**: Yes (weight: 0.05)
 
 ## Goals
-- Track smart-money token flows (top traders, net deltas) from Nexus data.
-- Monitor TradFi ETF metrics (premium, flow velocity).
-- Classify regime: accumulation / distribution / passive rotation.
+- Determine ETF flow trend (Accumulation / Neutral / Distribution)
+- Evaluate funding rate as a proxy for long/short positioning cost
+- Compute Pro Bias score [0–100] aggregating institutional sentiment
+- Detect OI delta changes that signal position building or unwinding
 
 ## SOP
-1. **Input**: Nexus context bundle (endpoints: `smart_money_tokens`, `etf_metrics`), ticker.
-2. **Process**: Match ticker to smart-money token row → extract score / net delta / EMA slope → fetch ETF NAV premium & flow → classify regime.
-3. **Output**: Dict with `pro_bias_score` (0-100), `regime`, `ema_slope`, raw metrics.
-4. **Feedback**: None — stateless per-cycle.
+1. **Input**: `ticker`, `universe`, `market_data`, optional `nexus_context`
+2. **Process**:
+   - `ProBiasAnalystAgent.analyze()` evaluates ETF premium/discount, funding rate z-score, and OI trends
+   - Returns `ETF_Trend` (str), `Funding_Rate` (float), `OI_Delta` (float), `Pro_Bias` (int)
+3. **Output**:
+   - `pro_bias_analyst["primary"]` — analysis for primary ticker
+   - `pro_bias_analyst["by_symbol"]` — per-symbol analysis
+   - `tier0_contracts` — one entry for agent 3.2
+4. **Telemetry**: FlowEvent reasoning entry with institutional flow details
+
+## Data Contract
+```python
+{
+    "schema_version": "tier0/v1",
+    "agent": "3.2",
+    "ticker": str,
+    "status": "success" | "error",
+    "Pro_Bias": int,                  # [0, 100] aggregate institutional bias
+    "ETF_Trend": str,                 # "Accumulation" | "Neutral" | "Distribution"
+    "Funding_Rate": float,            # current funding rate
+    "OI_Delta": float                 # open interest delta
+}
+```
+
+## Factor Map
+| Factor | Weight | Source | Normalization |
+|--------|--------|--------|---------------|
+| `etf_trend` | 0.40 | `ETF_Trend` mapping | Accumulation→0.70, Neutral→0.50, Distribution→0.30 |
+| `funding_rate` | 0.30 | `Pro_Bias` proxy | Linear 0→0, 100→1 |
+| `oi_delta` | 0.30 | `Pro_Bias` proxy | Linear × 0.5 + 0.25 |
 
 ## Rules / Constraints
-- Score ≤ 40 or negative ETF flow → "distribution"; Score ≥ 60 or positive flow/premium → "accumulation"; else "passive_rotation".
-- Returns "skipped" if no smart-money or ETF data available.
+- ETF Accumulation is the most reliable bullish signal from this agent
+- Distribution is a strong bearish signal — institutions distributing to retail
+- Funding rate proxy uses Pro_Bias as a fallback when direct funding data unavailable
+- Stubbed when Nexus feeds disabled — returns neutral values
+- Combined with Agent 3.1 (Retail Hype) for the complete sentiment picture

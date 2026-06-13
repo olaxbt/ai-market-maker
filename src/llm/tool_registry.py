@@ -1,35 +1,194 @@
+"""Import-time tool registry with @register_tool and OpenAI tool payloads."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Callable, Dict, List
+import inspect
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Union, get_args, get_origin
 
 from adapters.nexus_adapter import get_nexus_adapter
 
 JsonSchema = Dict[str, Any]
 
-_NAME_PATTERN_NOTE = "Provider tool names must match ^[a-zA-Z0-9_-]+$ (no dots)."
-
 
 def _wire_name(canonical: str) -> str:
-    # OpenAI is permissive, but some OpenAI-compatible providers (e.g. DeepSeek)
-    # reject dots in function names.
     return canonical.replace(".", "_")
+
+
+def _function_to_json_schema(fn: Callable) -> JsonSchema:
+    """Minimal type-annotation → JSON schema converter.
+
+    Supports str, int, float, bool, Optional, and bare Dict/List.
+    """
+    sig = inspect.signature(fn)
+    hints = {}
+    try:
+        hints = {k: v for k, v in inspect.get_annotations(fn).items() if k != "return"}
+    except Exception:
+        pass
+
+    properties: dict[str, Any] = {}
+    required: list[str] = []
+
+    for name, param in sig.parameters.items():
+        if name == "return" or name == "self":
+            continue
+        is_optional = False
+        if param.default is not inspect.Parameter.empty:
+            if param.default is not None:
+                is_optional = True
+            else:
+                is_optional = True  # Optional[...] → default None
+
+        ann = hints.get(name)
+        js_type = _py_type_to_js(ann)
+        prop: dict[str, Any] = {"type": js_type} if js_type else {}
+
+        if param.default is not inspect.Parameter.empty and not is_optional:
+            prop["default"] = param.default
+
+        # Handle Optional via union
+        if is_optional:
+            prop.setdefault("type", "string")
+
+        # Add enum from type hints
+        if ann is bool:
+            pass  # boolean is fine
+
+        properties[name] = prop
+        if param.default is inspect.Parameter.empty:
+            required.append(name)
+
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": required,
+        "additionalProperties": False,
+    }
+
+
+def _py_type_to_js(ann: Any) -> str | None:
+    if ann is None or ann is inspect.Parameter.empty:
+        return None
+    if ann is str:
+        return "string"
+    if ann is int:
+        return "integer"
+    if ann is float:
+        return "number"
+    if ann is bool:
+        return "boolean"
+    if ann is dict or getattr(ann, "__origin__", None) is dict:
+        return "object"
+    if ann is list or getattr(ann, "__origin__", None) is list:
+        return "array"
+    # Optional[X] → union
+    origin = get_origin(ann)
+    if origin is Union:
+        args = get_args(ann)
+        non_none = [a for a in args if a is not type(None)]
+        if non_none:
+            return _py_type_to_js(non_none[0])
+    return None
 
 
 @dataclass(frozen=True)
 class ToolSpec:
-    # Canonical tool name used in our app / manifest.
+    """Immutable tool specification — canonical name, schema, and handler."""
+
     name: str
-    # Provider-safe name used when sending to OpenAI-compatible APIs.
     wire_name: str
     description: str
     parameters: JsonSchema
     handler: Callable[..., Dict[str, Any]]
+    tags: frozenset[str] = field(default_factory=frozenset)
+
+
+class _ToolRegistry:
+    """Global tool registry populated via @register_tool."""
+
+    def __init__(self) -> None:
+        self._tools: dict[str, ToolSpec] = {}
+
+    def register(self, spec: ToolSpec) -> None:
+        if spec.name in self._tools:
+            raise ValueError(f"Duplicate tool registration: {spec.name}")
+        self._tools[spec.name] = spec
+
+    def register_fn(
+        self,
+        fn: Callable,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+        tags: frozenset[str] | None = None,
+    ) -> ToolSpec:
+        """Register a function as a tool using its signature for JSON schema."""
+        canonical = name or fn.__name__
+        doc = description or (inspect.getdoc(fn) or "").strip() or f"Tool: {canonical}"
+        parameters = _function_to_json_schema(fn)
+
+        spec = ToolSpec(
+            name=canonical,
+            wire_name=_wire_name(canonical),
+            description=doc,
+            parameters=parameters,
+            handler=fn,
+            tags=tags or frozenset(),
+        )
+        self.register(spec)
+        return spec
+
+    def get(self, name: str) -> ToolSpec | None:
+        by_name = {s.name: s for s in self._tools.values()} | {
+            s.wire_name: s for s in self._tools.values()
+        }
+        return by_name.get(name)
+
+    def all(self) -> List[ToolSpec]:
+        return list(self._tools.values())
+
+    def by_tag(self, tag: str) -> List[ToolSpec]:
+        return [t for t in self._tools.values() if tag in t.tags]
+
+    def clear(self) -> None:
+        self._tools.clear()
+
+    def __len__(self) -> int:
+        return len(self._tools)
+
+    def __contains__(self, name: str) -> bool:
+        return name in self._tools or _wire_name(name) in {
+            s.wire_name for s in self._tools.values()
+        }
+
+
+TOOL_REGISTRY = _ToolRegistry()
+
+
+def register_tool(
+    fn: Callable | None = None,
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    tags: frozenset[str] | None = None,
+) -> Callable | ToolSpec:
+    """Register a function as a tool."""
+    if fn is not None:
+        # Used as bare decorator: @register_tool
+        return TOOL_REGISTRY.register_fn(fn)
+
+    # Used with args: @register_tool(name=..., tags=...)
+    def decorator(f: Callable) -> ToolSpec:
+        return TOOL_REGISTRY.register_fn(f, name=name, description=description, tags=tags)
+
+    return decorator
 
 
 def nexus_tool_specs(*, include_write_tools: bool = True) -> List[ToolSpec]:
+    """Legacy Nexus adapter tools."""
     adapter = get_nexus_adapter()
-    tools: List[ToolSpec] = [
+    tools: list[ToolSpec] = [
         ToolSpec(
             name="nexus.fetch_market_depth",
             wire_name=_wire_name("nexus.fetch_market_depth"),
@@ -38,7 +197,12 @@ def nexus_tool_specs(*, include_write_tools: bool = True) -> List[ToolSpec]:
                 "type": "object",
                 "properties": {
                     "symbol": {"type": "string"},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 50, "default": 5},
+                    "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50,
+                        "default": 5,
+                    },
                 },
                 "required": ["symbol"],
                 "additionalProperties": False,
@@ -46,7 +210,6 @@ def nexus_tool_specs(*, include_write_tools: bool = True) -> List[ToolSpec]:
             handler=lambda **kw: adapter.fetch_market_depth(**kw),
         ),
     ]
-
     if include_write_tools:
         tools.append(
             ToolSpec(
@@ -75,18 +238,23 @@ def nexus_tool_specs(*, include_write_tools: bool = True) -> List[ToolSpec]:
                 handler=lambda **kw: adapter.place_smart_order(**kw),
             )
         )
-
+    for t in tools:
+        try:
+            TOOL_REGISTRY.register(t)
+        except ValueError:
+            pass
     return tools
 
 
-def openai_tools_payload(specs: List[ToolSpec]) -> List[Dict[str, Any]]:
-    """Convert ToolSpec into OpenAI 'tools' payload for chat.completions."""
+def openai_tools_payload(specs: List[ToolSpec] | None = None) -> List[Dict[str, Any]]:
+    """Convert ToolSpec(s) to OpenAI tools payload."""
+    specs = specs if specs is not None else TOOL_REGISTRY.all()
     return [
         {
             "type": "function",
             "function": {
                 "name": s.wire_name,
-                "description": f"{s.description} ({_NAME_PATTERN_NOTE})",
+                "description": s.description,
                 "parameters": s.parameters,
             },
         }
@@ -94,10 +262,18 @@ def openai_tools_payload(specs: List[ToolSpec]) -> List[Dict[str, Any]]:
     ]
 
 
-def call_tool(specs: List[ToolSpec], *, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-    # Accept either canonical name or provider wire name.
-    by_name = {s.name: s for s in specs} | {s.wire_name: s for s in specs}
-    spec = by_name.get(name)
+def call_tool(
+    specs: List[ToolSpec] | None = None,
+    *,
+    name: str,
+    arguments: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Dispatch a tool call by name."""
+    if specs is not None:
+        by_name = {s.name: s for s in specs} | {s.wire_name: s for s in specs}
+        spec = by_name.get(name)
+    else:
+        spec = TOOL_REGISTRY.get(name)
     if not spec:
         return {"status": "error", "error": f"unknown_tool: {name}"}
     try:
@@ -106,4 +282,14 @@ def call_tool(specs: List[ToolSpec], *, name: str, arguments: Dict[str, Any]) ->
         return {"status": "error", "error": str(e)}
 
 
-__all__ = ["ToolSpec", "call_tool", "nexus_tool_specs", "openai_tools_payload"]
+nexus_tool_specs()
+
+
+__all__ = [
+    "TOOL_REGISTRY",
+    "ToolSpec",
+    "call_tool",
+    "nexus_tool_specs",
+    "openai_tools_payload",
+    "register_tool",
+]

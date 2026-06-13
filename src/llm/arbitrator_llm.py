@@ -5,7 +5,6 @@ import os
 from typing import Any, Dict
 
 from config.agent_prompts import prompt_settings_by_actor
-from config.llm_env import use_llm_arbitrator
 from llm.json_parse import parse_json_object
 from llm.openai_client import run_tool_calling_chat
 from llm.structured_output import (
@@ -19,17 +18,15 @@ from schemas.state import HedgeFundState
 from tier1 import apply_strategy, effective_portfolio_desk_bridge, load_tier1_blueprint_from_env
 from tier1.signal_params import build_tier1_proposed_params
 from trading.desk_inputs import quant_analysis_for_portfolio
-from workflow.arbitrator_shadow import (
-    backtest_momentum_score_delta,
-    legacy_deterministic_stance_preview,
-)
 from workflow.execution_intent import derive_trade_intent
 from workflow.tier2_context import (
+    backtest_momentum_score_delta,
     bear_evidence_lines,
     build_synthesis_board,
     bull_evidence_lines,
     compact_tier0_for_prompt,
     compute_legacy_arbitrator_scores,
+    legacy_deterministic_stance_preview,
 )
 
 
@@ -146,12 +143,7 @@ def _backtest_prompt_context(state: HedgeFundState, *, ticker: str) -> dict[str,
 
 
 def signal_arbitrator_llm(state: HedgeFundState) -> Dict[str, Any]:
-    """Tier-2 synthesis node driven by an LLM with tool-calling enabled.
-
-    Gated behind `AI_MARKET_MAKER_USE_LLM=1`.
-    """
-    if not use_llm_arbitrator():
-        raise RuntimeError("signal_arbitrator_llm called but AI_MARKET_MAKER_USE_LLM is disabled")
+    """Tier-2 synthesis node driven by an LLM with tool-calling enabled."""
 
     ticker = str(state.get("ticker") or "BTC/USDT")
     transcript = state.get("debate_transcript") or []

@@ -67,6 +67,8 @@ class HedgeFundState(TypedDict):
     risk_guard: NotRequired[Dict[str, Any]]
     portfolio: NotRequired[Dict[str, Any]]
     liquidity: NotRequired[Dict[str, Any]]
+    profile_weights: NotRequired[Dict[str, float]]
+    profile_id: NotRequired[str]
 
 
 def initial_hedge_fund_state(
@@ -74,6 +76,7 @@ def initial_hedge_fund_state(
     *,
     ticker: str = "BTC/USDT",
     proposed_signal: Dict[str, Any] | None = None,
+    profile_weights: Dict[str, Any] | None = None,
 ) -> HedgeFundState:
     """Defaults for ``invoke``: empty lists, no veto, optional ``proposed_signal``."""
     return HedgeFundState(
@@ -104,6 +107,8 @@ def initial_hedge_fund_state(
         risk_guard={},
         portfolio={},
         liquidity={},
+        profile_weights=dict(profile_weights) if profile_weights else {},
+        profile_id="",
     )
 
 

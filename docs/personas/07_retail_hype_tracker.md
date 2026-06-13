@@ -1,21 +1,52 @@
-# Persona: Retail Hype Tracker (Alpha Desk — Social / 散戶狂熱追蹤)
-
-> Internal role: `behavioral_psychologist`
+# Persona: Retail Hype Tracker — Agent 3.1 (零售热度追踪者)
 
 ## Position
-Alpha-generation desk — retail sentiment & crowd psychology (Tier-0 AIMM8).
+Tier-0 perception agent that monitors retail trader euphoria/fear cycles. Acts as a contrarian indicator — extreme retail FOMO signals potential tops, while retail despair signals bottoms.
+
+## Agent Classification
+- **Agent ID**: 3.1
+- **Type**: `retail_hype`
+- **Code Class**: `RetailHypeTrackerAgent` (`src/agents/retail_hype_tracker.py`)
+- **Enabled by default**: Yes (weight: 0.05)
 
 ## Goals
-- Measure retail FOMO, panic, and hype-price divergence from Nexus sentiment data.
-- Flag extreme sentiment as contrarian indicators.
+- Measure FOMO/euphoria levels on a 0–100 scale from social and behavioral proxies
+- Detect divergence warnings when retail positioning conflicts with price action
+- Provide contrarian sentiment extremes to the weighted arbitrator
 
 ## SOP
-1. **Input**: Nexus context bundle (endpoints: `sentiment`, `sentiment_trends`, `kol_heatmap`), ticker.
-2. **Process**: Extract mention Z-scores, bullish ratios, KOL heatmap scores → compute FOMO level → detect divergence.
-3. **Output**: Dict with `fomo_level` (0-100), `divergence_warning` (bool), `sentiment_z_score`, raw inputs.
-4. **Feedback**: None — stateless per-cycle.
+1. **Input**: `ticker`, `universe`, `market_data`, optional `nexus_context`
+2. **Process**:
+   - `RetailHypeTrackerAgent.analyze()` evaluates social sentiment, funding rate retail tilt, and volume anomalies
+   - Returns `FOMO_Level` (int), `Divergence_Warning` (bool), and `Social_Volume` proxy
+3. **Output**:
+   - `retail_hype_tracker["primary"]` — analysis for primary ticker
+   - `retail_hype_tracker["by_symbol"]` — per-symbol analysis
+   - `tier0_contracts` — one entry for agent 3.1
+4. **Telemetry**: FlowEvent reasoning entry with FOMO and divergence details
+
+## Data Contract
+```python
+{
+    "schema_version": "tier0/v1",
+    "agent": "3.1",
+    "ticker": str,
+    "status": "success" | "error",
+    "FOMO_Level": int,                # [0, 100] retail euphoria
+    "Divergence_Warning": bool,       # retail vs price divergence
+    "Social_Volume": int              # optional proxy
+}
+```
+
+## Factor Map
+| Factor | Weight | Source | Normalization |
+|--------|--------|--------|---------------|
+| `fomo_level` | 0.35 | `FOMO_Level` | Inverted: 100→0, 0→1 (high FOMO = bearish) |
+| `social_volume` | 0.25 | Proxy from FOMO × 0.5 | Inverse proxy |
+| `divergence_warning` | 0.40 | `Divergence_Warning` | True→0.20, False→0.55 |
 
 ## Rules / Constraints
-- Divergence flag if: mention Z > 3 AND price momentum < 0, OR abs(sentiment_Z) > 1.5, OR heatmap proxy > 40.
-- FOMO formula: `50 + z*8 + mention_z*5 + min(heat_proxy, 40) + bullish_ratio*20`.
-- Returns "skipped" if all Nexus data sources are unavailable.
+- Contrarian logic: high FOMO is bearish (retail crowded long), low FOMO is bullish (fear/despair)
+- Divergence warning at FOMO ≥ 80 triggers a strong bearish tilt in downstream alignment gating
+- Stubbed when Nexus data unavailable — returns neutral values
+- Combined with Agent 3.2 (Pro Bias) for the full sentiment picture
