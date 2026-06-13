@@ -65,7 +65,7 @@ def main() -> None:
 
     use_llm = bool(args.llm) or args.suite == "llm_monthly"
     if use_llm:
-        os.environ["AI_MARKET_MAKER_USE_LLM"] = "1"
+        os.environ["AIMM_ARBITRATOR_MODE"] = "llm"
     cap_raw = (os.getenv("AIMM_BACKTEST_LLM_MAX_STEPS") or "120").strip()
     try:
         llm_max = max(2, int(cap_raw, 10))
