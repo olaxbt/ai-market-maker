@@ -67,8 +67,11 @@ class HedgeFundState(TypedDict):
     risk_guard: NotRequired[Dict[str, Any]]
     portfolio: NotRequired[Dict[str, Any]]
     liquidity: NotRequired[Dict[str, Any]]
+    # Profile Agent: personalised weight overrides (v4.1)
     profile_weights: NotRequired[Dict[str, float]]
     profile_id: NotRequired[str]
+    # Arbitrator mode (v4.1): "weighted_convergence" | "agent_llm"
+    arbitrator_mode: NotRequired[str]
 
 
 def initial_hedge_fund_state(
@@ -109,6 +112,7 @@ def initial_hedge_fund_state(
         liquidity={},
         profile_weights=dict(profile_weights) if profile_weights else {},
         profile_id="",
+        arbitrator_mode="",
     )
 
 

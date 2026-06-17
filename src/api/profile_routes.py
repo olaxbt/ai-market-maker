@@ -1,4 +1,4 @@
-"""Profile Agent API routes."""
+"""Profile Agent API routes — personalised weight generation."""
 
 from __future__ import annotations
 
@@ -24,6 +24,13 @@ class ProfileQuestionnaire(BaseModel):
 
 @router.post("/generate")
 async def generate_profile(q: ProfileQuestionnaire) -> dict[str, Any]:
+    """Generate a personalised agent-weight profile from user questionnaire.
+
+    Uses the ProfileAgent (rule-based by default, LLM-enhanced when
+    AIMM_LLM_PROFILE=1).
+
+    Returns: profile_id, deltas, effective_weights, narrative.
+    """
     try:
         from agents.profile_agent import ProfileAgent
 
@@ -44,6 +51,7 @@ async def generate_profile(q: ProfileQuestionnaire) -> dict[str, Any]:
 
 @router.get("/labels")
 async def agent_labels() -> dict[str, str]:
+    """Return the agent ID -> label mapping for UI."""
     from agents.profile_agent import AGENT_LABELS
 
     return dict(AGENT_LABELS)
@@ -51,6 +59,7 @@ async def agent_labels() -> dict[str, str]:
 
 @router.get("/default-weights")
 async def default_weights() -> dict[str, float]:
+    """Return the default AGENT_WEIGHTS_DEFAULT."""
     from agents.profile_agent import AGENT_WEIGHTS_DEFAULT
 
     return dict(AGENT_WEIGHTS_DEFAULT)
@@ -58,6 +67,7 @@ async def default_weights() -> dict[str, float]:
 
 @router.get("/list")
 async def list_profiles() -> list[dict]:
+    """List all stored profiles (profile_id + narrative + created_at)."""
     from agents.profile_registry import list_profiles as _list_profiles
 
     return _list_profiles()
@@ -65,6 +75,10 @@ async def list_profiles() -> list[dict]:
 
 @router.post("/save")
 async def save_profile(profile: dict) -> dict:
+    """Save a profile JSON to persistent storage.
+
+    The profile must contain a ``profile_id`` key.
+    """
     from agents.profile_registry import save_profile as _save_profile
 
     ok = _save_profile(profile)
@@ -73,6 +87,10 @@ async def save_profile(profile: dict) -> dict:
 
 @router.get("/load/{profile_id}")
 async def load_profile(profile_id: str) -> dict:
+    """Load a profile by profile_id.
+
+    Returns 404 if not found.
+    """
     from agents.profile_registry import load_profile as _load_profile
 
     profile = _load_profile(profile_id)

@@ -13,7 +13,7 @@
     "desk_strategy_preset": "all_weather"
   },
   "backtest": {
-    "hold_signal_fallback": "momentum"
+    "hold_signal_fallback": "off"
   },
   "ui": {
     "tail_events": 1200,

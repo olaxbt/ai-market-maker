@@ -68,6 +68,10 @@ class BacktestEngine:
                 "export_bundle": config.export_bundle,
                 "instrument": config.instrument,
                 "leverage": config.leverage,
+                # Deploy config extra fields (set dynamically by loop.py)
+                "deploy_profile_weights": getattr(config, "deploy_profile_weights", None),
+                "deploy_profile_id": getattr(config, "deploy_profile_id", None),
+                "deploy_arbitrator_mode": getattr(config, "deploy_arbitrator_mode", None),
             }
         else:
             self._cfg = dict(config or {})
@@ -138,9 +142,27 @@ class BacktestEngine:
             from schemas.state import initial_hedge_fund_state
 
             state = initial_hedge_fund_state(ticker=ticker, run_mode=RunMode.BACKTEST.value)
+
+            # Inject deploy config (profile weights + arbitrator mode) when set
+            deploy_profile_weights = c.get("deploy_profile_weights")
+            if deploy_profile_weights:
+                state["profile_weights"] = deploy_profile_weights
+            deploy_profile_id = c.get("deploy_profile_id")
+            if deploy_profile_id:
+                state["profile_id"] = deploy_profile_id
+            deploy_arb_mode = c.get("deploy_arbitrator_mode")
+            if deploy_arb_mode:
+                state["arbitrator_mode"] = deploy_arb_mode
             state["universe"] = list(bars_by_symbol.keys())
             state["market_data"] = {
-                s: {"status": "success", "backtest": True, "ohlcv": bars_by_symbol.get(s, window)}
+                s: {
+                    "status": "success",
+                    "backtest": True,
+                    # Slice OHLCV to the current bar (full series if window empty).
+                    "ohlcv": list(bars_by_symbol[s])[: len(window)]
+                    if window
+                    else bars_by_symbol.get(s),
+                }
                 for s in bars_by_symbol
             }
 
@@ -283,7 +305,10 @@ class BacktestEngine:
                     )
                 except Exception:
                     pass
-                print(f"[Backtest Warning] Workflow failed at step: {exc}")
+                import traceback
+
+                tb_str = traceback.format_exc()
+                print(f"[Backtest Warning] Workflow failed at step: {exc}\n{tb_str}")
                 return 0.0
 
         result = run_perp_backtest(

@@ -1487,8 +1487,16 @@ def build_workflow() -> StateGraph:
     )
     workflow.add_node("desk_risk", _instrument_node("risk", risk))
     workflow.add_node("desk_debate", _instrument_node("desk_debate", desk_debate))
+    # Arbitrator mode selection:
+    #   AIMM_ARBITRATOR_MODE=weighted_convergence  → weighted factor engine (default)
+    #   AIMM_ARBITRATOR_MODE=llm                   → LLM arbitrator
+    import os
+
     _arb_mode = (os.getenv("AIMM_ARBITRATOR_MODE") or "weighted_convergence").strip().lower()
-    arbitrator_fn = signal_arbitrator_llm if _arb_mode == "llm" else weighted_arbitrator_node
+    if _arb_mode == "llm":
+        arbitrator_fn = signal_arbitrator_llm
+    else:  # weighted_convergence (default)
+        arbitrator_fn = weighted_arbitrator_node
     workflow.add_node("signal_arbitrator", _instrument_node("signal_arbitrator", arbitrator_fn))
     workflow.add_node(
         "portfolio_proposal",
@@ -1533,10 +1541,12 @@ def _resolve_profile(profile_id: str) -> tuple[dict[str, float], str]:
     """Load a profile from registry or parse inline JSON."""
     from agents.profile_registry import get_profile_weights
 
+    # Try registry first
     weights = get_profile_weights(profile_id)
     if weights:
         return weights, profile_id
 
+    # Try inline JSON (for testing / ad-hoc)
     try:
         parsed = json.loads(profile_id)
         if isinstance(parsed, dict):
@@ -1577,6 +1587,16 @@ def main():
             "Also accepts inline JSON: '{\"2.1\": 0.35}'."
         ),
     )
+    parser.add_argument(
+        "--deploy",
+        action="store_true",
+        default=False,
+        help=(
+            "Load active deploy config from config/deploy.active.json. "
+            "Uses the effective_weights from the deployed configuration "
+            "as profile weights. Overrides --profile-id."
+        ),
+    )
     args = parser.parse_args()
 
     run_mode = load_run_mode(override=args.mode)
@@ -1589,9 +1609,27 @@ def main():
                 f"Invalid ticker: {args.ticker}. Use a valid Binance Testnet pair (e.g., BTC/USDT)."
             )
 
+    # Resolve profile weights (v4.1 personalisation)
+    # Priority: --deploy > --profile-id > default
     profile_weights: dict[str, float] = {}
     profile_id = ""
-    if args.profile_id:
+    if args.deploy:
+        from config.deploy_loader import (
+            get_arbitrator_mode,
+            get_deploy_profile_id,
+            get_effective_weights,
+        )
+
+        deploy_weights = get_effective_weights()
+        if deploy_weights:
+            profile_weights = deploy_weights
+            profile_id = get_deploy_profile_id() or ""
+            logger.info(
+                "Using deploy config weights (%d agents, mode=%s)",
+                len(profile_weights),
+                get_arbitrator_mode() or "weighted_convergence",
+            )
+    elif args.profile_id:
         profile_weights, profile_id = _resolve_profile(args.profile_id)
         if profile_weights:
             logger.info("Using profile %s: %s", profile_id, profile_weights)
@@ -1603,6 +1641,14 @@ def main():
     )
     if profile_id:
         state["profile_id"] = profile_id
+
+    # Inject arbitrator_mode from deploy config (if loaded)
+    if args.deploy:
+        from config.deploy_loader import get_arbitrator_mode
+
+        deploy_arb_mode = get_arbitrator_mode()
+        if deploy_arb_mode:
+            state["arbitrator_mode"] = deploy_arb_mode
     logger.debug("Initial state: %s", state)
 
     run_id = f"run-{args.ticker.replace('/', '-')}-{int(time.time())}"

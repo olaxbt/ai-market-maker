@@ -22,6 +22,7 @@ from .auth_routes import router as auth_router
 from .backtest_routes import router as backtest_router
 from .capabilities_routes import router as capabilities_router
 from .copy_routes import router as copy_router
+from .deploy_routes import router as deploy_router
 from .follow_routes import router as follow_router
 from .leadpage_routes import router as leadpage_router
 from .ops_routes import router as ops_router
@@ -125,6 +126,7 @@ app.include_router(tools_router)
 app.include_router(capabilities_router)
 app.include_router(ops_router)
 app.include_router(profile_router)
+app.include_router(deploy_router)
 
 
 def _resolve_run_log(run_id: str) -> Path:

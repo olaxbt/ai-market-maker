@@ -1,10 +1,31 @@
-"""Import-time tool registry with @register_tool and OpenAI tool payloads."""
+"""Tool Registry — Hermes-inspired import-time self-registration.
+
+Extends the existing ToolSpec pattern with:
+
+1. **Global registry**: ``TOOL_REGISTRY`` — tools self-register via ``@register_tool``
+2. **Import-time discovery**: tools defined alongside their agents self-register
+3. **Backward-compatible**: ``nexus_tool_specs()`` still works
+4. **OpenAI-compatible output**: ``openai_tools_payload()`` unchanged
+
+Usage:
+    # In agent_x_tools.py
+    from llm.tool_registry import register_tool, ToolSpec
+
+    @register_tool
+    def fetch_order_book(symbol: str, limit: int = 5) -> dict:
+        '''Fetch order book depth for slippage/price discovery.'''
+        return adapter.fetch_market_depth(symbol=symbol, limit=limit)
+
+    # In agent code
+    from llm.tool_registry import TOOL_REGISTRY, openai_tools_payload
+    tools_payload = openai_tools_payload(TOOL_REGISTRY.all())
+"""
 
 from __future__ import annotations
 
 import inspect
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Union, get_args, get_origin
+from typing import Any, Callable, Dict, List, Union
 
 from adapters.nexus_adapter import get_nexus_adapter
 
@@ -83,13 +104,18 @@ def _py_type_to_js(ann: Any) -> str | None:
     if ann is list or getattr(ann, "__origin__", None) is list:
         return "array"
     # Optional[X] → union
-    origin = get_origin(ann)
+    origin = getattr(ann, "__origin__", None)
     if origin is Union:
-        args = get_args(ann)
+        args = getattr(ann, "__args__", [])
         non_none = [a for a in args if a is not type(None)]
         if non_none:
             return _py_type_to_js(non_none[0])
     return None
+
+
+# ---------------------------------------------------------------------------
+# Core data structures
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
@@ -104,8 +130,16 @@ class ToolSpec:
     tags: frozenset[str] = field(default_factory=frozenset)
 
 
+# ---------------------------------------------------------------------------
+# Global registry — tools self-register via @register_tool
+# ---------------------------------------------------------------------------
+
+
 class _ToolRegistry:
-    """Global tool registry populated via @register_tool."""
+    """Global thread-safe tool registry.
+
+    Tools self-register at import time via @register_tool.
+    """
 
     def __init__(self) -> None:
         self._tools: dict[str, ToolSpec] = {}
@@ -173,7 +207,18 @@ def register_tool(
     description: str | None = None,
     tags: frozenset[str] | None = None,
 ) -> Callable | ToolSpec:
-    """Register a function as a tool."""
+    """Decorator (with or without args) that registers a function as a tool.
+
+    Usage:
+        @register_tool
+        def my_tool(param1: str, param2: int = 5) -> dict:
+            \"\"\"Description becomes the tool description.\"\"\"
+            ...
+
+        @register_tool(name="custom_name", tags=frozenset({"onchain"}))
+        def another_tool(...):
+            ...
+    """
     if fn is not None:
         # Used as bare decorator: @register_tool
         return TOOL_REGISTRY.register_fn(fn)
@@ -185,8 +230,13 @@ def register_tool(
     return decorator
 
 
+# ---------------------------------------------------------------------------
+# Legacy compatibility — keep existing API working
+# ---------------------------------------------------------------------------
+
+
 def nexus_tool_specs(*, include_write_tools: bool = True) -> List[ToolSpec]:
-    """Legacy Nexus adapter tools."""
+    """Legacy: returns Nexus adapter tools. New code should prefer @register_tool."""
     adapter = get_nexus_adapter()
     tools: list[ToolSpec] = [
         ToolSpec(
@@ -242,12 +292,15 @@ def nexus_tool_specs(*, include_write_tools: bool = True) -> List[ToolSpec]:
         try:
             TOOL_REGISTRY.register(t)
         except ValueError:
-            pass
+            pass  # already registered
     return tools
 
 
 def openai_tools_payload(specs: List[ToolSpec] | None = None) -> List[Dict[str, Any]]:
-    """Convert ToolSpec(s) to OpenAI tools payload."""
+    """Convert ToolSpec(s) into OpenAI 'tools' payload for chat.completions.
+
+    When specs is None, uses TOOL_REGISTRY.all().
+    """
     specs = specs if specs is not None else TOOL_REGISTRY.all()
     return [
         {
@@ -268,7 +321,10 @@ def call_tool(
     name: str,
     arguments: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """Dispatch a tool call by name."""
+    """Dispatch a tool call by name.
+
+    When specs is None, uses TOOL_REGISTRY.
+    """
     if specs is not None:
         by_name = {s.name: s for s in specs} | {s.wire_name: s for s in specs}
         spec = by_name.get(name)
@@ -282,6 +338,9 @@ def call_tool(
         return {"status": "error", "error": str(e)}
 
 
+# ---------------------------------------------------------------------------
+# Auto-register legacy tools on import
+# ---------------------------------------------------------------------------
 nexus_tool_specs()
 
 

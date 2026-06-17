@@ -1,13 +1,4 @@
-"""Single switch for 'LLM mode' in the app.
-
-Goal: **agentic by default** when the user configured keys, but **easy onboarding** when they didn't.
-
-Rules:
-- If `AIMM_LLM_MODE` is explicitly set:
-  - ON values: 1/true/yes/on/y
-  - OFF values: 0/false/no/off/n
-- Else: enable only when `OPENAI_API_KEY` is present.
-"""
+"""Toggle portfolio/desk LLM nodes via ``AIMM_LLM_MODE``."""
 
 from __future__ import annotations
 
@@ -15,6 +6,7 @@ import os
 from typing import Mapping
 
 _ENV = "AIMM_LLM_MODE"
+_REQUIRED_ENV = "AIMM_LLM_REQUIRED"
 _ON = frozenset({"1", "true", "yes", "y", "on"})
 _OFF = frozenset({"0", "false", "no", "n", "off"})
 
@@ -33,4 +25,16 @@ def llm_mode_enabled(env: Mapping[str, str] | None = None) -> bool:
     return bool((m.get("OPENAI_API_KEY") or "").strip())
 
 
-__all__ = ["llm_mode_enabled"]
+def llm_required(env: Mapping[str, str] | None = None) -> bool:
+    """Return True when ``AIMM_LLM_REQUIRED`` is set to a truthy value.
+
+    When ``llm_required()`` is True, callers should refuse to start
+    unless ``llm_key_available()`` also returns True (see
+    ``config.llm_env.require_llm_key``).
+    """
+    m = env if env is not None else os.environ
+    raw = (m.get(_REQUIRED_ENV) or "").strip().lower()
+    return raw in _ON
+
+
+__all__ = ["llm_mode_enabled", "llm_required"]

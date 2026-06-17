@@ -118,6 +118,10 @@ def run_window(
     use_llm: bool,
     llm_max_steps: int,
     export_bundle: bool = False,
+    # Deploy config integration
+    deploy_profile_weights: dict[str, float] | None = None,
+    deploy_profile_id: str | None = None,
+    deploy_arbitrator_mode: str | None = None,
 ) -> dict[str, Any]:
     since_ms = iso_utc_to_ms(spec.since)
     last_day_ms = iso_utc_to_ms(spec.until)
@@ -149,6 +153,9 @@ def run_window(
         run_id=run_id,
         runs_dir=runs_dir,
         export_bundle=export_bundle,
+        deploy_profile_weights=deploy_profile_weights,
+        deploy_profile_id=deploy_profile_id,
+        deploy_arbitrator_mode=deploy_arbitrator_mode,
     )
     trades = load_trades_file(res.trades_path)
     ex = summarize_execution_trades(trades)
@@ -236,6 +243,10 @@ def run_suite(
     runs_dir: Path,
     use_llm: bool,
     llm_max_steps: int,
+    # Deploy config integration
+    deploy_profile_weights: dict[str, float] | None = None,
+    deploy_profile_id: str | None = None,
+    deploy_arbitrator_mode: str | None = None,
 ) -> dict[str, Any]:
     eval_tag = f"eval_{int(time.time())}"
     out_dir = runs_dir / "evaluations" / eval_tag
@@ -254,6 +265,9 @@ def run_suite(
                 use_llm=use_llm,
                 llm_max_steps=llm_max_steps,
                 export_bundle=False,
+                deploy_profile_weights=deploy_profile_weights,
+                deploy_profile_id=deploy_profile_id,
+                deploy_arbitrator_mode=deploy_arbitrator_mode,
             )
         )
 

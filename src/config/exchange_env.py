@@ -67,7 +67,7 @@ def load_exchange_config(*, env: Mapping[str, str] | None = None) -> ExchangeCon
             )
 
     testnet = _truthy(e.get(HL_TESTNET_ENV, "1"))
-    dry_run = _truthy(e.get(HL_DRY_RUN_ENV))
+    dry_run = _truthy(e.get(HL_DRY_RUN_ENV)) if name != "paper" else False
     api_key = (e.get(HL_API_KEY_ENV) or "").strip() or None
     secret = (e.get(HL_SECRET_ENV) or "").strip() or None
     api_base = (e.get(HL_API_BASE_ENV) or "").strip() or None

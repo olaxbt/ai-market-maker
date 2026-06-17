@@ -1,4 +1,16 @@
-"""Factor-weighted Tier-0 signal engine for weighted convergence arbitration."""
+"""Weight Assigner — factor-weighted agent signal engine.
+
+Maps Tier-0 contract fields → normalized factor signals → per-agent composites
+→ global weighted composite score.
+
+Follows the v4 config formulae:
+  agent_composite   = Σ(factor_weight × factor_signal_normalized)
+  weighted_global   = Σ(agent_weight × agent_composite)
+  confidence        = |composite| × min(1.0, 0.5 + consensus_ratio × 0.5)
+
+All normalization maps raw Tier-0 scalars into [0, 1] bullish-direction values
+where 1.0 = maximum bullish conviction, 0.0 = maximum bearish conviction.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +26,10 @@ from schemas.arbitration import (
     FactorSignal,
 )
 from schemas.tier0_contract import tier0_contracts_by_agent
+
+# ---------------------------------------------------------------------------
+# Normalization helpers
+# ---------------------------------------------------------------------------
 
 
 def _f(val: Any, default: float = 0.0) -> float:
@@ -40,12 +56,22 @@ def _normalize_linear(val: float, raw_max: float, raw_min: float = 0.0) -> float
     return _clamp((val - raw_min) / span)
 
 
+# ---------------------------------------------------------------------------
+# Agent-specific factor extractors
+# Each receives the Tier-0 contract dict for that agent + the raw state.
+# Returns dict[factor_id → normalized_signal].
+# ---------------------------------------------------------------------------
+
+
 def _agent_1_1_factors(contract: dict[str, Any], state: dict[str, Any]) -> dict[str, float]:
     """Monetary Sentinel — macro regime + liquidity score."""
     mrs = _f(contract.get("macro_regime_state"), 1.0)
     ls = _f(contract.get("Liquidity_Score"), 50.0)
+    # regime_state: 0=risk_off, 1=neutral, 2=risk_on
     regime_bull = _normalize_linear(mrs, 2.0, 0.0)
     score_bull = _normalize_linear(ls, 100.0, 0.0)
+    # Combine into a single "macro" factor — the agent has no config factors,
+    # so we use equal weight on regime + score
     return {"macro_bias": (regime_bull * 0.6 + score_bull * 0.4)}
 
 
@@ -117,8 +143,11 @@ def _agent_2_3_factors(contract: dict[str, Any], state: dict[str, Any]) -> dict[
     """Technical TA Engine."""
     ti = contract.get("ta_indicators") if isinstance(contract.get("ta_indicators"), dict) else {}
     rsi = _f(ti.get("rsi"), 50.0)
-    # RSI: oversold < 30 → bullish, overbought > 70 → bearish
-    rsi_bull = _invert(_normalize_linear(rsi, 100.0, 0.0))
+    # RSI (trend-following interpretation): peaks near the 50-60 sweet
+    # spot (healthy trend), fades at extremes.  NOT inverted — high RSI
+    # on trending data confirms strength, not reversal.
+    #   RSI=55 → 1.0,  RSI=40|70 → 0.77,  RSI=20|90 → 0.45
+    rsi_bull = _clamp(1.0 - abs(rsi - 55.0) / 45.0 * 0.7)
 
     macd_hist = _f(ti.get("macd_hist") or ti.get("macd", 0.0), 0.0)
     macd_bull = _clamp(0.5 + macd_hist / (abs(macd_hist) + 1.0) * 0.4)
@@ -246,6 +275,10 @@ _AGENT_EXTRACTORS: dict[str, Any] = {
     "4.2": _agent_4_2_factors,
 }
 
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
 
 def compute_agent_weighted_signals(
     state: dict[str, Any],
@@ -253,7 +286,22 @@ def compute_agent_weighted_signals(
     agent_weights: dict[str, float] | None = None,
     disabled_agents: set[str] | None = None,
 ) -> list[AgentWeightedSignal]:
-    """Compute per-agent weighted signals from Tier-0 contracts."""
+    """Compute per-agent weighted signals from Tier-0 contracts.
+
+    Parameters
+    ----------
+    state : dict
+        HedgeFundState (or any dict with ``tier0_contracts``).
+    agent_weights : dict, optional
+        Override default agent weights (from v4 config or runtime).
+    disabled_agents : set[str], optional
+        Agent IDs to skip (e.g. ``{"4.1"}`` when Whale is disabled).
+
+    Returns
+    -------
+    list[AgentWeightedSignal]
+        One entry per agent, sorted by agent_id.
+    """
     idx = tier0_contracts_by_agent(state)
     weights = dict(AGENT_WEIGHTS_DEFAULT)
     if agent_weights:
@@ -356,7 +404,14 @@ def compute_agent_weighted_signals(
 def compute_global_weighted_score(
     signals: list[AgentWeightedSignal],
 ) -> dict[str, Any]:
-    """Compute global weighted composite score and confidence."""
+    """Compute the global weighted composite score and confidence.
+
+    Formula (from v4 config):
+        composite = Σ(agent_weight × agent_composite)
+        confidence = |composite_magnitude| × min(1.0, 0.5 + consensus_ratio × 0.5)
+
+    Returns dict with keys: composite, confidence, consensus_ratio, stance, conviction.
+    """
     total_weight = sum(s.agent_weight for s in signals if s.enabled)
     if total_weight <= 0:
         return {
@@ -370,6 +425,7 @@ def compute_global_weighted_score(
     weighted_sum = sum(s.weighted_composite for s in signals if s.enabled)
     composite = _clamp(weighted_sum / total_weight) if total_weight > 0 else 0.5
 
+    # Consensus: count agents on same side
     enabled_sigs = [s for s in signals if s.enabled]
     total_enabled = max(1, len(enabled_sigs))
     bullish_count = sum(1 for s in enabled_sigs if s.composite >= 0.55)
@@ -377,14 +433,17 @@ def compute_global_weighted_score(
     max_side = max(bullish_count, bearish_count)
     consensus_ratio = max_side / total_enabled
 
-    magnitude = abs(composite - 0.5) * 2.0
+    # Composite magnitude: how far from 0.5 neutral
+    magnitude = abs(composite - 0.5) * 2.0  # [0, 1]
 
+    # Confidence formula
     confidence = magnitude * min(1.0, 0.5 + consensus_ratio * 0.5)
     confidence = _clamp(confidence)
 
-    if composite >= 0.55:
+    # Final stance
+    if composite >= 0.53:
         stance = "bullish"
-    elif composite <= 0.45:
+    elif composite <= 0.47:
         stance = "bearish"
     else:
         stance = "neutral"
@@ -418,7 +477,25 @@ def compute_weighted_arbitration(
     disabled_agents: set[str] | None = None,
     decision_threshold: dict[str, Any] | None = None,
 ) -> ArbitrationResult:
-    """Run weighted convergence arbitration over Tier-0 contracts."""
+    """Full weighted convergence arbitration pipeline.
+
+    Parameters
+    ----------
+    state : dict
+        HedgeFundState.
+    agent_weights : dict, optional
+        Override default weights.
+    disabled_agents : set[str], optional
+        Agents to exclude.
+    decision_threshold : dict, optional
+        Threshold overrides:
+            buy: {min_composite: 60, min_confidence: 50}
+            sell: {max_composite: 40, min_confidence: 50}
+
+    Returns
+    -------
+    ArbitrationResult
+    """
     signals = compute_agent_weighted_signals(
         state, agent_weights=agent_weights, disabled_agents=disabled_agents
     )
@@ -429,6 +506,7 @@ def compute_weighted_arbitration(
     stance = global_score["stance"]
     consensus_ratio = global_score["consensus_ratio"]
 
+    # Default thresholds (v4 config)
     thr_buy = decision_threshold.get("buy", {}) if decision_threshold else {}
     thr_sell = decision_threshold.get("sell", {}) if decision_threshold else {}
     min_composite_buy = _f(thr_buy.get("min_composite", 60), 60.0) / 100.0
@@ -436,6 +514,7 @@ def compute_weighted_arbitration(
     max_composite_sell = _f(thr_sell.get("max_composite", 40), 40.0) / 100.0
     min_conf_sell = _f(thr_sell.get("min_confidence", 50), 50.0) / 100.0
 
+    # Decision gate
     buy_triggered = (
         stance == "bullish" and composite >= min_composite_buy and confidence >= min_conf_buy
     )
@@ -444,6 +523,7 @@ def compute_weighted_arbitration(
     )
     hold_triggered = not buy_triggered and not sell_triggered
 
+    # Alignment gating: require min_factors_for_directional
     min_factors = 3
     if decision_threshold and "alignment_gating" in decision_threshold:
         ag = decision_threshold["alignment_gating"]
@@ -465,6 +545,7 @@ def compute_weighted_arbitration(
         buy_triggered = False
         sell_triggered = False
 
+    # Build reasons
     reasons: list[str] = []
     if buy_triggered:
         reasons.append(
@@ -490,6 +571,7 @@ def compute_weighted_arbitration(
     if alignment_gated:
         reasons.append(alignment_reason)
 
+    # Top contributing agents
     sorted_sigs = sorted(enabled_sigs, key=lambda s: s.weighted_composite, reverse=True)
     top = sorted_sigs[:3]
     for s in top:

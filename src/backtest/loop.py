@@ -64,6 +64,10 @@ def run_multi_step_backtest(
     export_bundle: bool = True,
     instrument: str | None = None,
     leverage: float | None = None,
+    # Deploy config integration: inject profile weights + arbitrator mode
+    deploy_profile_weights: dict[str, float] | None = None,
+    deploy_profile_id: str | None = None,
+    deploy_arbitrator_mode: str | None = None,
 ) -> MultiStepResult:
     """Run a deterministic multi-step backtest and persist artifacts under `.runs/`."""
     app = load_app_settings()
@@ -80,6 +84,13 @@ def run_multi_step_backtest(
         instrument=str(inst),
         leverage=max(1.0, lev),
     )
+    # Deploy config fields are stored as extra keys
+    if deploy_profile_weights:
+        cfg.deploy_profile_weights = deploy_profile_weights  # type: ignore[attr-defined]
+    if deploy_profile_id:
+        cfg.deploy_profile_id = deploy_profile_id  # type: ignore[attr-defined]
+    if deploy_arbitrator_mode:
+        cfg.deploy_arbitrator_mode = deploy_arbitrator_mode  # type: ignore[attr-defined]
     engine = BacktestEngine(cfg)
     if bars_by_symbol is not None:
         raw = {str(sym): [list(x) for x in series] for sym, series in bars_by_symbol.items()}

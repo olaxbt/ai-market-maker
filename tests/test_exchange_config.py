@@ -16,12 +16,23 @@ from config.exchange_env import (
 def test_default_exchange_config_is_paper(monkeypatch):
     monkeypatch.delenv(EXCHANGE_ENV, raising=False)
     monkeypatch.delenv("AI_MARKET_MAKER_ALLOW_LIVE", raising=False)
+    monkeypatch.delenv(HL_DRY_RUN_ENV, raising=False)
     cfg = load_exchange_config()
     assert cfg.exchange_name == "paper"
     assert cfg.testnet is True
     assert cfg.dry_run is False
     assert cfg.hyperliquid_api_key is None
     assert cfg.hyperliquid_secret is None
+
+
+def test_paper_mode_ignores_hyperliquid_dry_run(monkeypatch):
+    """EXCHANGE=paper must ignore HYPERLIQUID_DRY_RUN (paper uses no HL adapter)."""
+    monkeypatch.delenv(EXCHANGE_ENV, raising=False)
+    monkeypatch.delenv("AI_MARKET_MAKER_ALLOW_LIVE", raising=False)
+    monkeypatch.setenv(HL_DRY_RUN_ENV, "1")
+    cfg = load_exchange_config()
+    assert cfg.exchange_name == "paper"
+    assert cfg.dry_run is False
 
 
 def test_hyperliquid_without_live_flag_raises(monkeypatch):
