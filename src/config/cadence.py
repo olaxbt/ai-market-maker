@@ -12,7 +12,7 @@ import sys
 import warnings
 from typing import Mapping
 
-from config.llm_mode import llm_mode_enabled
+from config.llm_env import use_llm_arbitrator
 
 STRATEGY_INTERVAL_ENV = "STRATEGY_INTERVAL_SEC"
 # Default ~3 minutes: aligns with common “desk refresh” loops and limits token burn.
@@ -59,12 +59,12 @@ def load_strategy_interval_sec(
 def warn_if_aggressive_cadence(interval_sec: int, *, env: Mapping[str, str] | None = None) -> None:
     """Emit a stderr hint when LLM is on but the loop is faster than a typical desk cycle."""
     env_map = env if env is not None else os.environ
-    use_llm = llm_mode_enabled(env_map)
+    use_llm = use_llm_arbitrator(env_map)
     if use_llm and interval_sec < LLM_SANE_MIN_INTERVAL_SEC:
         print(
-            f"[cadence] LLM mode enabled with {STRATEGY_INTERVAL_ENV}={interval_sec}s "
+            f"[cadence] AI_MARKET_MAKER_USE_LLM=1 with {STRATEGY_INTERVAL_ENV}={interval_sec}s "
             f"(<{LLM_SANE_MIN_INTERVAL_SEC}s): each tick runs the full graph and LLM calls — "
-            "expect high token usage. Consider >=180s for demos, or set AIMM_LLM_MODE=0 for fast ticks.",
+            "expect high token usage. Consider >=180s for demos, or disable LLM for fast ticks.",
             file=sys.stderr,
         )
 

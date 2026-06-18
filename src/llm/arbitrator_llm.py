@@ -136,7 +136,13 @@ def _backtest_prompt_context(state: HedgeFundState, *, ticker: str) -> dict[str,
         ctx["sim_cash_usd"] = float(bt.get("cash", 0.0) or 0.0)
         pos = bt.get("positions")
         if isinstance(pos, dict):
-            ctx["sim_qty_by_symbol"] = {str(k): float(v) for k, v in pos.items()}
+            ctx["sim_qty_by_symbol"] = {}
+            for k, v in pos.items():
+                try:
+                    qty = float(v["size"]) if isinstance(v, dict) else float(v)
+                except (TypeError, ValueError, KeyError):
+                    qty = 0.0
+                ctx["sim_qty_by_symbol"][str(k)] = qty
         else:
             ctx["sim_qty_base"] = float(bt.get("qty", 0.0) or 0.0)
     return ctx
@@ -361,7 +367,10 @@ def signal_arbitrator_llm(state: HedgeFundState) -> Dict[str, Any]:
         break
 
     stance = str(canonical["stance"])
-    confidence_f = float(canonical["confidence"])
+    try:
+        confidence_f = float(canonical["confidence"])
+    except (TypeError, ValueError):
+        confidence_f = 0.5
     reasons = list(canonical["reasons"])
     stance_match = stance == reference_stance
 

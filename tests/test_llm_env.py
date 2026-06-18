@@ -1,36 +1,40 @@
-"""Tests for LLM env helpers."""
+"""``AI_MARKET_MAKER_USE_LLM`` semantics (single source of truth in ``config.llm_env``).
 
-from config.llm_env import llm_arbitrator_mode, llm_key_available
-from config.llm_mode import llm_mode_enabled
+The system is agentic — ``use_llm_arbitrator()`` returns True when a provider
+key is configured.  The ``AI_MARKET_MAKER_USE_LLM`` env var is a legacy toggle
+that can force off but cannot conjure a key out of thin air.
+"""
 
+from config.llm_env import use_llm_arbitrator
 
-def test_llm_key_available_false_when_unset():
-    assert llm_key_available(env={}) is False
-
-
-def test_llm_key_available_true_with_openai_key():
-    assert llm_key_available(env={"OPENAI_API_KEY": "sk-test"}) is True
-
-
-def test_llm_key_available_falls_back_to_llm_api_key():
-    assert llm_key_available(env={"LLM_API_KEY": "sk-test"}) is True
+_KEY = {"OPENAI_API_KEY": "sk-test-123"}
+_EMPTY = {}
 
 
-def test_llm_mode_off_by_default_in_tests():
-    assert llm_mode_enabled(env={}) is False
+def test_use_llm_returns_false_when_no_key():
+    """No key in env dict → False regardless of legacy flag."""
+    assert use_llm_arbitrator(env=_EMPTY) is False
+    assert use_llm_arbitrator(env={"AI_MARKET_MAKER_USE_LLM": ""}) is False
+    assert use_llm_arbitrator(env={"AI_MARKET_MAKER_USE_LLM": "1"}) is False
 
 
-def test_llm_mode_explicit_on_and_off():
-    assert llm_mode_enabled(env={"AIMM_LLM_MODE": "1"}) is True
-    assert llm_mode_enabled(env={"AIMM_LLM_MODE": "true"}) is True
-    assert llm_mode_enabled(env={"AIMM_LLM_MODE": "0"}) is False
-    assert llm_mode_enabled(env={"AIMM_LLM_MODE": "off"}) is False
+def test_use_llm_returns_false_when_explicitly_disabled():
+    """Legacy ``0`` / ``false`` / ``no`` / ``off`` forces off, even with a key."""
+    for val in ("0", "false", "no", "off"):
+        env = {"AI_MARKET_MAKER_USE_LLM": val, **_KEY}
+        assert use_llm_arbitrator(env=env) is False, f"{val=} should force off"
 
 
-def test_arbitrator_mode_defaults_to_weighted_convergence():
-    assert llm_arbitrator_mode(env={}) == "weighted_convergence"
+def test_use_llm_returns_true_when_key_present():
+    """Key present + no explicit disable → True (agentic default)."""
+    assert use_llm_arbitrator(env=_KEY) is True
 
 
-def test_arbitrator_mode_llm():
-    assert llm_arbitrator_mode(env={"AIMM_ARBITRATOR_MODE": "llm"}) == "llm"
-    assert llm_arbitrator_mode(env={"AIMM_ARBITRATOR_MODE": "LLM"}) == "llm"
+def test_use_llm_legacy_flag_honoured_as_additional_hint():
+    """``AI_MARKET_MAKER_USE_LLM=1`` works when a key is present."""
+    env = {"AI_MARKET_MAKER_USE_LLM": "1", **_KEY}
+    assert use_llm_arbitrator(env=env) is True
+
+    for val in ("true", "YES", "y", "On"):
+        env = {"AI_MARKET_MAKER_USE_LLM": val, **_KEY}
+        assert use_llm_arbitrator(env=env) is True, f"{val=} should work with key"

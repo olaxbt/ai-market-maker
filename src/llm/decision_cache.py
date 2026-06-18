@@ -1,4 +1,4 @@
-"""File-backed decision cache for reproducible backtests and agent_llm replay."""
+"""File-backed decision cache for reproducible agent_llm backtests."""
 
 from __future__ import annotations
 

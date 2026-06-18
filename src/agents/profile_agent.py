@@ -1,4 +1,27 @@
-"""Profile Agent — maps a 5-question onboarding wizard to agent weight deltas."""
+"""Profile Agent — One-time LLM onboarding wizard.
+
+Generates personalized Tier-0 agent weight deltas based on user trading style.
+
+Usage:
+    agent = ProfileAgent()
+    result = agent.process({
+        "risk_tolerance": "moderate",          # conservative|moderate|aggressive
+        "time_horizon": "swing",               # scalping|intraday|swing|position
+        "preferred_signals": "technical",      # technical|onchain|news|sentiment|mixed
+        "leverage_comfort": "1-3x",            # 1x|1-3x|3-5x|5x+
+        "assets": "majors_only"                # majors_only|majors_alts|full_universe
+    })
+
+Output:
+    {
+        "profile_id": "user_<hash>",
+        "base": "AGENT_WEIGHTS_DEFAULT",
+        "deltas": {"2.1": "+0.10", "1.2": "-0.05", ...},
+        "effective_weights": {"1.1": 0.05, "2.1": 0.35, ...},
+        "reasoning": "Pattern-based trader with news confirmation bias...",
+        "narrative": "Technician"
+    }
+"""
 
 from __future__ import annotations
 
@@ -10,7 +33,7 @@ from typing import Any
 
 from config.llm_mode import llm_mode_enabled
 
-# Default base weights (mirrors weighted_arbitrator._V4_AGENT_WEIGHTS)
+# Default base weights (mirrors _V4_AGENT_WEIGHTS in weighted_arbitrator.py)
 AGENT_WEIGHTS_DEFAULT: dict[str, float] = {
     "1.1": 0.05,
     "1.2": 0.05,
@@ -19,7 +42,7 @@ AGENT_WEIGHTS_DEFAULT: dict[str, float] = {
     "2.3": 0.30,
     "3.1": 0.05,
     "3.2": 0.05,
-    "4.1": 0.05,
+    "4.1": 0.05,  # disabled by default, but kept for config
     "4.2": 0.15,
 }
 
@@ -35,7 +58,13 @@ AGENT_LABELS: dict[str, str] = {
     "4.2": "liquidity_order_flow (Order Flow)",
 }
 
+# 5-Question weight delta rules
+# Format: (risk, horizon, signals, leverage, assets) -> {agent_id: delta}
+# Each delta is added to the base weight; final weights are re-normalized.
+
 _WEIGHT_RULES: list[tuple[str, str, str, str, str, dict[str, float]]] = [
+    # === CONSERVATIVE profiles ===
+    # Conservative + long horizon: tilt → macro + fundamentals
     (
         "conservative",
         "position",
@@ -52,6 +81,8 @@ _WEIGHT_RULES: list[tuple[str, str, str, str, str, dict[str, float]]] = [
         "*",
         {"1.1": 0.05, "2.3": 0.05, "3.1": -0.02, "4.2": -0.03},
     ),
+    # === AGGRESSIVE profiles ===
+    # Aggressive + short horizon: tilt → momentum, retail, whale
     (
         "aggressive",
         "scalping",
@@ -69,16 +100,31 @@ _WEIGHT_RULES: list[tuple[str, str, str, str, str, dict[str, float]]] = [
         {"2.1": 0.05, "4.2": 0.05, "3.1": 0.03, "1.1": -0.02},
     ),
     ("aggressive", "*", "*", "5x+", "*", {"2.1": 0.08, "4.2": 0.05, "3.1": 0.05, "1.2": -0.03}),
+    # === SIGNAL preference profiles ===
     ("*", "*", "technical", "*", "*", {"2.3": 0.10, "2.1": 0.05, "3.1": -0.05, "1.2": -0.05}),
     ("*", "*", "onchain", "*", "*", {"4.1": 0.15, "4.2": 0.05, "2.3": -0.10, "2.1": -0.05}),
     ("*", "*", "news", "*", "*", {"1.2": 0.15, "3.1": 0.05, "2.3": -0.10, "2.1": -0.05}),
     ("*", "*", "sentiment", "*", "*", {"3.1": 0.15, "3.2": 0.05, "2.3": -0.10, "2.1": -0.05}),
     ("*", "*", "mixed", "*", "*", {"1.2": 0.03, "3.1": 0.03, "3.2": 0.03, "2.3": -0.05}),
+    # === LEVERAGE profiles ===
     ("*", "*", "*", "1x", "*", {"2.3": 0.05, "1.1": 0.05, "3.1": -0.02, "4.2": -0.02}),
     ("*", "*", "*", "3-5x", "*", {"2.1": 0.05, "3.1": 0.03, "4.2": 0.03, "1.1": -0.03}),
+    # === ASSET profiles ===
     ("*", "*", "*", "*", "majors_only", {"2.3": 0.05, "3.1": -0.03, "4.1": -0.03}),
     ("*", "*", "*", "*", "full_universe", {"3.1": 0.08, "3.2": 0.05, "4.1": 0.05, "2.3": -0.10}),
     ("*", "*", "*", "*", "majors_alts", {"2.1": 0.03, "3.2": 0.03, "1.2": 0.02}),
+]
+
+# === Narrative labels for user-facing profile ===
+_NARRATIVES: list[tuple[str, dict[str, str]]] = [
+    (
+        "0.65,0.70,0.55",
+        {
+            "conservative": "Defensive Investor",
+            "moderate": "Balanced Technician",
+            "aggressive": "Aggressive Momentum Trader",
+        },
+    ),
 ]
 
 _NARRATIVE_BY_STYLE: dict[str, str] = {
@@ -139,6 +185,7 @@ def _resolve_narrative(risk: str, horizon: str, signals: str) -> str:
     direct = _NARRATIVE_BY_STYLE.get(key)
     if direct:
         return direct
+    # Fuzzy fallback
     if risk == "aggressive":
         return "Aggressive Momentum Trader"
     if risk == "conservative":
@@ -147,11 +194,17 @@ def _resolve_narrative(risk: str, horizon: str, signals: str) -> str:
 
 
 class ProfileAgent:
-    """Generate personalised agent weights (rule-based; optional LLM via AIMM_LLM_PROFILE=1)."""
+    """One-shot LLM-assisted profile generator.
+
+    Operates in two modes:
+    1. **Rule-based** (default): deterministic weight deltas from question matrix
+    2. **LLM-enhanced** (when AIMM_LLM_PROFILE=1): uses Hermes/OpenAI for richer reasoning
+    """
 
     def __init__(self) -> None:
         self.llm_enabled = llm_mode_enabled() and (os.getenv("AIMM_LLM_PROFILE", "0") == "1")
 
+    # ------------------------------------------------------------------
     def _build_prompt(self, answers: dict[str, str]) -> str:
         return (
             "You are a trading profile analyst. Based on these user answers, "
@@ -178,7 +231,12 @@ class ProfileAgent:
             '{"deltas": {"2.1": 0.10, "2.3": -0.05}, "reasoning": "...", "narrative": "..."}'
         )
 
+    # ------------------------------------------------------------------
     def _llm_generate(self, answers: dict[str, str]) -> dict[str, Any] | None:
+        """Call LLM for profile generation.
+
+        Falls back to None if LLM unavailable / error → caller uses rule-based fallback.
+        """
         try:
             from llm.openai_client import run_tool_calling_chat
 
@@ -203,14 +261,29 @@ class ProfileAgent:
         except Exception:
             return None
 
+    # ------------------------------------------------------------------
     def process(self, input_data: dict[str, Any]) -> dict[str, Any]:
+        """Generate personalized agent weights.
+
+        Args:
+            input_data: dict with keys:
+                - risk_tolerance: conservative|moderate|aggressive
+                - time_horizon: scalping|intraday|swing|position
+                - preferred_signals: technical|onchain|news|sentiment|mixed
+                - leverage_comfort: 1x|1-3x|3-5x|5x+
+                - assets: majors_only|majors_alts|full_universe
+
+        Returns:
+            Profile JSON (see module docstring)
+        """
         risk = str(input_data.get("risk_tolerance", "moderate")).lower()
         horizon = str(input_data.get("time_horizon", "swing")).lower()
         signals = str(input_data.get("preferred_signals", "technical")).lower()
         leverage = str(input_data.get("leverage_comfort", "1-3x")).lower()
         assets = str(input_data.get("assets", "majors_only")).lower()
 
-        llm_result = None
+        # Try LLM path first (optional, controlled by env)
+        llm_result: dict[str, Any] | None = None
         if self.llm_enabled:
             llm_result = self._llm_generate(
                 {
@@ -229,6 +302,7 @@ class ProfileAgent:
             narrative = str(llm_result.get("narrative", _resolve_narrative(risk, horizon, signals)))
             source = "llm"
         else:
+            # Rule-based deterministic path
             deltas = _compute_deltas(risk, horizon, signals, leverage, assets)
             reasoning = (
                 f"Rule-based profile: {risk} risk, {horizon} horizon, "
@@ -239,6 +313,7 @@ class ProfileAgent:
 
         effective = _apply_deltas(AGENT_WEIGHTS_DEFAULT, deltas)
 
+        # Profile ID
         raw_id = f"{risk}|{horizon}|{signals}|{leverage}|{assets}|{source}|{time.time()}"
         profile_id = "user_" + hashlib.sha256(raw_id.encode()).hexdigest()[:12]
 

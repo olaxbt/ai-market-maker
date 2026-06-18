@@ -1,4 +1,8 @@
-"""Weighted convergence arbitration schemas."""
+"""Weighted convergence arbitration schemas.
+
+Factor → agent → composite → decision pipeline
+as specified in the v4 AI-MM config.
+"""
 
 from __future__ import annotations
 
@@ -12,10 +16,10 @@ class FactorSignal:
     factor_id: str
     agent_id: str
     raw_value: float
-    normalized: float
-    weight: float
+    normalized: float  # mapped to [0, 1] bullish range
+    weight: float  # factor weight from config
     enabled: bool = True
-    source_field: str = ""
+    source_field: str = ""  # Tier-0 contract key, e.g. "Liquidity_Score"
 
 
 @dataclass
@@ -25,24 +29,24 @@ class AgentWeightedSignal:
     agent_id: str
     agent_type: str
     label: str
-    composite: float
-    raw_composite: float
-    agent_weight: float
-    weighted_composite: float
+    composite: float  # Σ(factor_weight × factor_signal)
+    raw_composite: float  # before agent weight multiplication
+    agent_weight: float  # from v4 config
+    weighted_composite: float  # agent_weight × composite
     factor_signals: list[FactorSignal] = field(default_factory=list)
     enabled: bool = True
     confidence: float = 0.5
-    stance: str = "neutral"
+    stance: str = "neutral"  # bullish / bearish / neutral
 
 
 @dataclass
 class ArbitrationResult:
     """Final output of the weighted convergence arbitrator."""
 
-    composite_score: float
-    confidence: float
-    stance: str
-    conviction_level: str
+    composite_score: float  # Σ(agent_weight × composite) over all enabled agents
+    confidence: float  # confidence_formula result
+    stance: str  # bullish / bearish / neutral
+    conviction_level: str  # low / medium / high
     reasons: list[str] = field(default_factory=list)
     agent_signals: list[AgentWeightedSignal] = field(default_factory=list)
     consensus_ratio: float = 0.0
@@ -53,8 +57,9 @@ class ArbitrationResult:
     alignment_reason: str = ""
 
 
+# v4 Config weight definitions (defaults matching the validated config)
 AGENT_FACTOR_MAP: dict[str, dict[str, float]] = {
-    "1.1": {},
+    "1.1": {},  # monetary_sentinel — no config factors, uses contract fields directly
     "1.2": {
         "sentiment_score": 0.28,
         "impact_score": 0.38,
@@ -113,7 +118,7 @@ AGENT_WEIGHTS_DEFAULT: dict[str, float] = {
     "2.3": 0.30,
     "3.1": 0.05,
     "3.2": 0.05,
-    "4.1": 0.05,
+    "4.1": 0.05,  # disabled in v4 config
     "4.2": 0.15,
 }
 

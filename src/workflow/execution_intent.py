@@ -77,10 +77,15 @@ def derive_trade_intent(
 
     fp = load_fund_policy()
     min_c = fp.min_confidence_directional
+
+    # Flat book: lower confidence bar for new entries.
+    is_flat = qty is not None and abs(qty) < 1e-12
+    effective_min_c = 0.03 if is_flat else min_c
+
     action = "HOLD"
-    if stance_s == "bullish" and conf_f >= min_c:
+    if stance_s == "bullish" and conf_f >= effective_min_c:
         action = "BUY"
-    elif stance_s == "bearish" and conf_f >= min_c:
+    elif stance_s == "bearish" and conf_f >= effective_min_c:
         action = "SELL"
         if not fp.allows_short and run_mode == RunMode.BACKTEST.value:
             pos_dict = bt.get("positions")
@@ -131,6 +136,8 @@ def derive_trade_intent(
             "source": META_SOURCE,
             "derived_from": "proposed_signal.params.stance",
             "min_confidence_directional": min_c,
+            "is_flat": is_flat,
+            "effective_min_confidence": effective_min_c,
         },
     }
 

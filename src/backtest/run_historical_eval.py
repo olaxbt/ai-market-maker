@@ -46,6 +46,11 @@ def main() -> None:
     parser.add_argument(
         "--llm", action="store_true", help="Enable Tier-2 LLM arbitrator (API keys required)."
     )
+    parser.add_argument(
+        "--deploy",
+        action="store_true",
+        help="Load profile weights + arbitrator mode from config/deploy.active.json.",
+    )
     parser.add_argument("--ticker", default=ticker_def)
     parser.add_argument("--exchange", default="binance")
     parser.add_argument("--initial-cash", type=float, default=10_000.0)
@@ -65,7 +70,8 @@ def main() -> None:
 
     use_llm = bool(args.llm) or args.suite == "llm_monthly"
     if use_llm:
-        os.environ["AIMM_ARBITRATOR_MODE"] = "llm"
+        os.environ["AI_MARKET_MAKER_USE_LLM"] = "1"
+        os.environ["AIMM_ARBITRATOR_MODE"] = "agent_llm"  # wire into workflow
     cap_raw = (os.getenv("AIMM_BACKTEST_LLM_MAX_STEPS") or "120").strip()
     try:
         llm_max = max(2, int(cap_raw, 10))
@@ -82,8 +88,33 @@ def main() -> None:
             file=sys.stderr,
         )
 
+    # Load deploy config when --deploy is set
+    deploy_profile_weights = None
+    deploy_profile_id = None
+    deploy_arbitrator_mode = None
+    if args.deploy:
+        try:
+            from config.deploy_loader import (
+                get_arbitrator_mode,
+                get_deploy_profile_id,
+                get_effective_weights,
+            )
+
+            deploy_profile_weights = get_effective_weights()
+            deploy_profile_id = get_deploy_profile_id()
+            deploy_arbitrator_mode = get_arbitrator_mode()
+            print(
+                f"[eval] deploy config loaded: weights={len(deploy_profile_weights or {})} "
+                f"mode={deploy_arbitrator_mode or 'default'} "
+                f"profile_id={deploy_profile_id or 'none'}",
+                file=sys.stderr,
+            )
+        except Exception as exc:
+            print(f"[eval] --deploy specified but config load failed: {exc}", file=sys.stderr)
+            sys.exit(1)
+
     print(
-        f"[eval] suite={args.suite} windows={len(windows)} ticker={args.ticker} llm={use_llm}",
+        f"[eval] suite={args.suite} windows={len(windows)} ticker={args.ticker} llm={use_llm} deploy={args.deploy}",
         file=sys.stderr,
     )
     report = run_suite(

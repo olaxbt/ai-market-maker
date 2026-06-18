@@ -1,27 +1,40 @@
-"""LLM key availability and arbitrator mode helpers."""
+"""LLM env helpers for arbitrator key detection and legacy flags."""
 
 from __future__ import annotations
 
 import os
-from typing import Mapping
 
 
-def llm_key_available(env: Mapping[str, str] | None = None) -> bool:
-    """Return True when an LLM API key is configured."""
-    m = env if env is not None else os.environ
-    return bool((m.get("OPENAI_API_KEY") or m.get("LLM_API_KEY") or "").strip())
+def _read_key(env: dict[str, str] | None) -> str:
+    """Return the first non-empty API key from *env*."""
+    if env is None:
+        env = os.environ
+    return (env.get("OPENAI_API_KEY") or env.get("LLM_API_KEY") or "").strip()
 
 
-def llm_arbitrator_mode(env: Mapping[str, str] | None = None) -> str:
-    """Return ``weighted_convergence`` (default) or ``llm``."""
-    m = env if env is not None else os.environ
-    raw = (m.get("AIMM_ARBITRATOR_MODE") or "weighted_convergence").strip().lower()
-    return "llm" if raw == "llm" else "weighted_convergence"
+def llm_key_available(env: dict[str, str] | None = None) -> bool:
+    """Return True when an LLM API key is configured in *env*."""
+    return bool(_read_key(env))
 
 
-def require_llm_key() -> None:
-    """Exit with a clear message if no LLM key is set."""
-    if not llm_key_available():
+def use_llm_arbitrator(env: dict[str, str] | None = None) -> bool:
+    """Return True when an LLM provider key is configured.
+
+    Legacy ``AI_MARKET_MAKER_USE_LLM=0`` forces False.
+    """
+    if env is None:
+        env = os.environ
+
+    old_flag = (env.get("AI_MARKET_MAKER_USE_LLM") or "").strip().lower()
+    if old_flag in ("0", "false", "no", "off"):
+        return False
+
+    return bool(_read_key(env))
+
+
+def require_llm_key(env: dict[str, str] | None = None) -> None:
+    """Exit with a clear message if no LLM key is configured."""
+    if not llm_key_available(env):
         print(
             "FATAL: OPENAI_API_KEY is required. "
             "Set OPENAI_API_KEY in your environment or .env file.",
@@ -30,4 +43,4 @@ def require_llm_key() -> None:
         __import__("sys").exit(1)
 
 
-__all__ = ["llm_arbitrator_mode", "llm_key_available", "require_llm_key"]
+__all__ = ["llm_key_available", "require_llm_key", "use_llm_arbitrator"]
