@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,6 +10,8 @@ from typing import Any, Sequence
 from config.app_settings import load_app_settings
 
 from .engine import BacktestConfig, BacktestEngine
+
+logger = logging.getLogger(__name__)
 
 
 def _maybe_tail_slice(
@@ -46,6 +50,8 @@ class MultiStepResult:
     equity_path: Path
     events_path: Path
     iterations_path: Path | None = None
+    quality_report: dict[str, Any] | None = None
+    resolved_config: dict[str, Any] | None = None
 
 
 def run_multi_step_backtest(
@@ -64,12 +70,15 @@ def run_multi_step_backtest(
     export_bundle: bool = True,
     instrument: str | None = None,
     leverage: float | None = None,
-    # Deploy config integration: inject profile weights + arbitrator mode
     deploy_profile_weights: dict[str, float] | None = None,
     deploy_profile_id: str | None = None,
     deploy_arbitrator_mode: str | None = None,
+    take_profit_pct: float = 0.0,
+    stop_loss_pct: float = 0.0,
+    max_hold_bars: int = 0,
+    deploy_config: dict[str, Any] | None = None,
 ) -> MultiStepResult:
-    """Run a deterministic multi-step backtest and persist artifacts under `.runs/`."""
+    """Run a deterministic multi-step backtest and persist artifacts under ``.runs/``."""
     app = load_app_settings()
     inst = (instrument or app.paper.instrument or "spot").strip().lower()
     lev = float(app.paper.leverage) if leverage is None else float(leverage)
@@ -83,8 +92,10 @@ def run_multi_step_backtest(
         progress_callback=progress_callback,
         instrument=str(inst),
         leverage=max(1.0, lev),
+        take_profit_pct=float(take_profit_pct),
+        stop_loss_pct=float(stop_loss_pct),
+        max_hold_bars=int(max_hold_bars),
     )
-    # Deploy config fields are stored as extra keys
     if deploy_profile_weights:
         cfg.deploy_profile_weights = deploy_profile_weights  # type: ignore[attr-defined]
     if deploy_profile_id:
@@ -114,6 +125,45 @@ def run_multi_step_backtest(
     iterations_path = Path(str(ip)) if ip else None
     raw_bench = res.get("benchmark")
     bench_out: dict[str, Any] | None = dict(raw_bench) if isinstance(raw_bench, dict) else None
+
+    qual_report: dict[str, Any] | None = None
+    summary_path = Path(str(paths.get("summary"))) if paths.get("summary") else None
+    try:
+        trades_path = Path(str(paths.get("trades"))) if paths.get("trades") else None
+        trades: list[dict[str, Any]] = []
+        if trades_path and trades_path.is_file():
+            with trades_path.open(encoding="utf-8") as f:
+                trades = [json.loads(line) for line in f if line.strip()]
+
+        closes: list[float] = []
+        if bars is not None:
+            closes = [float(b[4]) for b in bars if len(b) > 4 and float(b[4]) > 0]
+        elif bars_by_symbol is not None and ticker:
+            primary = bars_by_symbol.get(ticker, [])
+            closes = [float(b[4]) for b in primary if len(b) > 4 and float(b[4]) > 0]
+
+        if closes and trades:
+            from backtest.validation import generate_quality_report
+
+            qual_report = generate_quality_report(
+                close_prices=closes,
+                total_bars=len(closes),
+                trade_count=len(trades),
+                profit_factor=float(res.get("metrics", {}).get("profit_factor") or 0),
+                trades=trades,
+            ).to_dict()
+
+        if summary_path and summary_path.is_file():
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            if qual_report:
+                summary["quality_report"] = qual_report
+            if deploy_config:
+                summary["resolved_config"] = dict(deploy_config)
+            summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    except Exception as exc:
+        logger.warning("quality-report post-process failed: %s", exc)
+        qual_report = None
+
     return MultiStepResult(
         run_id=str(res.get("run_id") or ""),
         steps=int(res.get("steps") or 0),
@@ -122,9 +172,11 @@ def run_multi_step_backtest(
         metrics=dict(res.get("metrics") or {}),
         final_equity=final_equity,
         benchmark=bench_out,
-        summary_path=Path(str(paths.get("summary"))),
+        summary_path=summary_path,
         trades_path=Path(str(paths.get("trades"))),
         equity_path=Path(str(paths.get("equity"))),
         events_path=Path(str(paths.get("events"))),
         iterations_path=iterations_path,
+        quality_report=qual_report,
+        resolved_config=deploy_config or None,
     )

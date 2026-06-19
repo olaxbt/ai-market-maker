@@ -8,6 +8,10 @@
 
     NEXUS_DISABLE=1 uv run python -m backtest.run_historical_eval --suite llm_monthly --llm
 
+**Deploy parity (uses arbitrator mode + weights from ``deploy.active.json``):** ::
+
+    NEXUS_DISABLE=1 uv run python -m backtest.run_historical_eval --suite llm_monthly --llm --deploy
+
 Artifacts: ``.runs/evaluations/<eval_id>/evaluation_report.{json,md}`` plus per-window backtest dirs under ``.runs/backtests/``.
 """
 
@@ -44,12 +48,23 @@ def main() -> None:
         help="daily: six-month 1d windows; llm_monthly: yearly 1M windows (fewer LLM steps).",
     )
     parser.add_argument(
-        "--llm", action="store_true", help="Enable Tier-2 LLM arbitrator (API keys required)."
+        "--llm",
+        action="store_true",
+        help="Enable LLM arbitrator. Uses ``agent_llm`` mode (per-agent LLM).",
+    )
+    parser.add_argument(
+        "--mode",
+        default=None,
+        choices=("agent_llm", "weighted_convergence"),
+        help="Explicitly set arbitrator mode (overrides deploy config).",
     )
     parser.add_argument(
         "--deploy",
-        action="store_true",
-        help="Load profile weights + arbitrator mode from config/deploy.active.json.",
+        nargs="?",
+        const="config/deploy.active.json",
+        default=None,
+        metavar="PATH",
+        help="Load profile weights + arbitrator mode from deploy config (default: config/deploy.active.json).",
     )
     parser.add_argument("--ticker", default=ticker_def)
     parser.add_argument("--exchange", default="binance")
@@ -66,12 +81,59 @@ def main() -> None:
         default=None,
         help="If set, only run the first N windows (smoke / faster iteration).",
     )
+    parser.add_argument(
+        "--tp-sl-pct",
+        type=float,
+        default=None,
+        metavar="PCT",
+        help="Set symmetric take-profit / stop-loss at ±PCT%% from entry (overrides deploy config).",
+    )
+    parser.add_argument(
+        "--forward-validate",
+        action="store_true",
+        help="Run IS/OOS split for each window and report forward validation score.",
+    )
+    parser.add_argument(
+        "--forward-oos-bars",
+        type=int,
+        default=30,
+        metavar="N",
+        help="Number of OOS bars for forward validation (default: 30).",
+    )
+    parser.add_argument(
+        "--quality",
+        action="store_true",
+        help="Apply quality-optimized defaults: implies ``--tp-sl-pct 5`` + forward validation.",
+    )
     args = parser.parse_args()
 
-    use_llm = bool(args.llm) or args.suite == "llm_monthly"
-    if use_llm:
-        os.environ["AI_MARKET_MAKER_USE_LLM"] = "1"
-        os.environ["AIMM_ARBITRATOR_MODE"] = "agent_llm"  # wire into workflow
+    if args.quality:
+        if args.tp_sl_pct is None or args.tp_sl_pct <= 0:
+            args.tp_sl_pct = 5.0
+        if not args.forward_validate:
+            args.forward_validate = True
+        print(
+            "[quality] preset: --tp-sl-pct 5 --forward-validate --forward-oos-bars "
+            f"{args.forward_oos_bars}",
+            file=sys.stderr,
+        )
+
+    from backtest.config import resolve_backtest_config, set_env_from_config
+
+    bt_cfg = resolve_backtest_config(
+        deploy_path=args.deploy,
+        cli_arbitrator_mode=args.mode,
+        cli_tp_sl_pct=args.tp_sl_pct,
+    )
+
+    if args.llm and args.mode is None:
+        bt_cfg["arbitrator_mode"] = "agent_llm"
+        bt_cfg["use_llm"] = True
+
+    set_env_from_config(bt_cfg)
+
+    use_llm = bt_cfg["use_llm"]
+
     cap_raw = (os.getenv("AIMM_BACKTEST_LLM_MAX_STEPS") or "120").strip()
     try:
         llm_max = max(2, int(cap_raw, 10))
@@ -88,35 +150,12 @@ def main() -> None:
             file=sys.stderr,
         )
 
-    # Load deploy config when --deploy is set
-    deploy_profile_weights = None
-    deploy_profile_id = None
-    deploy_arbitrator_mode = None
-    if args.deploy:
-        try:
-            from config.deploy_loader import (
-                get_arbitrator_mode,
-                get_deploy_profile_id,
-                get_effective_weights,
-            )
-
-            deploy_profile_weights = get_effective_weights()
-            deploy_profile_id = get_deploy_profile_id()
-            deploy_arbitrator_mode = get_arbitrator_mode()
-            print(
-                f"[eval] deploy config loaded: weights={len(deploy_profile_weights or {})} "
-                f"mode={deploy_arbitrator_mode or 'default'} "
-                f"profile_id={deploy_profile_id or 'none'}",
-                file=sys.stderr,
-            )
-        except Exception as exc:
-            print(f"[eval] --deploy specified but config load failed: {exc}", file=sys.stderr)
-            sys.exit(1)
-
     print(
-        f"[eval] suite={args.suite} windows={len(windows)} ticker={args.ticker} llm={use_llm} deploy={args.deploy}",
+        f"[eval] suite={args.suite} windows={len(windows)} ticker={args.ticker} "
+        f"config={bt_cfg['source_description']}",
         file=sys.stderr,
     )
+
     report = run_suite(
         windows,
         ticker=str(args.ticker),
@@ -125,7 +164,27 @@ def main() -> None:
         runs_dir=args.runs_dir,
         use_llm=use_llm,
         llm_max_steps=llm_max,
+        deploy_profile_weights=bt_cfg.get("profile_weights"),
+        deploy_profile_id=bt_cfg.get("profile_id"),
+        deploy_arbitrator_mode=bt_cfg.get("arbitrator_mode"),
+        take_profit_pct=bt_cfg.get("take_profit_pct", 0.0),
+        stop_loss_pct=bt_cfg.get("stop_loss_pct", 0.0),
+        max_hold_bars=bt_cfg.get("max_hold_bars", 0),
+        forward_validate=bool(args.forward_validate),
+        forward_oos_bars=int(args.forward_oos_bars),
+        deploy_config=bt_cfg,
     )
+    report["resolved_config"] = {
+        "arbitrator_mode": bt_cfg["arbitrator_mode"],
+        "deploy_loaded": bt_cfg["deploy_loaded"],
+        "deploy_path": bt_cfg["deploy_path"],
+        "profile_id": bt_cfg["profile_id"],
+        "profile_weights": bt_cfg.get("profile_weights", {}),
+        "take_profit_pct": bt_cfg["take_profit_pct"],
+        "stop_loss_pct": bt_cfg["stop_loss_pct"],
+        "leverage": bt_cfg["leverage"],
+    }
+
     rp = Path(report["report_path"])
     rp.with_suffix(".md").write_text(report_to_markdown(report), encoding="utf-8")
     print(json.dumps({k: v for k, v in report.items() if k != "windows"}, indent=2))
