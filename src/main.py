@@ -34,7 +34,6 @@ from config.llm_mode import llm_mode_enabled
 from config.run_mode import RunMode, load_run_mode
 from flow_log import FlowEventRepo, get_flow_repo, set_flow_repo
 from leadpage_local_scan import append_local_scan_result
-from llm.arbitrator_llm import signal_arbitrator_llm
 from llm.portfolio_llm import llm_portfolio_execute, llm_portfolio_proposal
 from market.universe import augment_universe_with_oi, select_universe_from_tickers
 from nexus_data.client import NexusDataClient
@@ -1487,17 +1486,9 @@ def build_workflow() -> StateGraph:
     )
     workflow.add_node("desk_risk", _instrument_node("risk", risk))
     workflow.add_node("desk_debate", _instrument_node("desk_debate", desk_debate))
-    # Arbitrator mode selection:
-    #   AIMM_ARBITRATOR_MODE=weighted_convergence  → weighted factor engine (default)
-    #   AIMM_ARBITRATOR_MODE=llm                   → LLM arbitrator
-    import os
-
-    _arb_mode = (os.getenv("AIMM_ARBITRATOR_MODE") or "weighted_convergence").strip().lower()
-    if _arb_mode == "llm":
-        arbitrator_fn = signal_arbitrator_llm
-    else:  # weighted_convergence (default)
-        arbitrator_fn = weighted_arbitrator_node
-    workflow.add_node("signal_arbitrator", _instrument_node("signal_arbitrator", arbitrator_fn))
+    workflow.add_node(
+        "signal_arbitrator", _instrument_node("signal_arbitrator", weighted_arbitrator_node)
+    )
     workflow.add_node(
         "portfolio_proposal",
         _instrument_node("portfolio_proposal", portfolio_proposal),

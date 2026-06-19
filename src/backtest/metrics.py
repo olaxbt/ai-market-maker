@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Sequence
 
 
 def _to_floats(xs: Iterable[float]) -> list[float]:
@@ -123,6 +123,27 @@ class BacktestMetrics:
     win_rate: float
     profit_factor: float | None
     periods_per_year: int
+
+
+def exit_reason_distribution(trades) -> dict[str, Any]:
+    """Return exit reason counts and percentages from a list of Trade-like dicts."""
+    from collections import Counter
+
+    reasons = Counter(
+        str(
+            getattr(t, "exit_reason", t.get("exit_reason", "unknown"))
+            if isinstance(t, dict)
+            else t.exit_reason
+        )
+        for t in trades
+    )  # type: ignore[union-attr]
+    total = sum(reasons.values())
+    pct = {k: round(v / total * 100, 2) if total else 0.0 for k, v in reasons.items()}
+    return {
+        "distribution": dict(reasons),
+        "pct_distribution": pct,
+        "total": total,
+    }
 
 
 def compute_basic_metrics(

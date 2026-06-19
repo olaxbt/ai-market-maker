@@ -43,6 +43,9 @@ class BacktestConfig:
     min_bars_between_trades: int = 0
     instrument: str = "perp"
     leverage: float = 3.0
+    take_profit_pct: float = 0.0
+    stop_loss_pct: float = 0.0
+    max_hold_bars: int = 0
 
 
 class BacktestEngine:
@@ -68,7 +71,9 @@ class BacktestEngine:
                 "export_bundle": config.export_bundle,
                 "instrument": config.instrument,
                 "leverage": config.leverage,
-                # Deploy config extra fields (set dynamically by loop.py)
+                "take_profit_pct": config.take_profit_pct,
+                "stop_loss_pct": config.stop_loss_pct,
+                "max_hold_bars": config.max_hold_bars,
                 "deploy_profile_weights": getattr(config, "deploy_profile_weights", None),
                 "deploy_profile_id": getattr(config, "deploy_profile_id", None),
                 "deploy_arbitrator_mode": getattr(config, "deploy_arbitrator_mode", None),
@@ -125,6 +130,10 @@ class BacktestEngine:
             "funding_rate": 0.0001,
             # Used for Sharpe / Sortino annualization in PerpEngine metrics (must match bar spacing).
             "interval_sec": int(c.get("interval_sec", 300)),
+            # Take-profit / stop-loss levels (fractional percent, e.g. 5.0 = ±5% from entry)
+            "take_profit_pct": float(c.get("take_profit_pct", 0.0)),
+            "stop_loss_pct": float(c.get("stop_loss_pct", 0.0)),
+            "max_hold_bars": int(c.get("max_hold_bars", 0)),
         }
 
         bar_count = max(len(rows) for rows in bars_by_symbol.values())
@@ -143,7 +152,6 @@ class BacktestEngine:
 
             state = initial_hedge_fund_state(ticker=ticker, run_mode=RunMode.BACKTEST.value)
 
-            # Inject deploy config (profile weights + arbitrator mode) when set
             deploy_profile_weights = c.get("deploy_profile_weights")
             if deploy_profile_weights:
                 state["profile_weights"] = deploy_profile_weights
