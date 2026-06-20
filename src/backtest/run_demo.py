@@ -358,6 +358,7 @@ def execute_run_demo(
         max_fetch = min(max_fetch, llm_cap)
 
     bars: list[list[float]] = []
+    _primary_aligned_bars: list[list[float]] | None = None
     res = None
     attempt = 0
 
@@ -407,6 +408,7 @@ def execute_run_demo(
             else:
                 raise ValueError("synthetic bars removed. Use --online or --csv-only.")
         aligned = align_bars_by_min_length(bars_map)
+        _primary_aligned_bars = list(aligned.get(primary) or [])
         interval_m = _infer_interval_sec_from_bars(aligned[primary])
         if (args.online or csv_only) and args.timeframe:
             interval_m = max(interval_m, nominal_interval_sec_for_timeframe(args.timeframe))
@@ -642,13 +644,14 @@ def execute_run_demo(
         from backtest.validation import generate_quality_report
 
         trades_list = read_jsonl_dict_records(trades_path)
-        closes = [float(r[4]) for r in bars if len(r) > 4 and float(r[4]) > 0]
+        _quality_bars = _primary_aligned_bars if sym_list else bars
+        closes = [float(r[4]) for r in _quality_bars if len(r) > 4 and float(r[4]) > 0]
         metrics_d = res.metrics if res is not None else {}
         pf = metrics_d.get("profit_factor") if isinstance(metrics_d, dict) else None
 
         qr = generate_quality_report(
             close_prices=closes,
-            total_bars=len(bars),
+            total_bars=len(_quality_bars),
             trade_count=res.trade_count if res else 0,
             profit_factor=pf,
             trades=trades_list,
@@ -724,16 +727,16 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
 
     from backtest.config import resolve_backtest_config, set_env_from_config
 
+    cli_mode = args.mode
+    if args.llm and cli_mode is None:
+        cli_mode = "agent_llm"
+
     bt_cfg = resolve_backtest_config(
         deploy_path=args.deploy,
-        cli_arbitrator_mode=args.mode,
+        cli_arbitrator_mode=cli_mode,
         cli_tp_sl_pct=args.tp_sl_pct if args.tp_sl_pct > 0 else None,
         cli_leverage=args.leverage,
     )
-
-    if args.llm and args.mode is None:
-        bt_cfg["arbitrator_mode"] = "agent_llm"
-        bt_cfg["use_llm"] = True
 
     set_env_from_config(bt_cfg)
 

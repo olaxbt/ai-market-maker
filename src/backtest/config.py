@@ -91,12 +91,16 @@ def resolve_backtest_config(
             result["profile_id"] = str(profile_id)
 
         exec_cfg = deploy_cfg.get("execution") or {}
-        tp = exec_cfg.get("take_profit_pct") or result["take_profit_pct"]
-        sl = exec_cfg.get("stop_loss_pct") or result["stop_loss_pct"]
+        tp_raw = exec_cfg.get("take_profit_pct")
+        sl_raw = exec_cfg.get("stop_loss_pct")
         lev = exec_cfg.get("leverage") or result["leverage"]
         mhb = exec_cfg.get("max_hold_bars") or result["max_hold_bars"]
-        result["take_profit_pct"] = float(tp) if tp else 0.0
-        result["stop_loss_pct"] = float(sl) if sl else 0.0
+        # Deploy config stores TP/SL as fractions (e.g. 0.025 = 2.5%);
+        # the engine compares against unrealized P&L in percent (2.5).
+        if tp_raw is not None:
+            result["take_profit_pct"] = float(tp_raw) * 100.0
+        if sl_raw is not None:
+            result["stop_loss_pct"] = float(sl_raw) * 100.0
         result["leverage"] = float(lev) if lev else 3.0
         result["max_hold_bars"] = int(mhb) if mhb else 0
 

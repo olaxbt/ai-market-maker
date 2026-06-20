@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import logging
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 from typing import Any
 
 from llm.agent_llm_client import check_api_key, infer_agent
@@ -256,11 +258,14 @@ def _tier0_contracts_by_agent(state: HedgeFundState) -> dict[str, dict[str, Any]
     return result
 
 
-def _inject_llm_signals(state: HedgeFundState) -> HedgeFundState:
-    """Run LLM inference for each enabled agent when mode is agent_llm."""
+def _inject_llm_signals(state: HedgeFundState) -> tuple[HedgeFundState, list[dict[str, Any]]]:
+    """Parallel LLM inference for agent_llm mode.
+
+    Returns local state for arbitration and append-only tier0 contract deltas.
+    """
     mode = _resolve_arbitrator_mode(state)
     if mode != "agent_llm":
-        return state
+        return state, []
 
     key_err = check_api_key()
     if key_err:
@@ -268,7 +273,7 @@ def _inject_llm_signals(state: HedgeFundState) -> HedgeFundState:
 
     llm_agents = _get_llm_enabled_agents(state)
     if not llm_agents:
-        return state
+        return state, []
 
     logger.info(
         "agent_llm mode: running LLM inference for %d agents: %s",
@@ -278,7 +283,11 @@ def _inject_llm_signals(state: HedgeFundState) -> HedgeFundState:
     deterministic = _tier0_contracts_by_agent(state)
     primary_ticker = state.get("ticker", "")
 
-    for agent_id in llm_agents:
+    results: list[dict[str, Any] | None] = [None] * len(llm_agents)
+    lock = Lock()
+
+    def _run_one(idx: int, agent_id: str) -> None:
+        """Run LLM inference for a single agent and store the result."""
         det_contract = deterministic.get(agent_id)
         try:
             llm_result = infer_agent(
@@ -287,17 +296,8 @@ def _inject_llm_signals(state: HedgeFundState) -> HedgeFundState:
                 deterministic_contract=det_contract,
                 ticker=primary_ticker,
             )
-            tier0 = list(state.get("tier0_contracts") or [])
-            replaced = False
-            for i, c in enumerate(tier0):
-                if isinstance(c, dict) and c.get("agent", "") == agent_id:
-                    tier0[i] = dict(llm_result)
-                    replaced = True
-                    break
-            if not replaced:
-                tier0.append(dict(llm_result))
-            state = dict(state)
-            state["tier0_contracts"] = tier0
+            with lock:
+                results[idx] = dict(llm_result)
         except Exception as e:
             logger.error("agent_llm: inference failed for agent %s: %s", agent_id, e)
             if "API key" in str(e):
@@ -311,18 +311,40 @@ def _inject_llm_signals(state: HedgeFundState) -> HedgeFundState:
                 "composite": 50,
                 "confidence": 0.0,
             }
-            tier0 = list(state.get("tier0_contracts") or [])
-            for i, c in enumerate(tier0):
-                if isinstance(c, dict) and c.get("agent", "") == agent_id:
-                    tier0[i] = error_signal
-                    break
-            else:
-                tier0.append(error_signal)
-            state = dict(state)
-            state["tier0_contracts"] = tier0
+            with lock:
+                results[idx] = error_signal
+
+    n_workers = min(len(llm_agents), 9)
+    with ThreadPoolExecutor(max_workers=n_workers) as pool:
+        futures = [pool.submit(_run_one, i, aid) for i, aid in enumerate(llm_agents)]
+        for future in as_completed(futures):
+            exc = future.exception()
+            if exc is not None and "API key" in str(exc):
+                raise exc
+
+    llm_deltas: list[dict[str, Any]] = []
+    for i, agent_id in enumerate(llm_agents):
+        result = results[i]
+        if result is None:
+            continue
+        llm_deltas.append(result)
+        tier0 = list(state.get("tier0_contracts") or [])
+        replaced = False
+        for j, c in enumerate(tier0):
+            if not isinstance(c, dict):
+                continue
+            aid = c.get("agent_id") or c.get("agent", "")
+            if aid == agent_id:
+                tier0[j] = result
+                replaced = True
+                break
+        if not replaced:
+            tier0.append(result)
+        state = dict(state)
+        state["tier0_contracts"] = tier0
 
     state["arbitrator_mode"] = "agent_llm"
-    return state
+    return state, llm_deltas
 
 
 def weighted_arbitrator_node(state: HedgeFundState) -> dict[str, Any]:
@@ -339,7 +361,7 @@ def weighted_arbitrator_node(state: HedgeFundState) -> dict[str, Any]:
       - ``reasoning_logs`` — per-agent scores + final decision
     """
     # agent_llm mode: inject LLM signals before arbitration
-    state = _inject_llm_signals(state)
+    state, llm_deltas = _inject_llm_signals(state)
 
     # Resolve weights (supports Profile Agent injection)
     agent_weights = _resolve_agent_weights(state)
@@ -439,7 +461,7 @@ def weighted_arbitrator_node(state: HedgeFundState) -> dict[str, Any]:
             )
         )
 
-    return {
+    out: dict[str, Any] = {
         "proposed_signal": proposed_signal,
         "trade_intent": intent,
         "reasoning_logs": reasoning_logs,
@@ -452,6 +474,10 @@ def weighted_arbitrator_node(state: HedgeFundState) -> dict[str, Any]:
             "alignment_gated": result.alignment_gated,
         },
     }
+    if llm_deltas:
+        # Append-only: LangGraph ``tier0_contracts`` uses operator.add (last wins per agent).
+        out["tier0_contracts"] = llm_deltas
+    return out
 
 
 __all__ = ["weighted_arbitrator_node"]

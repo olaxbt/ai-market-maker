@@ -13,8 +13,8 @@ DEPLOY_AGENT_LLM = {
     "effective_weights": {"agent_a": 0.3, "agent_b": 0.2},
     "execution": {
         "arbitrator_mode": "agent_llm",
-        "take_profit_pct": 5.0,
-        "stop_loss_pct": 5.0,
+        "take_profit_pct": 0.05,  # fraction → 5.0%
+        "stop_loss_pct": 0.05,
         "leverage": 5.0,
         "max_hold_bars": 48,
     },
@@ -26,8 +26,8 @@ DEPLOY_WEIGHTED = {
     "effective_weights": {"trend": 0.5, "momentum": 0.5},
     "execution": {
         "arbitrator_mode": "weighted_convergence",
-        "take_profit_pct": 3.0,
-        "stop_loss_pct": 3.0,
+        "take_profit_pct": 0.03,  # fraction → 3.0%
+        "stop_loss_pct": 0.03,
         "leverage": 3.0,
     },
     "profile": {"profile_id": "quant-v1"},

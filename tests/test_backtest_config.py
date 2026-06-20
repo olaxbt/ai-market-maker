@@ -18,8 +18,8 @@ from backtest.config import (
 def _sample_deploy_config(
     *,
     mode: str = "agent_llm",
-    tp: float = 5.0,
-    sl: float = 5.0,
+    tp: float = 0.05,
+    sl: float = 0.05,
     lev: float = 5.0,
 ) -> dict:
     return {

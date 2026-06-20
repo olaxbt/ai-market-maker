@@ -366,10 +366,20 @@ def _segment_regimes(
     min_segments: int = 3,
     max_segments: int = 6,
 ) -> list[MarketRegime]:
-    """Split the price series into segments and classify each."""
+    """Split the price series into segments and classify each.
+
+    For short series (< 60 bars) the full window is used as a single
+    regime detection chunk.  Longer series are split so the suite can
+    aggregate across windows via ``regime_coverage_check``.
+    """
     xs = [float(x) for x in close_prices if x > 0]
     n = len(xs)
     if n < 20:
+        return [detect_market_regime(xs)]
+
+    # Short window (< 60 bars) — run regime detection on the full series;
+    # this prevents false separation that would produce fake "sideways" segments.
+    if n < 60:
         return [detect_market_regime(xs)]
 
     # Aim for segments of roughly 30-50 bars each
