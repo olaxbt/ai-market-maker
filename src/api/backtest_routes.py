@@ -25,6 +25,7 @@ from backtest.bars import (
     iso_utc_to_ms,
     load_ohlcv_json,
 )
+from backtest.config import resolve_backtest_config, set_env_from_config
 from backtest.exchange_trade_format import normalize_trade_row_for_api
 from backtest.loop import MultiStepResult, run_multi_step_backtest
 from backtest.trade_book import read_jsonl_dict_records
@@ -180,6 +181,8 @@ def _execute_quick_backtest(
     run_id: str | None = None,
     on_bar_complete: Callable[[int, int, dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
+    cfg = resolve_backtest_config()
+    set_env_from_config(cfg)
     cap = _max_api_steps()
     tf = interval_sec_to_ccxt_timeframe(int(req.interval_sec))
     ex_id = (req.exchange_id or "binance").strip().lower()
@@ -248,6 +251,13 @@ def _execute_quick_backtest(
         max_steps=effective,
         run_id=run_id,
         progress_callback=on_bar_complete,
+        deploy_config=cfg,
+        deploy_profile_weights=cfg.get("profile_weights") or None,
+        deploy_profile_id=cfg.get("profile_id") or None,
+        deploy_arbitrator_mode=cfg.get("arbitrator_mode") or None,
+        take_profit_pct=cfg.get("take_profit_pct", 0.0),
+        stop_loss_pct=cfg.get("stop_loss_pct", 0.0),
+        max_hold_bars=cfg.get("max_hold_bars", 0),
     )
     logger.info(
         "backtest done run_id=%s trade_count=%s final_equity=%s",
@@ -265,6 +275,10 @@ def _execute_quick_backtest(
         "capped": effective < min(want, req.n_bars),
         "server_max_steps": cap,
     }
+    if result.quality_report:
+        out["quality_report"] = result.quality_report
+    if result.resolved_config:
+        out["resolved_config"] = result.resolved_config
     if strategy:
         out["strategy"] = strategy
     return out
@@ -276,6 +290,8 @@ def _execute_demo_backtest(
     run_id: str | None = None,
     on_bar_complete: Callable[[int, int, dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
+    cfg = resolve_backtest_config()
+    set_env_from_config(cfg)
     cap = _max_api_steps()
     want = int(req.steps)
     effective = max(1, min(want, cap))
@@ -323,6 +339,13 @@ def _execute_demo_backtest(
         max_steps=effective,
         run_id=run_id,
         progress_callback=on_bar_complete,
+        deploy_config=cfg,
+        deploy_profile_weights=cfg.get("profile_weights") or None,
+        deploy_profile_id=cfg.get("profile_id") or None,
+        deploy_arbitrator_mode=cfg.get("arbitrator_mode") or None,
+        take_profit_pct=cfg.get("take_profit_pct", 0.0),
+        stop_loss_pct=cfg.get("stop_loss_pct", 0.0),
+        max_hold_bars=cfg.get("max_hold_bars", 0),
     )
 
     out: dict[str, Any] = {
@@ -338,6 +361,10 @@ def _execute_demo_backtest(
         "timeframe": tf,
         "exchange_id": ex_id,
     }
+    if result.quality_report:
+        out["quality_report"] = result.quality_report
+    if result.resolved_config:
+        out["resolved_config"] = result.resolved_config
     return out
 
 
@@ -683,6 +710,8 @@ def post_backtest_from_file(req: FileBacktestRequest) -> dict[str, Any]:
     cap = _max_api_steps()
     want = req.max_steps if req.max_steps is not None else len(bars)
     effective = min(want, len(bars), cap)
+    cfg = resolve_backtest_config()
+    set_env_from_config(cfg)
     result = run_multi_step_backtest(
         ticker=ticker,
         bars=bars,
@@ -691,8 +720,15 @@ def post_backtest_from_file(req: FileBacktestRequest) -> dict[str, Any]:
         interval_sec=req.interval_sec,
         runs_dir=RUNS_DIR,
         max_steps=effective,
+        deploy_config=cfg,
+        deploy_profile_weights=cfg.get("profile_weights") or None,
+        deploy_profile_id=cfg.get("profile_id") or None,
+        deploy_arbitrator_mode=cfg.get("arbitrator_mode") or None,
+        take_profit_pct=cfg.get("take_profit_pct", 0.0),
+        stop_loss_pct=cfg.get("stop_loss_pct", 0.0),
+        max_hold_bars=cfg.get("max_hold_bars", 0),
     )
-    return {
+    out: dict[str, Any] = {
         "run_id": result.run_id,
         "steps": result.steps,
         "trade_count": result.trade_count,
@@ -702,6 +738,11 @@ def post_backtest_from_file(req: FileBacktestRequest) -> dict[str, Any]:
         "capped": effective < min(want, len(bars)),
         "server_max_steps": cap,
     }
+    if result.quality_report:
+        out["quality_report"] = result.quality_report
+    if result.resolved_config:
+        out["resolved_config"] = result.resolved_config
+    return out
 
 
 @router.get("/backtests/{run_id}/summary")

@@ -104,6 +104,12 @@ class PerpEngine:
         self._last_bar_ts: int = 0
         self.interval_sec: int = max(60, int(cfg.get("interval_sec", 300)))
 
+        # Take-profit / stop-loss levels (fractional, e.g. 5.0 = ±5% from entry)
+        self.take_profit_pct: float = float(cfg.get("take_profit_pct", 0.0))
+        self.stop_loss_pct: float = float(cfg.get("stop_loss_pct", 0.0))
+        # Max hold bars — close position after N bars (timeout). 0 = disabled.
+        self.max_hold_bars: int = int(cfg.get("max_hold_bars", 0))
+
     def can_execute(self, direction: int, bar) -> bool:
         return True
 
@@ -127,6 +133,8 @@ class PerpEngine:
     def on_bar(self, symbol: str, close: float, timestamp_ms: int) -> None:
         self._apply_funding(symbol, close, timestamp_ms)
         self._check_liquidation(symbol, close, timestamp_ms)
+        self._check_tp_sl(symbol, close, timestamp_ms)
+        self._check_timeout(symbol, close, timestamp_ms)
 
     def _apply_funding(self, symbol: str, close: float, ts_ms: int) -> None:
         from datetime import datetime, timezone
@@ -169,6 +177,50 @@ class PerpEngine:
                 symbol,
                 self.apply_slippage(close, -pos.direction),
                 "liquidation",
+                exit_ts_ms=int(timestamp_ms),
+            )
+
+    def _check_timeout(self, symbol: str, close: float, timestamp_ms: int) -> None:
+        """Close positions that have been held longer than max_hold_bars."""
+        pos = self.positions.get(symbol)
+        if pos is None:
+            return
+        if self.max_hold_bars <= 0:
+            return
+
+        held_bars = self._bar_index - pos.entry_bar_index
+        if held_bars >= self.max_hold_bars:
+            self._close(
+                symbol,
+                self.apply_slippage(close, -pos.direction),
+                "timeout",
+                exit_ts_ms=int(timestamp_ms),
+            )
+
+    def _check_tp_sl(self, symbol: str, close: float, timestamp_ms: int) -> None:
+        """Close positions that hit take-profit or stop-loss levels."""
+        pos = self.positions.get(symbol)
+        if pos is None:
+            return
+        if self.take_profit_pct <= 0 and self.stop_loss_pct <= 0:
+            return
+
+        unrealized_pnl_pct = pos.direction * (close - pos.entry_price) / pos.entry_price * 100.0
+
+        if self.take_profit_pct > 0 and unrealized_pnl_pct >= self.take_profit_pct:
+            self._close(
+                symbol,
+                self.apply_slippage(close, -pos.direction),
+                "take_profit",
+                exit_ts_ms=int(timestamp_ms),
+            )
+            return
+
+        if self.stop_loss_pct > 0 and unrealized_pnl_pct <= -self.stop_loss_pct:
+            self._close(
+                symbol,
+                self.apply_slippage(close, -pos.direction),
+                "stop_loss",
                 exit_ts_ms=int(timestamp_ms),
             )
 
@@ -422,7 +474,9 @@ class PerpEngine:
 
     def _calc_metrics(self) -> dict[str, Any]:
         from backtest.metrics import (
+            exit_reason_distribution,
             periods_per_year_from_interval_sec,
+            profit_factor,
             returns_from_equity,
             sharpe_ratio,
         )
@@ -453,6 +507,8 @@ class PerpEngine:
 
         wins = [t for t in self.trades if t.pnl > 0]
         win_rate = len(wins) / len(self.trades) * 100 if self.trades else 0.0
+        pf = profit_factor([t.pnl for t in self.trades])
+        exit_dist = exit_reason_distribution([{"exit_reason": t.exit_reason} for t in self.trades])
 
         return {
             "total_return_pct": round(total_return, 4),
@@ -462,9 +518,11 @@ class PerpEngine:
             "sharpe_annualization_bars_per_year": ppy,
             "sharpe_bar_interval_sec_used": bar_sec,
             "win_rate_pct": round(win_rate, 2),
+            "profit_factor": pf,
             "total_trades": len(self.trades),
             "total_pnl_usd": round(sum(t.pnl for t in self.trades), 2),
             "total_commission": round(sum(t.commission for t in self.trades), 2),
+            "exit_reasons": exit_dist,
         }
 
     def _finalize(

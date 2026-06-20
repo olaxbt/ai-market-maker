@@ -189,7 +189,50 @@ def build_run_demo_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--llm",
         action="store_true",
-        help="Set AI_MARKET_MAKER_USE_LLM=1 before the run (LLM per bar; requires provider keys).",
+        help=(
+            "Enable LLM arbitrator (uses ``agent_llm`` mode, per-agent LLM). "
+            "Requires provider keys. Equivalent to ``--mode agent_llm``."
+        ),
+    )
+    parser.add_argument(
+        "--mode",
+        default=None,
+        choices=("agent_llm", "weighted_convergence"),
+        help=(
+            "Arbitrator mode: ``agent_llm`` (per-agent LLM → weighted arbitrator), "
+            "``weighted_convergence`` (deterministic, no LLM). "
+            "Overrides deploy config if set."
+        ),
+    )
+    parser.add_argument(
+        "--deploy",
+        nargs="?",
+        const="config/deploy.active.json",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Load deploy config (weights + arbitrator mode + execution policy). "
+            "Default: config/deploy.active.json."
+        ),
+    )
+    parser.add_argument(
+        "--tp-sl-pct",
+        type=float,
+        default=0.0,
+        metavar="PCT",
+        help="Set symmetric take-profit / stop-loss at ±PCT%% from entry. E.g. 5.0 = ±5%% TP/SL. 0 = disabled.",
+    )
+    parser.add_argument(
+        "--forward-validate",
+        action="store_true",
+        help="Split data: train on older bars, validate on most recent 30 bars (out-of-sample).",
+    )
+    parser.add_argument(
+        "--forward-oos-bars",
+        type=int,
+        default=30,
+        metavar="N",
+        help="Number of out-of-sample bars for --forward-validate (default: 30).",
     )
     parser.add_argument(
         "--runs-dir",
@@ -215,6 +258,11 @@ def build_run_demo_parser() -> argparse.ArgumentParser:
         "--csv-only",
         action="store_true",
         help="Load bars from cache dir only (no network). Requires CSVs from prefetch_ohlcv.",
+    )
+    parser.add_argument(
+        "--quality",
+        action="store_true",
+        help="Quality preset: --steps 200 --min-trades 30 --tp-sl-pct 5 --forward-validate.",
     )
     return parser
 
@@ -267,10 +315,18 @@ def resolve_run_demo_symbols(
     return [], str(args.ticker)
 
 
-def execute_run_demo(args: argparse.Namespace, parser: argparse.ArgumentParser) -> dict[str, Any]:
+def execute_run_demo(
+    args: argparse.Namespace,
+    parser: argparse.ArgumentParser,
+    deploy_config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     sym_list, primary = resolve_run_demo_symbols(args, parser)
     runs_dir_path = Path(args.runs_dir).expanduser() if args.runs_dir else None
     fee_bps = float(load_app_settings().paper.fee_bps)
+
+    _dep_w = (deploy_config or {}).get("profile_weights") or None
+    _dep_id = (deploy_config or {}).get("profile_id") or None
+    _dep_mode = (deploy_config or {}).get("arbitrator_mode") or None
 
     raw_cache = (
         getattr(args, "ohlcv_cache_dir", None) or load_app_settings().market.ohlcv_cache_dir or ""
@@ -302,6 +358,7 @@ def execute_run_demo(args: argparse.Namespace, parser: argparse.ArgumentParser) 
         max_fetch = min(max_fetch, llm_cap)
 
     bars: list[list[float]] = []
+    _primary_aligned_bars: list[list[float]] | None = None
     res = None
     attempt = 0
 
@@ -351,6 +408,7 @@ def execute_run_demo(args: argparse.Namespace, parser: argparse.ArgumentParser) 
             else:
                 raise ValueError("synthetic bars removed. Use --online or --csv-only.")
         aligned = align_bars_by_min_length(bars_map)
+        _primary_aligned_bars = list(aligned.get(primary) or [])
         interval_m = _infer_interval_sec_from_bars(aligned[primary])
         if (args.online or csv_only) and args.timeframe:
             interval_m = max(interval_m, nominal_interval_sec_for_timeframe(args.timeframe))
@@ -364,6 +422,12 @@ def execute_run_demo(args: argparse.Namespace, parser: argparse.ArgumentParser) 
             runs_dir=runs_dir_path,
             instrument=args.instrument,
             leverage=args.leverage,
+            take_profit_pct=args.tp_sl_pct,
+            stop_loss_pct=args.tp_sl_pct,
+            deploy_config=deploy_config,
+            deploy_profile_weights=_dep_w,
+            deploy_profile_id=_dep_id,
+            deploy_arbitrator_mode=_dep_mode,
         )
 
     while not sym_list:
@@ -431,6 +495,12 @@ def execute_run_demo(args: argparse.Namespace, parser: argparse.ArgumentParser) 
             runs_dir=runs_dir_path,
             instrument=args.instrument,
             leverage=args.leverage,
+            take_profit_pct=args.tp_sl_pct,
+            stop_loss_pct=args.tp_sl_pct,
+            deploy_config=deploy_config,
+            deploy_profile_weights=_dep_w,
+            deploy_profile_id=_dep_id,
+            deploy_arbitrator_mode=_dep_mode,
         )
 
         need = int(args.min_trades)
@@ -485,7 +555,115 @@ def execute_run_demo(args: argparse.Namespace, parser: argparse.ArgumentParser) 
         out["multi_asset"] = True
         out["universe"] = list(sym_list)
 
-    # ── Auto-submit to leaderboard if enabled ──
+    fwd_result = None
+    if args.forward_validate and not sym_list:
+        from backtest.validation import ForwardValidationResult
+
+        bars_all = list(bars)
+        if len(bars) > args.forward_oos_bars:
+            split_idx = len(bars_all) - args.forward_oos_bars
+            bars_is = bars_all[:split_idx]
+            bars_oos = bars_all[split_idx:]
+
+            res_is = run_multi_step_backtest(
+                ticker=args.ticker,
+                bars=bars_is,
+                initial_cash=args.initial_cash,
+                initial_btc=ibtc,
+                fee_bps=fee_bps,
+                interval_sec=interval_sec,
+                run_id=f"{out.get('run_id', 'bt')}_insample",
+                runs_dir=runs_dir_path,
+                instrument=args.instrument,
+                leverage=args.leverage,
+                take_profit_pct=args.tp_sl_pct,
+                stop_loss_pct=args.tp_sl_pct,
+                deploy_config=deploy_config,
+                deploy_profile_weights=_dep_w,
+                deploy_profile_id=_dep_id,
+                deploy_arbitrator_mode=_dep_mode,
+            )
+
+            res_oos = run_multi_step_backtest(
+                ticker=args.ticker,
+                bars=bars_oos,
+                initial_cash=args.initial_cash,
+                fee_bps=fee_bps,
+                interval_sec=interval_sec,
+                run_id=f"{out.get('run_id', 'bt')}_oos",
+                runs_dir=runs_dir_path,
+                take_profit_pct=args.tp_sl_pct,
+                stop_loss_pct=args.tp_sl_pct,
+                instrument=args.instrument,
+                leverage=args.leverage,
+                deploy_config=deploy_config,
+                deploy_profile_weights=_dep_w,
+                deploy_profile_id=_dep_id,
+                deploy_arbitrator_mode=_dep_mode,
+            )
+
+            is_ret = float(res_is.metrics.get("total_return_pct") or 0)
+            oos_ret = float(res_oos.metrics.get("total_return_pct") or 0)
+            is_sharpe = float(res_is.metrics.get("sharpe") or 0)
+            oos_sharpe = float(res_oos.metrics.get("sharpe") or 0)
+
+            fwd_result = ForwardValidationResult(
+                in_sample_bars=len(bars_is),
+                out_of_sample_bars=len(bars_oos),
+                in_sample_return_pct=is_ret,
+                out_of_sample_return_pct=oos_ret,
+                in_sample_sharpe=is_sharpe,
+                out_of_sample_sharpe=oos_sharpe,
+                passed=oos_ret > 0 or (oos_sharpe > -0.5),
+                warning=None
+                if oos_ret > 0
+                else (
+                    f"OOS return {oos_ret:.2f}% (IS {is_ret:.2f}%) — strategy may not generalize."
+                ),
+            )
+            print(
+                f"[forward] IS: {len(bars_is)} bars ret={is_ret:.2f}% sharpe={is_sharpe:.2f} "
+                f"| OOS: {len(bars_oos)} bars ret={oos_ret:.2f}% sharpe={oos_sharpe:.2f}",
+                file=sys.stderr,
+            )
+            out["forward_validation"] = {
+                "in_sample_bars": len(bars_is),
+                "out_of_sample_bars": len(bars_oos),
+                "in_sample_return_pct": round(is_ret, 4),
+                "out_of_sample_return_pct": round(oos_ret, 4),
+                "in_sample_sharpe": round(is_sharpe, 4),
+                "out_of_sample_sharpe": round(oos_sharpe, 4),
+                "in_sample_run_id": res_is.run_id,
+                "out_of_sample_run_id": res_oos.run_id,
+                "passed": oos_ret > 0 or (oos_sharpe > -0.5),
+            }
+
+    trades_path = Path(out.get("trades_path", ""))
+    if trades_path.is_file():
+        from backtest.trade_book import read_jsonl_dict_records
+        from backtest.validation import generate_quality_report
+
+        trades_list = read_jsonl_dict_records(trades_path)
+        _quality_bars = _primary_aligned_bars if sym_list else bars
+        closes = [float(r[4]) for r in _quality_bars if len(r) > 4 and float(r[4]) > 0]
+        metrics_d = res.metrics if res is not None else {}
+        pf = metrics_d.get("profit_factor") if isinstance(metrics_d, dict) else None
+
+        qr = generate_quality_report(
+            close_prices=closes,
+            total_bars=len(_quality_bars),
+            trade_count=res.trade_count if res else 0,
+            profit_factor=pf,
+            trades=trades_list,
+            forward_result=fwd_result,
+        )
+        out["quality_report"] = qr.to_dict()
+        if qr.warnings:
+            print(
+                f"[quality] {len(qr.warnings)} warning(s): {' | '.join(qr.warnings)}",
+                file=sys.stderr,
+            )
+
     try:
         if load_leaderboard_submit_config is None or submit_backtest_result is None:
             raise ImportError("leaderboard submitter not available")
@@ -532,15 +710,51 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
     apply_strategy_env_defaults_from_settings(load_app_settings())
     parser = build_run_demo_parser()
     args = parser.parse_args(argv)
-    if args.llm:
-        os.environ["AI_MARKET_MAKER_USE_LLM"] = "1"
-        os.environ["AIMM_ARBITRATOR_MODE"] = "llm"
-        os.environ["AIMM_LLM_DESK_DEBATE"] = "0"
-    else:
-        # Disable LLM nodes even when OPENAI_API_KEY is set in the environment.
+
+    if args.quality:
+        if not args.steps or args.steps < 200:
+            args.steps = 200
+        if args.min_trades < 30:
+            args.min_trades = 30
+        if args.tp_sl_pct <= 0:
+            args.tp_sl_pct = 5.0
+        if not args.forward_validate:
+            args.forward_validate = True
+        print(
+            "[quality] preset: --steps 200 --min-trades 30 --tp-sl-pct 5 --forward-validate",
+            file=sys.stderr,
+        )
+
+    from backtest.config import resolve_backtest_config, set_env_from_config
+
+    cli_mode = args.mode
+    if args.llm and cli_mode is None:
+        cli_mode = "agent_llm"
+
+    bt_cfg = resolve_backtest_config(
+        deploy_path=args.deploy,
+        cli_arbitrator_mode=cli_mode,
+        cli_tp_sl_pct=args.tp_sl_pct if args.tp_sl_pct > 0 else None,
+        cli_leverage=args.leverage,
+    )
+
+    set_env_from_config(bt_cfg)
+
+    if bt_cfg["arbitrator_mode"] in ("weighted_convergence",):
         os.environ["AIMM_LLM_MODE"] = "0"
-        os.environ["AI_MARKET_MAKER_USE_LLM"] = "0"
-    out = execute_run_demo(args, parser)
+
+    out = execute_run_demo(args, parser, deploy_config=bt_cfg)
+    out["resolved_config"] = {
+        "arbitrator_mode": bt_cfg["arbitrator_mode"],
+        "deploy_loaded": bt_cfg["deploy_loaded"],
+        "deploy_path": bt_cfg["deploy_path"],
+        "profile_id": bt_cfg["profile_id"],
+        "profile_weights": bt_cfg.get("profile_weights", {}),
+        "take_profit_pct": bt_cfg["take_profit_pct"],
+        "stop_loss_pct": bt_cfg["stop_loss_pct"],
+        "leverage": bt_cfg["leverage"],
+        "source_description": bt_cfg["source_description"],
+    }
     print(json.dumps(out, indent=2), flush=True)
     return out
 
