@@ -111,6 +111,52 @@ def _dedupe_leaderboard_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]
     return [*tail, *out_map.values()]
 
 
+def _prefer_leaderboard_row(candidate: dict[str, Any], incumbent: dict[str, Any]) -> bool:
+    """True when ``candidate`` should replace ``incumbent`` for semantic dedupe."""
+    rid_c = str(candidate.get("run_id") or "")
+    rid_i = str(incumbent.get("run_id") or "")
+    if rid_c.startswith("bt_") and not rid_i.startswith("bt_"):
+        return True
+    if rid_i.startswith("bt_") and not rid_c.startswith("bt_"):
+        return False
+    ts_c = _float_or_none(candidate.get("ts")) or 0.0
+    ts_i = _float_or_none(incumbent.get("ts")) or 0.0
+    if ts_c != ts_i:
+        return ts_c > ts_i
+    return _leaderboard_row_completeness(candidate) > _leaderboard_row_completeness(incumbent)
+
+
+def _dedupe_semantic_leaderboard_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One visible row per distinct outcome (ticker + return + trade count).
+
+    Local scan loops often emit dozens of runs with identical metrics; keep the best
+    representative (prefer ``bt_*`` disk summaries, then newest timestamp).
+    """
+    best: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        ticker = str(r.get("ticker") or "").strip().lower()
+        ret = _float_or_none(r.get("total_return_pct"))
+        ret_key = f"{ret:.2f}" if isinstance(ret, float) else "?"
+        tc_raw = r.get("trade_count")
+        tc_key = int(tc_raw) if isinstance(tc_raw, (int, float)) else 0
+        key = f"{ticker}|{ret_key}|{tc_key}"
+        old = best.get(key)
+        if old is None or _prefer_leaderboard_row(r, old):
+            best[key] = r
+    return list(best.values())
+
+
+def _is_low_quality_smoke_row(row: dict[str, Any]) -> bool:
+    """Synthetic ``perp_*`` fixtures (20 bars, ≤2 trades) with invalid epoch timestamps."""
+    rid = str(row.get("run_id") or "")
+    if not rid.startswith("perp_"):
+        return False
+    tc = row.get("trade_count")
+    if isinstance(tc, (int, float)) and int(tc) <= 2:
+        return True
+    return False
+
+
 def _overlay_disk_summary_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Fill gaps from ``.runs/backtests/<run_id>/summary.json`` when Postgres/JSONL rows are stale or partial."""
     out: list[dict[str, Any]] = []
@@ -411,6 +457,33 @@ def _float_or_none(v: Any) -> float | None:
         return None
 
 
+_LEADERBOARD_SHARPE_MAX = 10.0
+
+
+def _sanitize_leaderboard_ts(raw: Any) -> int | None:
+    """Reject bar indices and other non-epoch values masquerading as timestamps."""
+    v = _float_or_none(raw)
+    if v is None or v <= 0:
+        return None
+    sec = int(v // 1000) if v > 10_000_000_000 else int(v)
+    if sec < 1_577_836_800:  # 2020-01-01 UTC
+        return None
+    now = int(time.time())
+    if sec > now + 3600:
+        return None
+    return sec
+
+
+def _sanitize_leaderboard_sharpe(v: Any) -> float | None:
+    """Drop absurd Sharpe values from tiny samples (e.g. 2-bar paper scans)."""
+    sh = _float_or_none(v)
+    if sh is None:
+        return None
+    if abs(sh) > _LEADERBOARD_SHARPE_MAX:
+        return None
+    return sh
+
+
 def _leaderboard_row_from_summary(*, run_id: str, summary: dict[str, Any]) -> dict[str, Any]:
     evaluation = summary.get("evaluation") if isinstance(summary.get("evaluation"), dict) else {}
     metrics = summary.get("metrics") if isinstance(summary.get("metrics"), dict) else {}
@@ -425,6 +498,7 @@ def _leaderboard_row_from_summary(*, run_id: str, summary: dict[str, Any]) -> di
     sharpe = _float_or_none(metrics.get("sharpe"))
     if sharpe is None:
         sharpe = _float_or_none(metrics.get("sharpe_ratio"))
+    sharpe = _sanitize_leaderboard_sharpe(sharpe)
 
     mdd_pct = None
     raw_mdd_pct = metrics.get("max_drawdown_pct")
@@ -484,11 +558,11 @@ def _leaderboard_row_from_summary(*, run_id: str, summary: dict[str, Any]) -> di
     ts_out: int | None = None
     raw_ts = summary.get("ts")
     if isinstance(raw_ts, (int, float)) and raw_ts > 0:
-        ts_out = int(raw_ts // 1000) if raw_ts > 10_000_000_000 else int(raw_ts)
+        ts_out = _sanitize_leaderboard_ts(raw_ts)
     else:
         end_ts = summary.get("end_ts")
         if isinstance(end_ts, (int, float)) and end_ts > 0:
-            ts_out = int(end_ts // 1000) if end_ts > 10_000_000_000 else int(end_ts)
+            ts_out = _sanitize_leaderboard_ts(end_ts)
 
     syms = summary.get("symbols")
     ticker = summary.get("ticker")
@@ -994,16 +1068,22 @@ def get_leaderboard(
 
     rows = [_enrich_leaderboard_row_from_meta_summary(dict(r)) for r in rows]
     rows = _dedupe_leaderboard_rows(rows)
+    rows = _dedupe_semantic_leaderboard_rows(rows)
+    rows = [r for r in rows if not _is_low_quality_smoke_row(r)]
     rows = _overlay_disk_summary_rows(rows)
 
     for row in rows:
         if str(row.get("provider") or "").strip():
-            continue
-        rid = row.get("run_id")
-        if isinstance(rid, str) and rid.startswith("bt_"):
-            row["provider"] = "local"
-        elif row.get("source") == "local":
-            row["provider"] = "local"
+            pass
+        else:
+            rid = row.get("run_id")
+            if isinstance(rid, str) and rid.startswith("bt_"):
+                row["provider"] = "local"
+            elif row.get("source") == "local":
+                row["provider"] = "local"
+        row["sharpe"] = _sanitize_leaderboard_sharpe(row.get("sharpe"))
+        sanitized_ts = _sanitize_leaderboard_ts(row.get("ts"))
+        row["ts"] = sanitized_ts
 
     def key_return(r: dict[str, Any]) -> tuple[float, float]:
         v = _float_or_none(r.get("total_return_pct"))
