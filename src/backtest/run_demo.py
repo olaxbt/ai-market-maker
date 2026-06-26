@@ -315,12 +315,27 @@ def resolve_run_demo_symbols(
     return [], str(args.ticker)
 
 
+def _resolve_run_leverage(
+    args: argparse.Namespace,
+    deploy_config: dict[str, Any] | None,
+) -> float | None:
+    """CLI --leverage wins; else deploy/backtest config; else paper default in loop."""
+    if args.leverage is not None:
+        return float(args.leverage)
+    dc = deploy_config or {}
+    lev = dc.get("leverage")
+    if lev is not None:
+        return float(lev)
+    return None
+
+
 def execute_run_demo(
     args: argparse.Namespace,
     parser: argparse.ArgumentParser,
     deploy_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     sym_list, primary = resolve_run_demo_symbols(args, parser)
+    run_leverage = _resolve_run_leverage(args, deploy_config)
     runs_dir_path = Path(args.runs_dir).expanduser() if args.runs_dir else None
     fee_bps = float(load_app_settings().paper.fee_bps)
 
@@ -421,13 +436,14 @@ def execute_run_demo(
             run_id=args.run_id,
             runs_dir=runs_dir_path,
             instrument=args.instrument,
-            leverage=args.leverage,
+            leverage=run_leverage,
             take_profit_pct=args.tp_sl_pct,
             stop_loss_pct=args.tp_sl_pct,
             deploy_config=deploy_config,
             deploy_profile_weights=_dep_w,
             deploy_profile_id=_dep_id,
             deploy_arbitrator_mode=_dep_mode,
+            timeframe=tf,
         )
 
     while not sym_list:
@@ -494,13 +510,14 @@ def execute_run_demo(
             else f"{args.run_id or 'bt'}_e{attempt}_{int(time.time())}",
             runs_dir=runs_dir_path,
             instrument=args.instrument,
-            leverage=args.leverage,
+            leverage=run_leverage,
             take_profit_pct=args.tp_sl_pct,
             stop_loss_pct=args.tp_sl_pct,
             deploy_config=deploy_config,
             deploy_profile_weights=_dep_w,
             deploy_profile_id=_dep_id,
             deploy_arbitrator_mode=_dep_mode,
+            timeframe=tf,
         )
 
         need = int(args.min_trades)
@@ -575,7 +592,7 @@ def execute_run_demo(
                 run_id=f"{out.get('run_id', 'bt')}_insample",
                 runs_dir=runs_dir_path,
                 instrument=args.instrument,
-                leverage=args.leverage,
+                leverage=run_leverage,
                 take_profit_pct=args.tp_sl_pct,
                 stop_loss_pct=args.tp_sl_pct,
                 deploy_config=deploy_config,
@@ -595,7 +612,7 @@ def execute_run_demo(
                 take_profit_pct=args.tp_sl_pct,
                 stop_loss_pct=args.tp_sl_pct,
                 instrument=args.instrument,
-                leverage=args.leverage,
+                leverage=run_leverage,
                 deploy_config=deploy_config,
                 deploy_profile_weights=_dep_w,
                 deploy_profile_id=_dep_id,
@@ -702,6 +719,16 @@ def execute_run_demo(
     except Exception:
         pass
 
+    try:
+        from backtest.report_html import write_backtest_report_html
+
+        if res.summary_path and res.summary_path.is_file():
+            report_path = write_backtest_report_html(res.summary_path.parent)
+            out["report_path"] = str(report_path)
+            print(f"[report] {report_path}", file=sys.stderr)
+    except Exception as exc:
+        print(f"[report] skipped: {exc}", file=sys.stderr)
+
     return out
 
 
@@ -720,6 +747,9 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
             args.tp_sl_pct = 5.0
         if not args.forward_validate:
             args.forward_validate = True
+        # Auto-enable verbose receipts for quality runs (T14)
+        if os.environ.get("AIMM_BACKTEST_VERBOSE_RECEIPTS") is None:
+            os.environ["AIMM_BACKTEST_VERBOSE_RECEIPTS"] = "1"
         print(
             "[quality] preset: --steps 200 --min-trades 30 --tp-sl-pct 5 --forward-validate",
             file=sys.stderr,
@@ -744,6 +774,13 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
         os.environ["AIMM_LLM_MODE"] = "0"
 
     out = execute_run_demo(args, parser, deploy_config=bt_cfg)
+    actual_lev = bt_cfg["leverage"]
+    try:
+        sp = Path(out.get("summary_path", ""))
+        if sp.is_file():
+            actual_lev = json.loads(sp.read_text(encoding="utf-8")).get("leverage", actual_lev)
+    except Exception:
+        pass
     out["resolved_config"] = {
         "arbitrator_mode": bt_cfg["arbitrator_mode"],
         "deploy_loaded": bt_cfg["deploy_loaded"],
@@ -752,7 +789,7 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
         "profile_weights": bt_cfg.get("profile_weights", {}),
         "take_profit_pct": bt_cfg["take_profit_pct"],
         "stop_loss_pct": bt_cfg["stop_loss_pct"],
-        "leverage": bt_cfg["leverage"],
+        "leverage": actual_lev,
         "source_description": bt_cfg["source_description"],
     }
     print(json.dumps(out, indent=2), flush=True)

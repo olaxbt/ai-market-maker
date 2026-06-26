@@ -77,6 +77,7 @@ def run_multi_step_backtest(
     stop_loss_pct: float = 0.0,
     max_hold_bars: int = 0,
     deploy_config: dict[str, Any] | None = None,
+    timeframe: str = "",
 ) -> MultiStepResult:
     """Run a deterministic multi-step backtest and persist artifacts under ``.runs/``."""
     app = load_app_settings()
@@ -95,6 +96,8 @@ def run_multi_step_backtest(
         take_profit_pct=float(take_profit_pct),
         stop_loss_pct=float(stop_loss_pct),
         max_hold_bars=int(max_hold_bars),
+        timeframe=str(timeframe or ""),
+        run_id=str(run_id or ""),
     )
     if deploy_profile_weights:
         cfg.deploy_profile_weights = deploy_profile_weights  # type: ignore[attr-defined]
@@ -158,7 +161,10 @@ def run_multi_step_backtest(
             if qual_report:
                 summary["quality_report"] = qual_report
             if deploy_config:
-                summary["resolved_config"] = dict(deploy_config)
+                rc = dict(deploy_config)
+                if summary.get("leverage") is not None:
+                    rc["leverage"] = summary["leverage"]
+                summary["resolved_config"] = rc
             summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     except Exception as exc:
         logger.warning("quality-report post-process failed: %s", exc)

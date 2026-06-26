@@ -8,6 +8,7 @@ Perp only (spot removed as of v1.0). Config via dict (no env vars).
 
 from __future__ import annotations
 
+import logging
 import os
 import time
 from dataclasses import dataclass
@@ -15,6 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 from typing import Any as _Any
 
+from backtest.data_quality import validate_ohlcv_window
 from config.app_settings import load_app_settings, normalize_hold_signal_fallback
 from config.run_mode import RunMode
 from flow_log import FlowEventRepo, set_flow_repo
@@ -22,6 +24,8 @@ from harness.run_memory import IterationReceiptWriter, RunWorkingMemory, now_s, 
 from main import build_workflow
 
 from .langgraph_adapter import run_perp_backtest
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -46,6 +50,8 @@ class BacktestConfig:
     take_profit_pct: float = 0.0
     stop_loss_pct: float = 0.0
     max_hold_bars: int = 0
+    timeframe: str = ""
+    run_id: str = ""
 
 
 class BacktestEngine:
@@ -77,6 +83,8 @@ class BacktestEngine:
                 "deploy_profile_weights": getattr(config, "deploy_profile_weights", None),
                 "deploy_profile_id": getattr(config, "deploy_profile_id", None),
                 "deploy_arbitrator_mode": getattr(config, "deploy_arbitrator_mode", None),
+                "timeframe": config.timeframe,
+                "run_id": config.run_id,
             }
         else:
             self._cfg = dict(config or {})
@@ -109,7 +117,8 @@ class BacktestEngine:
             bars_by_symbol[ticker] = list(bars)
 
         c = self._cfg
-        run_id = run_id or f"bt_{int(time.time())}"
+        run_id = run_id or c.get("run_id") or f"bt_{int(time.time())}"
+        c["run_id"] = run_id
         cfg_rd = c.get("runs_dir")
         if cfg_rd is None:
             cfg_rd = ".runs"
@@ -134,6 +143,7 @@ class BacktestEngine:
             "take_profit_pct": float(c.get("take_profit_pct", 0.0)),
             "stop_loss_pct": float(c.get("stop_loss_pct", 0.0)),
             "max_hold_bars": int(c.get("max_hold_bars", 0)),
+            "timeframe": str(c.get("timeframe", "")),
         }
 
         bar_count = max(len(rows) for rows in bars_by_symbol.values())
@@ -274,6 +284,7 @@ class BacktestEngine:
             }
 
             sm = state.setdefault("shared_memory", {})
+            iv_sec = int(c.get("interval_sec", 300))
             sm["backtest"] = {
                 "cash": float(capital),
                 "positions": {
@@ -288,11 +299,13 @@ class BacktestEngine:
                     and len(window[-1]) > 0
                     else None
                 ),
+                "interval_sec": iv_sec,
+                "timeframe": c.get("timeframe", ""),
+                "run_id": c.get("run_id", ""),
+                "symbol": str(symbol),
             }
-            # Persisted run memory (bounded, explicit).
             sm["memory"] = run_mem.to_shared_memory_fragment()
 
-            # Record what we "looked at" this step (evidence provenance).
             last_ts = sm["backtest"].get("window_last_ts_ms")
             run_mem.record_view(
                 {
@@ -303,18 +316,65 @@ class BacktestEngine:
                 }
             )
 
+            dq_passed = True
+            dq_warnings: list[str] = []
+            primary_md = state.get("market_data", {}).get(symbol, {})
+            ohlcv_for_dq = primary_md.get("ohlcv", window) if isinstance(window, list) else window
+            if isinstance(ohlcv_for_dq, list):
+                dq_result = validate_ohlcv_window(
+                    ohlcv_for_dq,
+                    symbol=symbol,
+                    expected_ticker=symbol,
+                    interval_sec=int(c.get("interval_sec", 300)),
+                    min_bars=2 if isinstance(window, list) and len(window) >= 2 else 1,
+                )
+                dq_passed = dq_result.passed
+                dq_warnings = dq_result.warnings
+                sm["backtest"]["data_quality"] = {
+                    "passed": dq_passed,
+                    "warnings": dq_warnings,
+                    "checks": dq_result.checks,
+                }
+
+            if not dq_passed:
+                logger.warning(
+                    "data_quality FAIL for %s bar %d: %s",
+                    symbol,
+                    len(window),
+                    " | ".join(dq_warnings),
+                )
+                try:
+                    receipt_writer.append(
+                        {
+                            "ts": now_s(),
+                            "run_id": run_id,
+                            "symbol": str(symbol),
+                            "backtest": sm.get("backtest"),
+                            "memory": run_mem.to_shared_memory_fragment(),
+                            "decision": {"action": "HOLD", "stance": "neutral", "confidence": 0.0},
+                            "data_quality": {"passed": False, "warnings": dq_warnings},
+                            "reason": "data_quality_gate",
+                        }
+                    )
+                except Exception:
+                    pass
+                return 0.0
+
+            invoke_cache_hit = False
+            per_sym_invoke = os.environ.get("AIMM_BACKTEST_PER_SYMBOL_INVOKE", "").strip() == "1"
+
             try:
-                # One workflow.invoke per bar window (shared across symbols).
-                bar_key = len(window)
+                if per_sym_invoke:
+                    bar_key = (len(window), symbol)
+                else:
+                    bar_key = len(window)
                 cached = _invoke_cache.get(bar_key)
                 if cached is None:
                     output = self.workflow.invoke(state)
                     _invoke_cache[bar_key] = output
                 else:
                     output = cached
-                # `proposed_signal` can be overwritten later in the graph (e.g. by portfolio_proposal),
-
-                # but `trade_intent` is the stable BUY/SELL/HOLD contract we want to backtest.
+                    invoke_cache_hit = True
                 intent = output.get("trade_intent") if isinstance(output, dict) else None
                 intent = intent if isinstance(intent, dict) else {}
                 action = str(intent.get("action") or "").strip().upper()
@@ -325,9 +385,6 @@ class BacktestEngine:
                     conf = 0.0
                 conf = max(0.0, min(1.0, conf))
 
-                # Optional HOLD shaping (see ``config/app.default.json`` ``backtest.hold_signal_fallback``).
-                # ``legacy`` matched early demos that forced rotation so runs never looked "empty".
-                # Default ``momentum`` keeps a tiny drift nudge only — metrics reflect the graph + TA.
                 if hold_signal_fallback in ("momentum", "legacy") and action == "HOLD":
                     if isinstance(window, list) and len(window) >= 6:
                         try:
@@ -362,7 +419,6 @@ class BacktestEngine:
                 elif action == "SELL":
                     stance = "bearish"
                     sign = -1.0
-                # Persist a small decision summary for next steps.
                 run_mem.record_decision(
                     {
                         "symbol": str(symbol),
@@ -371,7 +427,6 @@ class BacktestEngine:
                         "confidence": conf,
                     }
                 )
-                # If an LLM node ran with tools, capture counts (not bulky results).
                 try:
                     prop = output.get("proposed_signal") if isinstance(output, dict) else None
                     p_params = prop.get("params") if isinstance(prop, dict) else None
@@ -391,16 +446,22 @@ class BacktestEngine:
                 except Exception:
                     pass
 
-                # Persist a compact per-step receipt (what the agent saw + decided).
                 try:
+                    bar_index = len(window) - 1 if isinstance(window, list) else 0
                     rec: dict[str, Any] = {
                         "ts": now_s(),
                         "run_id": run_id,
+                        "bar_index": bar_index,
                         "symbol": str(symbol),
                         "backtest": sm.get("backtest"),
                         "memory": run_mem.to_shared_memory_fragment(),
                         "decision": {"action": action, "stance": stance, "confidence": conf},
                     }
+                    dq_store = sm.get("backtest", {}).get("data_quality", {})
+                    if dq_store.get("passed") is not None:
+                        rec["data_quality"] = dq_store
+                    if invoke_cache_hit:
+                        rec["invoke_cache_shared"] = True
                     if os.environ.get("AIMM_BACKTEST_VERBOSE_RECEIPTS") == "1":
                         if isinstance(output, dict):
                             _build_tier0_summary(rec, output)
@@ -409,18 +470,18 @@ class BacktestEngine:
                     pass
                 return float(sign * conf)
             except Exception as exc:
-                # Always emit a receipt even on failure so operators can see what was attempted.
                 try:
-                    receipt_writer.append(
-                        {
-                            "ts": now_s(),
-                            "run_id": run_id,
-                            "symbol": str(symbol),
-                            "backtest": sm.get("backtest"),
-                            "memory": run_mem.to_shared_memory_fragment(),
-                            "error": str(exc),
-                        }
-                    )
+                    err_rec: dict[str, Any] = {
+                        "ts": now_s(),
+                        "run_id": run_id,
+                        "symbol": str(symbol),
+                        "backtest": sm.get("backtest"),
+                        "memory": run_mem.to_shared_memory_fragment(),
+                        "error": str(exc),
+                    }
+                    if invoke_cache_hit:
+                        err_rec["invoke_cache_shared"] = True
+                    receipt_writer.append(err_rec)
                 except Exception:
                     pass
                 import traceback
