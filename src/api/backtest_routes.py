@@ -784,6 +784,25 @@ def get_backtest_summary(run_id: str) -> dict[str, Any]:
     return summary
 
 
+@router.get("/backtests/{run_id}/export/manifest")
+def get_backtest_export_manifest(run_id: str) -> dict[str, Any]:
+    """Return the ``export_manifest.json`` for a completed backtest.
+
+    Contains schema version, file listing, and metrics summary.
+    Returns 404 if the export bundle was not generated.
+    """
+    manifest_path = BACKTESTS_DIR / run_id / "export_manifest.json"
+    if not manifest_path.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "export_manifest.json not found — run may be too old "
+                "or did not complete export bundle generation"
+            ),
+        )
+    return json.loads(manifest_path.read_text(encoding="utf-8"))
+
+
 @router.get("/backtests/{run_id}/equity")
 def get_backtest_equity(
     run_id: str,

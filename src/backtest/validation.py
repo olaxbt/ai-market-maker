@@ -357,6 +357,24 @@ class BacktestQualityReport:
             else None,
             "overall_passed": self.overall_passed,
             "warnings": self.warnings,
+            "passed_checks": (
+                sum(
+                    1
+                    for ok in (
+                        [self.sample_size.passed, self.profit_loss.passed]
+                        + ([self.exit_reasons.passed] if self.exit_reasons else [])
+                        + ([self.forward_validation.passed] if self.forward_validation else [])
+                        + [self.regime_check.get("passed", True)]
+                    )
+                    if ok
+                )
+            ),
+            "total_checks": len(
+                [self.sample_size, self.profit_loss]
+                + ([self.exit_reasons] if self.exit_reasons else [])
+                + ([self.forward_validation] if self.forward_validation else [])
+                + [self.regime_check]
+            ),
         }
 
 
