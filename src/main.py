@@ -36,6 +36,7 @@ from flow_log import FlowEventRepo, get_flow_repo, set_flow_repo
 from leadpage_local_scan import append_local_scan_result
 from llm.portfolio_llm import llm_portfolio_execute, llm_portfolio_proposal
 from market.universe import augment_universe_with_oi, select_universe_from_tickers
+from nexus_data.adanos import adanos_feeds_enabled, fetch_adanos_crypto_sentiment_bundle
 from nexus_data.client import NexusDataClient
 from nexus_data.feeds import (
     fetch_nexus_global_bundle,
@@ -366,6 +367,24 @@ def market_scan(state: HedgeFundState) -> dict[str, Any]:
                     nexus_bundle = {**gb, "errors": merged_errs}
             else:
                 nexus_bundle = gb if gb else None
+
+        if adanos_feeds_enabled():
+            if nexus_bundle is None:
+                nexus_bundle = {
+                    "fetched_at_epoch": time.time(),
+                    "integration_contract_version": "2026-04-04",
+                    "endpoints": {},
+                    "errors": [],
+                }
+            try:
+                adanos_block = fetch_adanos_crypto_sentiment_bundle(universe)
+                nexus_bundle.setdefault("endpoints", {})["adanos_crypto_sentiment"] = adanos_block
+                if not adanos_block.get("ok"):
+                    err = adanos_block.get("error") or "unknown"
+                    nexus_bundle.setdefault("errors", []).append(f"adanos_crypto_sentiment: {err}")
+            except Exception as e:
+                logger.warning("Adanos sentiment feed failed: %s", e)
+                nexus_bundle.setdefault("errors", []).append(f"adanos_crypto_sentiment: {e}")
 
         if nexus_bundle is not None:
             sm_out["nexus"] = nexus_bundle

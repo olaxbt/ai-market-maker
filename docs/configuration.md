@@ -130,8 +130,27 @@ This is useful for:
 ```
 BINANCE_API_KEY / SECRET   ← OHLCV data
 NEXUS_API_KEY              ← Nexus/Olaxbt data (news, KOL, OI, funding)
+ADANOS_API_KEY             ← Optional Adanos crypto sentiment for retail_hype_tracker
 TWITTER_BEARER_TOKEN        ← Social sentiment (optional, experimental)
 ```
+
+### Optional Adanos Market Sentiment
+
+Set `ADANOS_API_KEY` to enrich the Tier-0 `retail_hype_tracker` with Adanos
+crypto sentiment for the active universe. The integration calls the Adanos
+crypto Reddit sentiment endpoint, maps CCXT pairs such as `BTC/USDT` to `BTC`,
+and degrades gracefully if Adanos is unavailable or a token has no data.
+
+| Variable               | Default                                   | Purpose                   |
+|------------------------|-------------------------------------------|---------------------------|
+| `ADANOS_API_KEY`       | unset                                     | Enables the Adanos feed   |
+| `ADANOS_DISABLE`       | `0`                                       | Set to `1` to force off   |
+| `ADANOS_API_BASE`      | `https://api.adanos.org/reddit/crypto/v1` | Override API base URL     |
+| `ADANOS_TIMEOUT_S`     | `5`                                       | Per-request timeout       |
+| `ADANOS_TOTAL_TIMEOUT_S`| `20`                                      | Total feed time budget    |
+| `ADANOS_LOOKBACK_DAYS` | `7`                                       | Sentiment window length   |
+| `ADANOS_SYMBOL_MAX`    | `8`                                       | Max symbols per graph run |
+| `ADANOS_MAX_WORKERS`   | `4`                                       | Concurrent symbol fetches |
 
 ### Layer 1 — Agents (optional toggles)
 ```
@@ -153,5 +172,3 @@ AI_MARKET_MAKER_ALLOW_LIVE ← double-gate for live
 ```
 AIMM_RISK_GUARD_KILL_SWITCH ← emergency stop
 ```
-
-
