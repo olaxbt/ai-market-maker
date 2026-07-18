@@ -47,7 +47,7 @@ def _make_bars(
     return bars
 
 
-def _mock_signal_fn(symbol, window, positions, capital) -> float:
+def _mock_signal_fn(symbol, window, positions, capital, equity=None) -> float:
     """Return a constant long signal for testing."""
     if not window or len(window) < 2:
         return 0.0
@@ -80,6 +80,8 @@ class TestBacktestExportBundle:
                     "stop_loss_pct": 0.0,
                     "max_hold_bars": 10,
                     "timeframe": "1d",
+                    "min_warmup_bars": 0,
+                    "ta_warmup_bars": 0,
                 }
             )
             engine.run(

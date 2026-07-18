@@ -183,9 +183,12 @@ def _agent_2_3_factors(contract: dict[str, Any], state: dict[str, Any]) -> dict[
     vol = _f(ti.get("volume", 0.0), 0.0)
     vol_bull = _normalize_linear(vol, 1000000.0)  # rough scaling
 
-    # pattern_rec — from contract pattern field or default
-    pat_rec = ti.get("pattern_rec")
-    pr_bull = _f(pat_rec, 0.5) if pat_rec is not None else 0.50
+    mom = _f(ti.get("price_momentum"), 0.0)
+    # ~±12% over lookback maps to bearish/bullish extremes on daily bars.
+    mom_bull = _clamp(0.5 + mom / 0.12 * 0.5)
+
+    roc = _f(ti.get("roc"), 0.0)
+    roc_bull = _clamp(0.5 + roc / 15.0)
 
     return {
         "rsi": rsi_bull,
@@ -194,8 +197,9 @@ def _agent_2_3_factors(contract: dict[str, Any], state: dict[str, Any]) -> dict[
         "atr": atr_bull,
         "adx": adx_bull,
         "ema_cross": ema_bull,
+        "price_momentum": mom_bull,
+        "roc": roc_bull,
         "volume": vol_bull,
-        "pattern_rec": pr_bull,
     }
 
 
@@ -320,7 +324,7 @@ def compute_agent_weighted_signals(
         factor_map = AGENT_FACTOR_MAP.get(aid, {})
 
         agent_w = weights.get(aid, 0.0)
-        enabled = aid not in disabled and bool(contract.get("status") != "error")
+        enabled = aid not in disabled and contract.get("status") not in ("error", "skipped")
 
         factor_signals: list[FactorSignal] = []
         composite = 0.0
@@ -545,9 +549,52 @@ def compute_weighted_arbitration(
         buy_triggered = False
         sell_triggered = False
 
+    # TA-led desk override: agent 2.3 can trigger direction from its own composite.
+    ta_led_reasons: list[str] = []
+    ta_led = decision_threshold.get("ta_led") if decision_threshold else None
+    if isinstance(ta_led, dict) and ta_led.get("enabled", True):
+        from schemas.tier0_contract import tier0_consensus_for_arbitrator
+
+        tc = tier0_consensus_for_arbitrator(state)
+        block_long = bool(tc.get("block_aggressive_long"))
+        ta_id = str(ta_led.get("agent_id") or "2.3")
+        ta_sig = next((s for s in enabled_sigs if s.agent_id == ta_id), None)
+        if ta_sig is not None:
+            buy_min_ta = _f(ta_led.get("buy_min_composite", 57), 57.0) / 100.0
+            sell_max_ta = _f(ta_led.get("sell_max_composite", 43), 43.0) / 100.0
+            ta_min_conf = _f(ta_led.get("min_confidence", 14), 14.0) / 100.0
+            ta_conf = max(confidence, ta_sig.confidence)
+            if (
+                not block_long
+                and not buy_triggered
+                and ta_sig.composite >= buy_min_ta
+                and ta_conf >= ta_min_conf
+            ):
+                buy_triggered = True
+                sell_triggered = False
+                hold_triggered = False
+                alignment_gated = False
+                stance = "bullish"
+                confidence = ta_conf
+                ta_led_reasons.append(
+                    f"TA-led BUY: agent {ta_id} composite={ta_sig.composite:.3f} "
+                    f">= {buy_min_ta:.2f}"
+                )
+            elif not sell_triggered and ta_sig.composite <= sell_max_ta and ta_conf >= ta_min_conf:
+                sell_triggered = True
+                buy_triggered = False
+                hold_triggered = False
+                alignment_gated = False
+                stance = "bearish"
+                confidence = ta_conf
+                ta_led_reasons.append(
+                    f"TA-led SELL: agent {ta_id} composite={ta_sig.composite:.3f} "
+                    f"<= {sell_max_ta:.2f}"
+                )
+
     # Build reasons
-    reasons: list[str] = []
-    if buy_triggered:
+    reasons: list[str] = list(ta_led_reasons)
+    if buy_triggered and not ta_led_reasons:
         reasons.append(
             f"BUY signal: composite={composite:.3f} >= {min_composite_buy:.2f}, "
             f"confidence={confidence:.3f} >= {min_conf_buy:.2f}"
@@ -555,7 +602,7 @@ def compute_weighted_arbitration(
         reasons.append(
             f"consensus: {global_score['bullish_count']}/{global_score['total_enabled']} agents bullish"
         )
-    elif sell_triggered:
+    elif sell_triggered and not ta_led_reasons:
         reasons.append(
             f"SELL signal: composite={composite:.3f} <= {max_composite_sell:.2f}, "
             f"confidence={confidence:.3f} >= {min_conf_sell:.2f}"

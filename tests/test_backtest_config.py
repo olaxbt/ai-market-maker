@@ -9,7 +9,6 @@ from pathlib import Path
 
 from backtest.config import (
     ARBITRATOR_AGENT_LLM,
-    ARBITRATOR_WEIGHTED_CONVERGENCE,
     resolve_backtest_config,
     set_env_from_config,
 )
@@ -37,11 +36,25 @@ def _sample_deploy_config(
 
 class TestResolveBacktestConfig:
     def test_defaults(self):
-        cfg = resolve_backtest_config()
-        assert cfg["arbitrator_mode"] == ARBITRATOR_WEIGHTED_CONVERGENCE
-        assert cfg["use_llm"] is False
+        cfg = resolve_backtest_config(deploy_path="/nonexistent/aimm-deploy-missing.json")
+        assert cfg["arbitrator_mode"] == ARBITRATOR_AGENT_LLM
+        assert cfg["use_llm"] is True
         assert cfg["deploy_loaded"] is False
-        assert cfg["profile_weights"] == {}
+        assert cfg["profile_weights"] == {"2.3": 0.55, "2.1": 0.15, "1.1": 0.25}
+        assert cfg["profile_id"] == "macro_tilt"
+        assert cfg["allows_short"] is True
+        assert cfg["decision_threshold"]["ta_led"]["enabled"] is True
+
+    def test_shipped_deploy_active_json(self):
+        root = Path(__file__).resolve().parents[1]
+        deploy = root / "config" / "deploy.active.json"
+        if not deploy.is_file():
+            return
+        cfg = resolve_backtest_config(deploy_path=str(deploy))
+        assert cfg["deploy_loaded"] is True
+        assert cfg["profile_id"] == "macro_tilt"
+        assert cfg["profile_weights"] == {"2.3": 0.55, "2.1": 0.15, "1.1": 0.25}
+        assert cfg["leverage"] == 2.0
 
     def test_deploy_config_loaded(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -66,8 +79,8 @@ class TestResolveBacktestConfig:
                 cli_arbitrator_mode="weighted_convergence",
                 cli_tp_sl_pct=3.0,
             )
-            assert cfg["arbitrator_mode"] == ARBITRATOR_WEIGHTED_CONVERGENCE
-            assert cfg["use_llm"] is False
+            assert cfg["arbitrator_mode"] == ARBITRATOR_AGENT_LLM
+            assert cfg["use_llm"] is True
             assert cfg["take_profit_pct"] == 3.0
             assert cfg["stop_loss_pct"] == 3.0
             assert cfg["deploy_loaded"] is True
@@ -85,28 +98,34 @@ class TestResolveBacktestConfig:
     def test_deploy_no_file_fallback(self):
         cfg = resolve_backtest_config(deploy_path="/nonexistent/deploy.json")
         assert cfg["deploy_loaded"] is False
-        assert cfg["arbitrator_mode"] == ARBITRATOR_WEIGHTED_CONVERGENCE
+        assert cfg["arbitrator_mode"] == ARBITRATOR_AGENT_LLM
 
     def test_cli_leverage(self):
-        cfg = resolve_backtest_config(cli_leverage=10.0)
+        cfg = resolve_backtest_config(
+            deploy_path="/nonexistent/aimm-deploy-missing.json",
+            cli_leverage=10.0,
+        )
         assert cfg["leverage"] == 10.0
 
-        cfg2 = resolve_backtest_config(cli_leverage=0.0)
-        assert cfg2["leverage"] == 3.0
+        cfg2 = resolve_backtest_config(
+            deploy_path="/nonexistent/aimm-deploy-missing.json",
+            cli_leverage=0.0,
+        )
+        assert cfg2["leverage"] == 2.0
 
 
 class TestSetEnvFromConfig:
-    def test_sets_llm_env(self):
+    def test_sets_agent_llm_env(self):
         cfg = resolve_backtest_config(cli_arbitrator_mode="agent_llm")
         set_env_from_config(cfg)
-        assert os.environ.get("AI_MARKET_MAKER_USE_LLM") == "1"
         assert os.environ.get("AIMM_ARBITRATOR_MODE") == "agent_llm"
+        assert os.environ.get("AI_MARKET_MAKER_USE_LLM") is None
+        assert os.environ.get("AIMM_LLM_MODE") is None
 
-    def test_clears_llm_env_on_weighted(self):
-        os.environ["AI_MARKET_MAKER_USE_LLM"] = "1"
+    def test_weighted_convergence_upgrades_to_agent_llm(self):
         cfg = resolve_backtest_config(cli_arbitrator_mode="weighted_convergence")
         set_env_from_config(cfg)
-        assert os.environ.get("AI_MARKET_MAKER_USE_LLM") == "0"
+        assert os.environ.get("AIMM_ARBITRATOR_MODE") == "agent_llm"
 
     def test_deploy_active_signal(self):
         cfg = resolve_backtest_config(deploy_path="/nonexistent")
@@ -115,6 +134,7 @@ class TestSetEnvFromConfig:
         assert os.environ.get("AIMM_DEPLOY_ACTIVE") == "1"
 
     def teardown_method(self):
-        os.environ.pop("AI_MARKET_MAKER_USE_LLM", None)
         os.environ.pop("AIMM_ARBITRATOR_MODE", None)
         os.environ.pop("AIMM_DEPLOY_ACTIVE", None)
+        os.environ.pop("AI_MARKET_MAKER_USE_LLM", None)
+        os.environ.pop("AIMM_LLM_MODE", None)

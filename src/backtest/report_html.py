@@ -419,6 +419,172 @@ def _params_section(rc: dict[str, Any], summary: dict[str, Any]) -> str:
     return f'<table class="metrics-table">{body}</table>'
 
 
+def _load_ohlcv_by_symbol(run_dir: Path) -> dict[str, list[dict[str, float]]]:
+    bars_path = run_dir / "bars.json"
+    if not bars_path.is_file():
+        return {}
+    payload = json.loads(bars_path.read_text(encoding="utf-8"))
+    by_sym = payload.get("ohlcv_by_symbol")
+    if isinstance(by_sym, dict) and by_sym:
+        return {str(k): v for k, v in by_sym.items() if isinstance(v, list)}
+    bars = payload.get("bars") or []
+    sym = str(payload.get("benchmark_symbol") or payload.get("ticker") or "")
+    if sym and bars:
+        return {sym: bars}
+    return {}
+
+
+def _candle_range_position(price: float, low: float, high: float) -> float:
+    if high <= low:
+        return 0.5
+    return max(0.0, min(1.0, (price - low) / (high - low)))
+
+
+def _compute_fill_quality(
+    trades: list[dict[str, Any]],
+    ohlcv_by_symbol: dict[str, list[dict[str, float]]],
+) -> dict[str, Any]:
+    entry_long: list[float] = []
+    entry_short: list[float] = []
+    exit_long: list[float] = []
+    exit_short: list[float] = []
+    skipped = 0
+
+    for t in trades:
+        sym = str(t.get("symbol") or "")
+        bars = ohlcv_by_symbol.get(sym)
+        if not bars:
+            skipped += 1
+            continue
+        try:
+            entry_bar = int(t.get("entry_bar_index", 0))
+            exit_bar = int(t.get("exit_bar_index", entry_bar))
+            entry_px = float(t.get("entry_price", 0))
+            exit_px = float(t.get("exit_price", 0))
+        except (TypeError, ValueError):
+            skipped += 1
+            continue
+        if entry_bar < 0 or entry_bar >= len(bars) or exit_bar < 0 or exit_bar >= len(bars):
+            skipped += 1
+            continue
+
+        side = str(t.get("side", "")).lower()
+        is_long = side == "long" or str(t.get("direction", "")) == "1"
+        is_short = side == "short" or str(t.get("direction", "")) == "-1"
+        if not is_long and not is_short:
+            direction = t.get("direction")
+            try:
+                d = int(direction)
+                is_long = d > 0
+                is_short = d < 0
+            except (TypeError, ValueError):
+                skipped += 1
+                continue
+
+        eb = bars[entry_bar]
+        xb = bars[exit_bar]
+        try:
+            e_pos = _candle_range_position(
+                entry_px,
+                float(eb.get("l", eb.get("low", 0))),
+                float(eb.get("h", eb.get("high", 0))),
+            )
+            x_pos = _candle_range_position(
+                exit_px, float(xb.get("l", xb.get("low", 0))), float(xb.get("h", xb.get("high", 0)))
+            )
+        except (TypeError, ValueError):
+            skipped += 1
+            continue
+
+        if is_long:
+            entry_long.append(e_pos)
+            exit_long.append(x_pos)
+        elif is_short:
+            entry_short.append(e_pos)
+            exit_short.append(x_pos)
+
+    def _avg(vals: list[float]) -> float | None:
+        return statistics.mean(vals) if vals else None
+
+    def _favorable_entry_pct(vals: list[float], *, long_side: bool) -> float | None:
+        if not vals:
+            return None
+        if long_side:
+            return 100.0 * sum(1 for v in vals if v <= 1.0 / 3.0) / len(vals)
+        return 100.0 * sum(1 for v in vals if v >= 2.0 / 3.0) / len(vals)
+
+    def _favorable_exit_pct(vals: list[float], *, long_side: bool) -> float | None:
+        if not vals:
+            return None
+        if long_side:
+            return 100.0 * sum(1 for v in vals if v >= 2.0 / 3.0) / len(vals)
+        return 100.0 * sum(1 for v in vals if v <= 1.0 / 3.0) / len(vals)
+
+    n_scored = len(entry_long) + len(entry_short)
+    return {
+        "trade_count_scored": n_scored,
+        "trade_count_skipped": skipped,
+        "long_entry_avg_pos": _avg(entry_long),
+        "short_entry_avg_pos": _avg(entry_short),
+        "long_exit_avg_pos": _avg(exit_long),
+        "short_exit_avg_pos": _avg(exit_short),
+        "long_entry_favorable_pct": _favorable_entry_pct(entry_long, long_side=True),
+        "short_entry_favorable_pct": _favorable_entry_pct(entry_short, long_side=False),
+        "long_exit_favorable_pct": _favorable_exit_pct(exit_long, long_side=True),
+        "short_exit_favorable_pct": _favorable_exit_pct(exit_short, long_side=False),
+    }
+
+
+def _fill_quality_section(fq: dict[str, Any], fill_model: str) -> str:
+    if not fq or fq.get("trade_count_scored", 0) == 0:
+        return '<p class="note">No fill-quality data (need trades + OHLCV in <code>bars.json</code>).</p>'
+
+    model_note = html.escape(fill_model or "signal_on_completed_bars_fill_at_next_open")
+    rows = [
+        ("Fill model", model_note),
+        ("Trades scored", str(fq.get("trade_count_scored", 0))),
+        (
+            "Long entry avg range pos",
+            _fmt_num(fq.get("long_entry_avg_pos"), digits=2),
+        ),
+        (
+            "Long entry in bottom tertile",
+            _fmt_num(fq.get("long_entry_favorable_pct"), suffix="%"),
+        ),
+        (
+            "Short entry avg range pos",
+            _fmt_num(fq.get("short_entry_avg_pos"), digits=2),
+        ),
+        (
+            "Short entry in top tertile",
+            _fmt_num(fq.get("short_entry_favorable_pct"), suffix="%"),
+        ),
+        (
+            "Long exit avg range pos",
+            _fmt_num(fq.get("long_exit_avg_pos"), digits=2),
+        ),
+        (
+            "Long exit in top tertile",
+            _fmt_num(fq.get("long_exit_favorable_pct"), suffix="%"),
+        ),
+        (
+            "Short exit avg range pos",
+            _fmt_num(fq.get("short_exit_avg_pos"), digits=2),
+        ),
+        (
+            "Short exit in bottom tertile",
+            _fmt_num(fq.get("short_exit_favorable_pct"), suffix="%"),
+        ),
+    ]
+    body = "".join(f"<tr><th>{html.escape(k)}</th><td>{v}</td></tr>" for k, v in rows if v != "—")
+    callout = (
+        '<div class="callout info"><strong>How to read:</strong> Range position 0 = bar low, '
+        "1 = bar high. Favorable long entries cluster near 0; favorable shorts near 1. "
+        "Values ~0.5 on average suggest realistic fills (not look-ahead).</div>"
+    )
+    return f'{callout}<table class="metrics-table">{body}</table>'
+
+
 def _quality_section(summary: dict[str, Any]) -> str:
     qr = summary.get("quality_report") or {}
     if not qr:
@@ -622,6 +788,18 @@ def build_backtest_report_html(run_dir: Path) -> str:
     )
     highlights = _performance_highlights(trades, quality, attribution)
     params_html = _params_section(rc, summary)
+    ohlcv_by_symbol = _load_ohlcv_by_symbol(run_dir)
+    fill_quality = _compute_fill_quality(trades, ohlcv_by_symbol)
+    fill_model = ""
+    bars_meta_path = run_dir / "bars.json"
+    if bars_meta_path.is_file():
+        try:
+            fill_model = str(
+                json.loads(bars_meta_path.read_text(encoding="utf-8")).get("fill_model") or ""
+            )
+        except json.JSONDecodeError:
+            fill_model = ""
+    fill_quality_html = _fill_quality_section(fill_quality, fill_model)
 
     ret_cls = "pos" if (ret_pct or 0) >= 0 else "neg"
     mdd_cls = "neg"
@@ -889,9 +1067,14 @@ code {{ background: var(--table-head); padding: 2px 6px; border-radius: 4px; fon
       </table>
     </div>
     <div class="card">
-      <h2>Quality Gates</h2>
-      {_quality_section(summary)}
+      <h2>Fill Quality</h2>
+      {fill_quality_html}
     </div>
+  </div>
+
+  <div class="card">
+    <h2>Quality Gates</h2>
+    {_quality_section(summary)}
   </div>
 
   <div class="card">

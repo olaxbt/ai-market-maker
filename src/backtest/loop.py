@@ -9,7 +9,7 @@ from typing import Any, Sequence
 
 from config.app_settings import load_app_settings
 
-from .engine import BacktestConfig, BacktestEngine
+from .engine import BacktestEngine
 
 logger = logging.getLogger(__name__)
 
@@ -78,37 +78,50 @@ def run_multi_step_backtest(
     max_hold_bars: int = 0,
     deploy_config: dict[str, Any] | None = None,
     timeframe: str = "",
+    eval_steps: int | None = None,
+    ta_warmup_bars: int | None = None,
 ) -> MultiStepResult:
     """Run a deterministic multi-step backtest and persist artifacts under ``.runs/``."""
     app = load_app_settings()
+    from backtest.ta_warmup import resolve_ta_warmup_bars
+
+    warmup = resolve_ta_warmup_bars(override=ta_warmup_bars)
     inst = (instrument or app.paper.instrument or "spot").strip().lower()
     lev = float(app.paper.leverage) if leverage is None else float(leverage)
-    cfg = BacktestConfig(
-        initial_cash_usd=float(initial_cash),
-        initial_btc=float(initial_btc),
-        fee_bps=float(fee_bps),
-        max_steps=max_steps,
-        export_bundle=bool(export_bundle),
-        interval_sec=int(interval_sec),
-        progress_callback=progress_callback,
-        instrument=str(inst),
-        leverage=max(1.0, lev),
-        take_profit_pct=float(take_profit_pct),
-        stop_loss_pct=float(stop_loss_pct),
-        max_hold_bars=int(max_hold_bars),
-        timeframe=str(timeframe or ""),
-        run_id=str(run_id or ""),
-    )
-    if deploy_profile_weights:
-        cfg.deploy_profile_weights = deploy_profile_weights  # type: ignore[attr-defined]
-    if deploy_profile_id:
-        cfg.deploy_profile_id = deploy_profile_id  # type: ignore[attr-defined]
-    if deploy_arbitrator_mode:
-        cfg.deploy_arbitrator_mode = deploy_arbitrator_mode  # type: ignore[attr-defined]
-    engine = BacktestEngine(cfg)
+    engine_cfg: dict[str, Any] = {
+        "initial_cash_usd": float(initial_cash),
+        "initial_btc": float(initial_btc),
+        "fee_bps": float(fee_bps),
+        "max_steps": max_steps,
+        "export_bundle": bool(export_bundle),
+        "interval_sec": int(interval_sec),
+        "progress_callback": progress_callback,
+        "instrument": str(inst),
+        "leverage": max(1.0, lev),
+        "take_profit_pct": float(take_profit_pct),
+        "stop_loss_pct": float(stop_loss_pct),
+        "max_hold_bars": int(max_hold_bars),
+        "timeframe": str(timeframe or ""),
+        "run_id": str(run_id or ""),
+        "deploy_profile_weights": deploy_profile_weights,
+        "deploy_profile_id": deploy_profile_id,
+        "deploy_arbitrator_mode": deploy_arbitrator_mode,
+        "deploy_config": deploy_config or {},
+        "eval_steps": eval_steps,
+        "ta_warmup_bars": warmup,
+        "min_warmup_bars": warmup,
+    }
+    if deploy_config and deploy_config.get("allows_short") is not None:
+        engine_cfg["allows_short"] = bool(deploy_config["allows_short"])
+    if deploy_config and deploy_config.get("agent_led_symbols"):
+        engine_cfg["agent_led_symbols"] = deploy_config["agent_led_symbols"]
+    engine = BacktestEngine(engine_cfg)
     if bars_by_symbol is not None:
         raw = {str(sym): [list(x) for x in series] for sym, series in bars_by_symbol.items()}
-        bbs = {sym: _maybe_tail_slice(rows, max_steps=max_steps) for sym, rows in raw.items()}
+        # Keep full series (warmup + eval). ``max_steps`` tail-slice is legacy API-only.
+        bbs = dict(raw)
+        if max_steps is not None and eval_steps is None:
+            bbs = {sym: _maybe_tail_slice(rows, max_steps=max_steps) for sym, rows in raw.items()}
         res = engine.run(
             ticker=str(ticker),
             bars_by_symbol=bbs,
@@ -116,7 +129,9 @@ def run_multi_step_backtest(
             runs_dir=runs_dir,
         )
     elif bars is not None:
-        sliced = _maybe_tail_slice(bars, max_steps=max_steps)
+        sliced = (
+            list(bars) if eval_steps is not None else _maybe_tail_slice(bars, max_steps=max_steps)
+        )
         res = engine.run(ticker=str(ticker), bars=sliced, run_id=run_id, runs_dir=runs_dir)
     else:
         raise ValueError("run_multi_step_backtest requires bars or bars_by_symbol")

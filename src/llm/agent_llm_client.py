@@ -318,7 +318,6 @@ def _build_simulation_context(state: dict[str, Any], ticker: str | None) -> str:
     window_len = bt.get("window_len")
     interval_sec = bt.get("interval_sec", 300)
     timeframe = bt.get("timeframe", "")
-    run_id = bt.get("run_id", "")
 
     # Resolve ticker
     sym = ticker or state.get("ticker", "BTC/USDT")
@@ -350,8 +349,6 @@ def _build_simulation_context(state: dict[str, Any], ticker: str | None) -> str:
         f"- As-of bar (UTC): {fmt(window_ts)}",
         f"- Window: {window_len or '?'} bars | first bar: {fmt(first_bar_ts)} | last bar: {fmt(last_bar_ts)}",
     ]
-    if run_id:
-        lines.append(f"- Run ID: {run_id}")
     if len(universe) > 1:
         lines.append(f"- Universe: {', '.join(universe)}")
 
@@ -629,6 +626,14 @@ def infer_agent(
         )
     except Exception as e:
         logger.warning("agent_llm: LLM call failed for %s: %s", agent_id, e)
+        err_s = str(e)
+        if "402" in err_s or "Insufficient Balance" in err_s:
+            try:
+                from backtest.terminal_log import note_llm_api_error
+
+                note_llm_api_error(err_s)
+            except ImportError:
+                pass
         return _error_contract(agent_id, f"API error: {e}")
 
     text = resp.choices[0].message.content or ""

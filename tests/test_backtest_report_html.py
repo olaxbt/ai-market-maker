@@ -53,22 +53,94 @@ def test_report_html_minimal_run():
             json.dumps(
                 {
                     "benchmark_symbol": "BTC/USDT",
+                    "fill_model": "signal_on_completed_bars_fill_at_next_open",
                     "benchmark_equity": [
                         {"ts": 1700000000000, "equity": 10000},
                         {"ts": 1700086400000, "equity": 10150},
                         {"ts": 1700172800000, "equity": 9950},
                     ],
+                    "bars": [
+                        {
+                            "ts": 1700000000000,
+                            "o": 49500,
+                            "h": 50500,
+                            "l": 49000,
+                            "c": 50000,
+                            "v": 1,
+                        },
+                        {
+                            "ts": 1700086400000,
+                            "o": 50000,
+                            "h": 51500,
+                            "l": 49800,
+                            "c": 51000,
+                            "v": 1,
+                        },
+                        {
+                            "ts": 1700172800000,
+                            "o": 51000,
+                            "h": 51200,
+                            "l": 50500,
+                            "c": 50800,
+                            "v": 1,
+                        },
+                        {
+                            "ts": 1700259200000,
+                            "o": 50800,
+                            "h": 52000,
+                            "l": 50700,
+                            "c": 51500,
+                            "v": 1,
+                        },
+                    ],
+                    "ohlcv_by_symbol": {
+                        "BTC/USDT": [
+                            {
+                                "ts": 1700000000000,
+                                "o": 49500,
+                                "h": 50500,
+                                "l": 49000,
+                                "c": 50000,
+                                "v": 1,
+                            },
+                            {
+                                "ts": 1700086400000,
+                                "o": 50000,
+                                "h": 51500,
+                                "l": 49800,
+                                "c": 51000,
+                                "v": 1,
+                            },
+                            {
+                                "ts": 1700172800000,
+                                "o": 51000,
+                                "h": 51200,
+                                "l": 50500,
+                                "c": 50800,
+                                "v": 1,
+                            },
+                            {
+                                "ts": 1700259200000,
+                                "o": 50800,
+                                "h": 52000,
+                                "l": 50700,
+                                "c": 51500,
+                                "v": 1,
+                            },
+                        ],
+                    },
                 }
             )
         )
         (run_dir / "trades_record.csv").write_text(
-            "trade_id,symbol,side,entry_price,exit_price,pnl_usd,holding_bars,exit_reason\n"
-            "1,BTC/USDT,long,50000,51000,100,2,take_profit\n"
+            "trade_id,symbol,side,entry_price,exit_price,pnl_usd,holding_bars,exit_reason,entry_bar_index,exit_bar_index\n"
+            "1,BTC/USDT,long,50000,51000,100,2,take_profit,1,3\n"
         )
         html = build_backtest_report_html(run_dir)
         assert "Executive Summary" in html
         assert "Chart" in html or "equityChart" in html
         assert "BTC/USDT" in html
         assert "bt_test" in html
+        assert "Fill Quality" in html
         out = write_backtest_report_html(run_dir)
         assert out.is_file()

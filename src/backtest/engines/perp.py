@@ -109,6 +109,7 @@ class PerpEngine:
         self._funding_applied: set[tuple[str, int, int]] = set()
         self._bar_index: int = 0
         self._last_bar_ts: int = 0
+        self._eval_start_bar: int = 0
         self.interval_sec: int = max(60, int(cfg.get("interval_sec", 300)))
         self.timeframe: str = str(cfg.get("timeframe", ""))
 
@@ -117,6 +118,9 @@ class PerpEngine:
         self.stop_loss_pct: float = float(cfg.get("stop_loss_pct", 0.0))
         # Max hold bars — close position after N bars (timeout). 0 = disabled.
         self.max_hold_bars: int = int(cfg.get("max_hold_bars", 0))
+        self.trade_cooldown_bars: int = max(0, int(cfg.get("trade_cooldown_bars", 0)))
+        self._last_entry_bar: dict[str, int] = {}
+        self._eval_start_bar = max(0, int(cfg.get("eval_start_bar", 0) or 0))
 
     def can_execute(self, direction: int, bar) -> bool:
         return True
@@ -251,29 +255,35 @@ class PerpEngine:
 
         for bar_idx in range(total_bars):
             self._bar_index = bar_idx
-            window = {s: aligned[s][: bar_idx + 1] for s in symbols}
+            # Completed bars only (no look-ahead). Signal at end of bar i-1 → fill at open of bar i.
+            completed = {s: aligned[s][:bar_idx] for s in symbols}
+            bar_open = {s: float(aligned[s][bar_idx][1]) for s in symbols}
             last_close = {s: float(aligned[s][bar_idx][4]) for s in symbols}
             last_ts = int(aligned[symbols[0]][bar_idx][0])
             self._last_bar_ts = last_ts
 
-            for sym in symbols:
-                self.on_bar(sym, float(last_close[sym]), last_ts)
+            if bar_idx > 0:
+                mark_closes = {s: float(aligned[s][bar_idx - 1][4]) for s in symbols}
+                mark_equity = self._equity(mark_closes)
+                for sym in symbols:
+                    target = signal_fn(
+                        sym,
+                        completed[sym],
+                        {k: v for k, v in self.positions.items()},
+                        self.capital,
+                        mark_equity,
+                    )
+                    self._rebalance(
+                        sym,
+                        float(target),
+                        bar_open[sym],
+                        last_close[sym],
+                        last_ts,
+                        last_close,
+                    )
 
             for sym in symbols:
-                target = signal_fn(
-                    sym,
-                    window[sym],
-                    {k: v for k, v in self.positions.items()},
-                    self.capital,
-                )
-                self._rebalance(
-                    sym,
-                    float(target),
-                    float(aligned[sym][bar_idx][1]),
-                    float(last_close[sym]),
-                    last_ts,
-                    last_close,
-                )
+                self.on_bar(sym, last_close[sym], last_ts)
 
             eq = self._equity(last_close)
             snap = EquitySnapshot(
@@ -317,6 +327,9 @@ class PerpEngine:
         if bench_sym not in aligned:
             bench_sym = symbols[0] if symbols else ""
         primary_bars = aligned[bench_sym] if bench_sym and total_bars > 0 else []
+        eval_start = max(0, int(self._eval_start_bar))
+        if eval_start > 0 and len(primary_bars) > eval_start:
+            primary_bars = primary_bars[eval_start:]
         return self._finalize(
             run_id,
             runs_dir,
@@ -324,6 +337,7 @@ class PerpEngine:
             metrics,
             primary_bars,
             benchmark_symbol=bench_sym,
+            aligned_bars=aligned,
         )
 
     def _rebalance(
@@ -350,6 +364,13 @@ class PerpEngine:
                 current = self.positions.get(symbol)
 
         if target_dir != 0 and symbol not in self.positions:
+            if self.trade_cooldown_bars > 0:
+                last_entry = self._last_entry_bar.get(symbol)
+                if (
+                    last_entry is not None
+                    and (self._bar_index - last_entry) < self.trade_cooldown_bars
+                ):
+                    return
             if not self.can_execute(target_dir, None):
                 return
             slipped = self.apply_slippage(bar_open, target_dir)
@@ -382,6 +403,7 @@ class PerpEngine:
                 entry_ts_ms=int(self._last_bar_ts),
                 entry_commission=comm,
             )
+            self._last_entry_bar[symbol] = self._bar_index
 
     def _close(
         self,
@@ -507,10 +529,13 @@ class PerpEngine:
         if not equity_vals:
             return {}
 
+        eval_start = max(0, int(self._eval_start_bar))
+        if eval_start > 0 and eval_start < len(equity_vals):
+            equity_vals = equity_vals[eval_start:]
+        start_equity = float(equity_vals[0]) if equity_vals else float(self.initial_cash)
+
         total_return = (
-            (equity_vals[-1] - self.initial_cash) / self.initial_cash * 100
-            if self.initial_cash > 0
-            else 0.0
+            (equity_vals[-1] - start_equity) / start_equity * 100 if start_equity > 0 else 0.0
         )
 
         peak = equity_vals[0]
@@ -527,10 +552,16 @@ class PerpEngine:
         ppy = periods_per_year_from_interval_sec(bar_sec)
         sharpe = sharpe_ratio(rets, periods_per_year=ppy)
 
-        wins = [t for t in self.trades if t.pnl > 0]
-        win_rate = len(wins) / len(self.trades) * 100 if self.trades else 0.0
-        pf = profit_factor([t.pnl for t in self.trades])
-        exit_dist = exit_reason_distribution([{"exit_reason": t.exit_reason} for t in self.trades])
+        eval_trades = [
+            t for t in self.trades if int(getattr(t, "entry_bar_index", 0)) >= eval_start
+        ]
+        win_rate = (
+            len([t for t in eval_trades if t.pnl > 0]) / len(eval_trades) * 100
+            if eval_trades
+            else 0.0
+        )
+        pf = profit_factor([t.pnl for t in eval_trades])
+        exit_dist = exit_reason_distribution([{"exit_reason": t.exit_reason} for t in eval_trades])
 
         return {
             "total_return_pct": round(total_return, 4),
@@ -541,9 +572,9 @@ class PerpEngine:
             "sharpe_bar_interval_sec_used": bar_sec,
             "win_rate_pct": round(win_rate, 2),
             "profit_factor": pf,
-            "total_trades": len(self.trades),
-            "total_pnl_usd": round(sum(t.pnl for t in self.trades), 2),
-            "total_commission": round(sum(t.commission for t in self.trades), 2),
+            "total_trades": len(eval_trades),
+            "total_pnl_usd": round(sum(t.pnl for t in eval_trades), 2),
+            "total_commission": round(sum(t.commission for t in eval_trades), 2),
             "exit_reasons": exit_dist,
         }
 
@@ -556,6 +587,7 @@ class PerpEngine:
         bars_primary: list[list[float]] | None = None,
         *,
         benchmark_symbol: str = "",
+        aligned_bars: dict[str, list[list[float]]] | None = None,
     ) -> dict[str, Any]:
         import pandas as pd
 
@@ -627,7 +659,23 @@ class PerpEngine:
                 "interval_sec": self.interval_sec,
                 "bars": bar_rows,
                 "benchmark_equity": bh_curve,
+                "fill_model": "signal_on_completed_bars_fill_at_next_open",
             }
+            if aligned_bars:
+                ohlcv_by_symbol: dict[str, list[dict[str, float]]] = {}
+                for sym, sym_rows in aligned_bars.items():
+                    ohlcv_by_symbol[sym] = [
+                        {
+                            "ts": int(row[0]),
+                            "o": float(row[1]),
+                            "h": float(row[2]),
+                            "l": float(row[3]),
+                            "c": float(row[4]),
+                            "v": float(row[5]),
+                        }
+                        for row in sym_rows
+                    ]
+                bars_payload["ohlcv_by_symbol"] = ohlcv_by_symbol
             (out_dir / "bars.json").write_text(json.dumps(bars_payload, indent=1))
 
         trade_records = []
@@ -690,6 +738,8 @@ class PerpEngine:
                 "+ unrealized_pnl) per open position. Not spot wallet balances; exposure is via contract PnL."
             ),
             "total_bars": len(self.snapshots),
+            "eval_bars": max(0, len(self.snapshots) - max(0, int(self._eval_start_bar))),
+            "ta_warmup_bars": max(0, int(self._eval_start_bar)),
             "start_ts": start_ts,
             "end_ts": end_ts,
             "start_iso": start_iso,

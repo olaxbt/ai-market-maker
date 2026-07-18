@@ -51,14 +51,14 @@ class TestConfigParity:
             assert cfg["stop_loss_pct"] == 5.0
             assert cfg["max_hold_bars"] == 48
 
-    def test_weighted_mode_no_llm_flag(self):
+    def test_weighted_mode_upgrades_to_agent_llm(self):
         with tempfile.TemporaryDirectory() as tmp:
             dp = Path(tmp) / "deploy.active.json"
             dp.write_text(json.dumps(DEPLOY_WEIGHTED), encoding="utf-8")
             cfg = resolve_backtest_config(deploy_path=str(dp))
 
-            assert cfg["arbitrator_mode"] == "weighted_convergence"
-            assert cfg["use_llm"] is False
+            assert cfg["arbitrator_mode"] == "agent_llm"
+            assert cfg["use_llm"] is True
             assert cfg["take_profit_pct"] == 3.0
             assert cfg["leverage"] == 3.0
 
@@ -78,11 +78,11 @@ class TestConfigParity:
         set_env_from_config(cfg)
         assert os.environ.get("AIMM_ARBITRATOR_MODE") == "agent_llm"
 
-    def test_set_env_weighted(self):
+    def test_set_env_weighted_upgrades(self):
         cfg = resolve_backtest_config(cli_arbitrator_mode="weighted_convergence")
         set_env_from_config(cfg)
-        assert os.environ.get("AIMM_ARBITRATOR_MODE") is None
-        assert os.environ.get("AI_MARKET_MAKER_USE_LLM") == "0"
+        assert os.environ.get("AIMM_ARBITRATOR_MODE") == "agent_llm"
+        assert os.environ.get("AI_MARKET_MAKER_USE_LLM") is None
 
 
 class TestDefaultDeployPath:
@@ -106,8 +106,8 @@ class TestDefaultDeployPath:
 
         cfg = resolve_backtest_config()
         assert cfg["deploy_loaded"] is False
-        assert cfg["arbitrator_mode"] == "weighted_convergence"
-        assert cfg["use_llm"] is False
+        assert cfg["arbitrator_mode"] == "agent_llm"
+        assert cfg["use_llm"] is True
 
 
 class TestEnvParity:

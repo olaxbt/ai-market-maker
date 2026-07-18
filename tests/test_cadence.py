@@ -31,24 +31,18 @@ def test_clamp_too_large():
     assert n == 86400
 
 
-_LLM_ENV = {"AI_MARKET_MAKER_USE_LLM": "1", "OPENAI_API_KEY": "sk-test-456"}
+_LLM_ENV = {"OPENAI_API_KEY": "sk-test-456"}
 
 
 def test_warn_if_aggressive_cadence_emits_stderr_when_llm_and_fast_tick(capsys):
     warn_if_aggressive_cadence(30, env=_LLM_ENV)
     err = capsys.readouterr().err
-    assert "AI_MARKET_MAKER_USE_LLM=1" in err
+    assert "LLM key configured" in err
     assert "30" in err
 
 
-def test_warn_if_aggressive_cadence_treats_y_as_llm_on(capsys):
-    env = {"AI_MARKET_MAKER_USE_LLM": "y", "OPENAI_API_KEY": "sk-test-456"}
-    warn_if_aggressive_cadence(30, env=env)
-    assert "AI_MARKET_MAKER_USE_LLM=1" in capsys.readouterr().err
-
-
-def test_warn_if_aggressive_cadence_silent_when_slow_or_no_llm(capsys):
+def test_warn_if_aggressive_cadence_silent_when_slow_or_no_key(capsys):
     warn_if_aggressive_cadence(180, env=_LLM_ENV)
     assert capsys.readouterr().err == ""
-    warn_if_aggressive_cadence(30, env={"AI_MARKET_MAKER_USE_LLM": "0"})
+    warn_if_aggressive_cadence(30, env={})
     assert capsys.readouterr().err == ""

@@ -26,7 +26,7 @@ Designed to feel like a small professional trading firm — not just another bot
 ### Key Features
 - Multi-agent workflow with clear desk responsibilities
 - Strict **Risk Guard** that can veto any trade
-- Quant-style backtesting with built-in benchmarks (excess return vs buy-and-hold)
+- Quant-style backtesting with built-in benchmarks; **agentic LLM required** (`OPENAI_API_KEY`)
 - Unified agent interface + governance layer
 - **OpenClaw-ready packaging** (`SKILL.md` + `manifest.json` + dedicated runners)
 - Paper trading on Binance Testnet + rich local backtester; Hyperliquid adapter (dry-run) via OMS layer
@@ -257,44 +257,135 @@ Every backtest automatically includes:
 
 Run these **from the repository root** (the directory that contains `pyproject.toml`), after `uv sync --extra dev` (or `uv sync`).
 
+**LLM API key required.** Set `OPENAI_API_KEY` (or `LLM_API_KEY`) in `.env`. `run_demo` and `src/main.py` call `require_llm_key()` and exit without a provider key. There is no non-LLM portfolio or backtest path.
+
 ```bash
-# Using the OpenClaw runner (same cwd requirement)
-uv run python openclaw/scripts/claw_runner.py --backtest
+# One-time: prefetch 50 warmup + 180 eval bars (230 daily bars total)
+uv run python -m backtest.bootstrap_showcase --eval-steps 180
 
-# With custom parameters
-uv run python openclaw/scripts/claw_runner.py --backtest --symbols "BTC/USDT,ETH/USDT,SOL/USDT" --steps 100
+# Recommended showcase (macro_tilt; loads config/deploy.active.json)
+AIMM_BACKTEST_OHLCV_NEXUS=0 AIMM_BACKTEST_LLM_MAX_STEPS=200 uv run python -m backtest.run_demo \
+  --symbols 'BTC/USDT,ETH/USDT,SOL/USDT' \
+  --steps 180 \
+  --csv-only \
+  --timeframe 1d \
+  --ticker BTC/USDT
 
-# Direct multi-symbol demo (public OHLCV via CCXT; no API keys required)
-# Quote --symbols in zsh/fish. NEXUS_DISABLE + LLM off avoid slow/failing network and LLM calls.
-NEXUS_DISABLE=1 AI_MARKET_MAKER_USE_LLM=0 \
+# First run without cache (online fetch):
+AIMM_BACKTEST_OHLCV_NEXUS=0 AIMM_BACKTEST_LLM_MAX_STEPS=200 uv run python -m backtest.run_demo \
+  --symbols 'BTC/USDT,ETH/USDT,SOL/USDT' \
+  --steps 180 --online --timeframe 1d --ticker BTC/USDT
+```
+
+OHLCV-derived macro context feeds agent **1.1** in backtest (no live Nexus, no look-ahead).
+See [`docs/backtest-data.md`](docs/backtest-data.md) for data layers and future Nexus agent wiring.
+
+Watch **stderr** for the per-bar desk CoT transcript (BUY/SELL bars + high-confidence decisions).
+Stdout ends with JSON metrics; HTML report at `.runs/backtests/<run_id>/backtest_report.html`.
+
+**Prerequisites:** `OPENAI_API_KEY` + provider balance (e.g. DeepSeek). Historical bars reuse
+`.cache/decisions/` when prompts match — warm re-runs are cheap.
+
+**TA warmup (default, recommended):** `--steps 180` fetches **230** daily bars (50 warmup + 180 eval).
+Warmup bars feed RSI/MACD/ADX context only — **no LLM calls, no trades**. Metrics and benchmark use
+the **180 eval** bars only (`summary.json` → `eval_bars`, `ta_warmup_bars`). Override via
+`config/app.default.json` `backtest.min_warmup_bars` (default **50**).
+
+Use `--no-warmup` only for fast A/B compares (indicators cold-start on bar 1; not for production reporting).
+
+### Example results (macro_tilt, 50 warmup + 180d eval, `bt_1784365490`)
+
+Default showcase: **50-bar TA warmup**, **180 eval bars**, `macro_tilt` gates, leverage 2.0,
+OHLCV-only desk path (`AIMM_BACKTEST_OHLCV_NEXUS=0`). Eval window 2025-11-25 → 2026-07-12.
+
+| Metric | Strategy | BTC buy-and-hold |
+|--------|----------|------------------|
+| Return (eval window) | **+52.1%** | −34.2% |
+| Excess vs B&H | **+86.3%** | — |
+| Sharpe | **1.77** | — |
+| Max drawdown | 16.5% | — |
+| Trades | 32 | — |
+| Profit factor | **1.95** | — |
+| Regimes | bull, bear, sideways | — |
+
+Report: `.runs/backtests/bt_1784365490/backtest_report.html`
+
+Research helpers (period sweep, preset compare) live under `out/scripts/` (gitignored scratch).
+
+**Tuning for paper / showcase (agentic framework aligned):**
+
+| Knob | Recommendation | Why |
+|------|----------------|-----|
+| **Desk combo** | `macro_tilt` (`config/deploy.active.json`): 2.3×0.55, 1.1×0.25, 2.1×0.15 | Golden gates; leverage 2.0 |
+| **Horizon** | `--steps 180` daily (50 warmup + 180 eval) | Best return/Sharpe balance in period sweep |
+| **Data** | `bootstrap_showcase --eval-steps 180` → `--csv-only` | 230 bars prefetched; offline reruns |
+| **OHLCV context** | `AIMM_BACKTEST_OHLCV_NEXUS=0` on showcase runs | OHLCV-only desk; defers live Nexus replay |
+| **Nexus desks** | Defer 1.2/3.x/4.x to later PR | Need historical feeds or recorded replay — see `docs/backtest-data.md` |
+| **Symbols** | BTC + ETH + SOL | Multi-asset book; transcript defaults to `--ticker` only |
+| **Transcript** | `AIMM_BACKTEST_TERMINAL_ALL_SYMBOLS=1` optional | Show all three symbols per bar (verbose) |
+| **Stress test** | `--steps 365` separately | Full-year bear-market eval; report PF even if &lt; 1 |
+
+```bash
+# Optional: explicit desk list (same as macro_tilt default)
+AIMM_LLM_AGENTS=2.3,2.1,1.1 NEXUS_DISABLE=1 AIMM_BACKTEST_LLM_MAX_STEPS=200 \
   uv run python -m backtest.run_demo \
-    --symbols 'BTC/USDT,ETH/USDT,SOL/USDT' \
-    --steps 100 \
-    --online \
-    --exchange binance
+  --symbols 'BTC/USDT,ETH/USDT,SOL/USDT' --steps 180 --online --timeframe 1d --ticker BTC/USDT
 ```
 
 If you see `ModuleNotFoundError: No module named 'backtest'`, you are not in the repo root or dependencies are not installed (`uv sync`).
 If your `.env` sets `AIMM_STRATEGY_PRESET`, it overrides `config/app.default.json` strategy defaults; unset it to use shipped `app.default.json` presets.
 
+### How the default backtest works (agentic)
+
+Each bar invokes the full LangGraph workflow with **LLM-active** desks:
+
+| Piece | Behavior |
+|-------|----------|
+| **Arbitrator mode** | Default `agent_llm` — per-agent LLM inference (`infer_agent`) then **weighted convergence** fusion |
+| **Portfolio** | Always `llm_portfolio_proposal` / `llm_portfolio_execute` (no rule-based fallback) |
+| **OHLCV context** | Market scan + Tier-0 math feed LLM prompts; 1.1 gets OHLCV-derived macro (`AIMM_BACKTEST_OHLCV_NEXUS=1`) |
+| **No fallback layer** | `backtest.hold_signal_fallback: off` — graph output only |
+| **Fill model** | Signal on completed bars; fill at bar open; TP/SL at bar close |
+| **Terminal output** | Per-bar desk CoT on stderr (on by default in backtest; disable with `AIMM_BACKTEST_TERMINAL_LOG=0`) |
+| **Audit receipts** | `tier0_summary` in iterations (on by default in backtest; disable with `AIMM_BACKTEST_VERBOSE_RECEIPTS=0`) |
+
+Optional: `config/deploy.active.json` with `agents[id].llm_enabled` or `AIMM_LLM_AGENTS=2.1,2.3` to limit which desks call the LLM.
+
+### Comparison with [TradingAgents](https://github.com/TauricResearch/TradingAgents)
+
+Both are LangGraph multi-agent research scaffolds. Differences that matter for this repo:
+
+| | TradingAgents | AIMM (this repo) |
+|---|---------------|------------------|
+| Asset class | Equities (Yahoo) | Crypto perps (Binance OHLCV) |
+| Backtest model | Date-grid `propagate()` vs next-bar close | Bar-by-bar perp simulator (margin, funding, multi-symbol) |
+| Agent fusion | Bull/bear debate → trader → risk → PM | Weighted desk convergence + TA-led gates |
+| Artifacts | Decision log, checkpoints | `summary.json`, trades/equity JSONL, HTML report, quality gates |
+| Terminal UX | Per-date analyst reports in CLI | Per-bar desk CoT + BUY/SELL/HOLD summary on stderr |
+
+Like TradingAgents, results vary with model and window — report benchmark, sample size, and profit factor honestly.
+
 ### Example Backtest Results
 
-The default configuration (using multiple symbols and conservative risk parameters) typically produces results like:
+Re-run after setting your LLM key — results depend on provider, model, and the rolling `--online` window:
 
-```
-Trade count: 17
-Total return: 14.95%
-Excess return vs BTC buy & hold: +30.25%
-Sharpe ratio: 1.79
-Maximum drawdown: 11.84%
-Win rate: 62.5%
+```bash
+NEXUS_DISABLE=1 uv run python -m backtest.run_demo \
+  --symbols 'BTC/USDT,ETH/USDT,SOL/USDT' \
+  --steps 365 --online --timeframe 1d --ticker BTC/USDT
 ```
 
-These results reflect:
-- Multi-asset diversification (BTC, ETH, SOL)
-- Conservative position sizing and risk limits
-- Automated benchmark comparison
-- Full trade transparency and risk event logging
+Report: `.runs/backtests/<run_id>/backtest_report.html`
+
+**Local parameter sweep** (requires LLM key; compares presets via `deploy_config` in `src/backtest/run_agentic_sweep.py`):
+
+```bash
+NEXUS_DISABLE=1 uv run python -m backtest.run_agentic_sweep --showcase
+```
+
+Reports: `.runs/evaluations/sweep_<id>/sweep_report.md`
+
+See also: [`docs/weighted-arbitrator.md`](docs/weighted-arbitrator.md) for threshold and alignment-gating details.
 
 ---
 
@@ -409,7 +500,7 @@ claw skill install ./openclaw
 - Full compatibility with Claw skill system
 - Multi-language documentation support (English, Korean)
 - Complete examples for different usage scenarios
-- Optimized default settings for good backtest results
+- Optimized default arbitrator weights (offline-tuned); see [Backtesting](#backtesting--research-expectations)
 
 
 

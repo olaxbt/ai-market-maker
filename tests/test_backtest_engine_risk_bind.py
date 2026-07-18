@@ -117,8 +117,10 @@ def test_multi_symbol_backtest():
 
 
 def test_ohlcv_window_grows_per_step():
-    """Regression: the `window` param to _signal_fn must grow 1→N bars,
-    not receive the full series each time (P0 bug recurrence check)."""
+    """Regression: signal_fn receives only *completed* bars (no look-ahead).
+
+    Bar 0 has no completed history → no signal call. Bar i uses bars 0..i-1.
+    """
     bars = [[900_000 * i, 100.0, 101.0, 99.0, 100.0 + i * 0.1, 10.0] for i in range(30)]
     window_lengths: list[int] = []
 
@@ -129,13 +131,37 @@ def test_ohlcv_window_grows_per_step():
     engine = PerpEngine({"initial_cash": 10_000, "leverage": 1.0})
     engine.run({"TEST/USDT": bars}, signal)
 
-    # Step 1 gets 1 bar, step 2 gets 2 bars, ... step 30 gets 30 bars
-    assert len(window_lengths) == 30, f"Expected 30 steps, got {len(window_lengths)}"
+    # Bar 0 skipped; bars 1..29 each invoke signal with 1..29 completed bars.
+    assert len(window_lengths) == 29, f"Expected 29 signal calls, got {len(window_lengths)}"
     for i, n in enumerate(window_lengths):
-        assert n == i + 1, f"Step {i + 1}: expected {i + 1} bars in window, got {n}"
-    # Also check: non-first-bar windows have distinct last close
-    # (ensuring TA indicators don't return identical values)
-    closes_step = [bars[i][4] for i in range(30)]
-    assert len(set(c for i, c in enumerate(closes_step) if i > 0)) > 1, (
-        "Only one unique last-close across all windows — window may not be advancing"
+        assert n == i + 1, f"Call {i + 1}: expected {i + 1} completed bars, got {n}"
+    closes_step = [bars[i][4] for i in range(29)]
+    assert len(set(closes_step)) > 1, (
+        "Only one unique last-close across windows — window may not be advancing"
+    )
+
+
+def test_no_lookahead_signal_cannot_trade_same_bar_intrabar_move():
+    """Signal must not use the current bar's OHLC before that bar completes."""
+    bars = [
+        [900_000, 100.0, 101.0, 99.0, 100.0, 10.0],
+        [900_000 * 2, 100.0, 210.0, 95.0, 200.0, 10.0],
+        [900_000 * 3, 200.0, 205.0, 195.0, 202.0, 10.0],
+    ]
+
+    def signal(sym, window, pos, cap):
+        if len(window) < 1:
+            return 0.0
+        o = float(window[-1][1])
+        c = float(window[-1][4])
+        # Buy when the last *completed* bar rallied >50% close vs open.
+        if c > o * 1.5:
+            return 1.0
+        return 0.0
+
+    engine = PerpEngine({"initial_cash": 10_000, "leverage": 1.0})
+    engine.run({"BTC/USDT": bars}, signal)
+    # Old model entered at bar 1 open using bar 1's close=200 before it was known.
+    assert all(t.entry_bar_index != 1 for t in engine.trades), (
+        "Look-ahead: filled on bar 1 open using that bar's intrabar close"
     )

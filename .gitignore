@@ -42,3 +42,7 @@ web-v2/tsconfig.tsbuildinfo
 
 # Local OHLCV CSV cache (see backtest.ohlcv_csv_cache)
 data/ohlcv/
+.cache
+
+# Local output
+out/

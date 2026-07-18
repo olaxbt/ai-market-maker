@@ -17,7 +17,7 @@ Multi-symbol (aligned OHLCV; same portfolio path as production graph). If you om
 
 Examples::
 
-    NEXUS_DISABLE=1 AI_MARKET_MAKER_USE_LLM=0 uv run python -m backtest.run_demo --steps 80 --online --timeframe 1d
+    NEXUS_DISABLE=1 uv run python -m backtest.run_demo --steps 80 --online --timeframe 1d
 
 ~6 months daily, dynamic top-liquid universe, frequent-style env (no ``--symbols``)::
 
@@ -130,6 +130,11 @@ def build_run_demo_parser() -> argparse.ArgumentParser:
         type=int,
         default=20,
         help="Candles to fetch (then may expand).",
+    )
+    parser.add_argument(
+        "--no-warmup",
+        action="store_true",
+        help="Disable TA warmup prefix (fetch --steps bars only).",
     )
     parser.add_argument(
         "--interval-sec",
@@ -315,6 +320,15 @@ def resolve_run_demo_symbols(
     return [], str(args.ticker)
 
 
+def _resolve_tp_sl_pct(args: argparse.Namespace) -> float:
+    if float(args.tp_sl_pct) > 0:
+        return float(args.tp_sl_pct)
+    from config.fund_policy import load_fund_policy
+
+    fp = load_fund_policy()
+    return float(fp.take_profit_pct) * 100.0
+
+
 def _resolve_run_leverage(
     args: argparse.Namespace,
     deploy_config: dict[str, Any] | None,
@@ -329,6 +343,19 @@ def _resolve_run_leverage(
     return None
 
 
+def _resolve_fetch_plan(
+    args: argparse.Namespace, *, eval_steps: int
+) -> tuple[int, int, int | None]:
+    """Return ``(fetch_limit, warmup_bars, ta_warmup_override)`` for OHLCV load."""
+    from backtest.ta_warmup import total_fetch_bars
+
+    ev = max(2, int(eval_steps))
+    if bool(getattr(args, "no_warmup", False)):
+        return ev, 0, 0
+    fetch_limit, warmup = total_fetch_bars(eval_steps=ev)
+    return fetch_limit, warmup, None
+
+
 def execute_run_demo(
     args: argparse.Namespace,
     parser: argparse.ArgumentParser,
@@ -336,6 +363,7 @@ def execute_run_demo(
 ) -> dict[str, Any]:
     sym_list, primary = resolve_run_demo_symbols(args, parser)
     run_leverage = _resolve_run_leverage(args, deploy_config)
+    tp_sl_pct = _resolve_tp_sl_pct(args)
     runs_dir_path = Path(args.runs_dir).expanduser() if args.runs_dir else None
     fee_bps = float(load_app_settings().paper.fee_bps)
 
@@ -378,28 +406,43 @@ def execute_run_demo(
     attempt = 0
 
     if sym_list:
-        limit_m = max(2, int(args.steps))
+        eval_steps_m = max(2, int(args.steps))
         if args.llm and llm_cap is not None:
-            limit_m = min(limit_m, llm_cap)
+            eval_steps_m = min(eval_steps_m, llm_cap)
+        fetch_limit_m, warmup_m, ta_override_m = _resolve_fetch_plan(args, eval_steps=eval_steps_m)
+        if warmup_m > 0:
+            print(
+                f"[warmup] fetch {fetch_limit_m} bars "
+                f"({warmup_m} TA context + {eval_steps_m} eval, no LLM/trades in warmup)",
+                file=sys.stderr,
+            )
+        else:
+            print(
+                f"[warmup] disabled — fetch {fetch_limit_m} eval bars only",
+                file=sys.stderr,
+            )
         bars_map: dict[str, list[list[float]]] = {}
         refresh_csv = bool(getattr(args, "refresh_ohlcv_cache", False))
         csv_only = bool(getattr(args, "csv_only", False))
         for _idx, sym in enumerate(sym_list):
             if csv_only:
                 assert ohlcv_cache is not None
-                print(f"[csv] loading {limit_m} x {tf} {sym} from {ohlcv_cache} …", file=sys.stderr)
+                print(
+                    f"[csv] loading {fetch_limit_m} x {tf} {sym} from {ohlcv_cache} …",
+                    file=sys.stderr,
+                )
                 bars_map[sym] = load_bars_csv_only(
-                    sym, limit_m, timeframe=tf, cache_dir=ohlcv_cache
+                    sym, fetch_limit_m, timeframe=tf, cache_dir=ohlcv_cache
                 )
             elif args.online:
                 if ohlcv_cache is not None:
                     print(
-                        f"[cache] ensure {limit_m} x {tf} {sym} under {ohlcv_cache} …",
+                        f"[cache] ensure {fetch_limit_m} x {tf} {sym} under {ohlcv_cache} …",
                         file=sys.stderr,
                     )
                     bars_map[sym] = ensure_bars_cached(
                         sym,
-                        limit_m,
+                        fetch_limit_m,
                         timeframe=tf,
                         exchange_id=str(args.exchange),
                         cache_dir=ohlcv_cache,
@@ -407,12 +450,12 @@ def execute_run_demo(
                     )
                 else:
                     print(
-                        f"[online] fetching {limit_m} x {tf} {sym} from {args.exchange} …",
+                        f"[online] fetching {fetch_limit_m} x {tf} {sym} from {args.exchange} …",
                         file=sys.stderr,
                     )
                     bars_map[sym] = fetch_ccxt_ohlcv_bars(
                         sym,
-                        limit_m,
+                        fetch_limit_m,
                         timeframe=tf,
                         exchange_id=args.exchange,
                     )
@@ -437,30 +480,50 @@ def execute_run_demo(
             runs_dir=runs_dir_path,
             instrument=args.instrument,
             leverage=run_leverage,
-            take_profit_pct=args.tp_sl_pct,
-            stop_loss_pct=args.tp_sl_pct,
+            take_profit_pct=tp_sl_pct,
+            stop_loss_pct=tp_sl_pct,
             deploy_config=deploy_config,
             deploy_profile_weights=_dep_w,
             deploy_profile_id=_dep_id,
             deploy_arbitrator_mode=_dep_mode,
             timeframe=tf,
+            eval_steps=eval_steps_m,
+            ta_warmup_bars=ta_override_m,
         )
 
     while not sym_list:
         attempt += 1
+        eval_steps = max(2, int(limit))
+        if args.llm and llm_cap is not None:
+            eval_steps = min(eval_steps, llm_cap)
+        fetch_limit, warmup_bars, ta_override = _resolve_fetch_plan(args, eval_steps=eval_steps)
+        if attempt == 1:
+            if warmup_bars > 0:
+                print(
+                    f"[warmup] fetch {fetch_limit} bars "
+                    f"({warmup_bars} TA context + {eval_steps} eval, no LLM/trades in warmup)",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"[warmup] disabled — fetch {fetch_limit} eval bars only",
+                    file=sys.stderr,
+                )
         _csv_only = bool(getattr(args, "csv_only", False))
         _refresh = bool(getattr(args, "refresh_ohlcv_cache", False))
         if _csv_only:
             assert ohlcv_cache is not None
-            print(f"[csv] loading {limit} x {tf} {args.ticker} …", file=sys.stderr)
-            bars = load_bars_csv_only(str(args.ticker), limit, timeframe=tf, cache_dir=ohlcv_cache)
+            print(f"[csv] loading {fetch_limit} x {tf} {args.ticker} …", file=sys.stderr)
+            bars = load_bars_csv_only(
+                str(args.ticker), fetch_limit, timeframe=tf, cache_dir=ohlcv_cache
+            )
             interval_sec = _infer_interval_sec_from_bars(bars)
         elif args.online:
             if ohlcv_cache is not None:
-                print(f"[cache] ensure {limit} x {tf} {args.ticker} …", file=sys.stderr)
+                print(f"[cache] ensure {fetch_limit} x {tf} {args.ticker} …", file=sys.stderr)
                 bars = ensure_bars_cached(
                     str(args.ticker),
-                    limit,
+                    fetch_limit,
                     timeframe=tf,
                     exchange_id=str(args.exchange),
                     cache_dir=ohlcv_cache,
@@ -468,12 +531,12 @@ def execute_run_demo(
                 )
             else:
                 print(
-                    f"[online] fetching {limit} x {tf} {args.ticker} from {args.exchange} …",
+                    f"[online] fetching {fetch_limit} x {tf} {args.ticker} from {args.exchange} …",
                     file=sys.stderr,
                 )
                 bars = fetch_ccxt_ohlcv_bars(
                     args.ticker,
-                    limit,
+                    fetch_limit,
                     timeframe=tf,
                     exchange_id=args.exchange,
                 )
@@ -511,13 +574,15 @@ def execute_run_demo(
             runs_dir=runs_dir_path,
             instrument=args.instrument,
             leverage=run_leverage,
-            take_profit_pct=args.tp_sl_pct,
-            stop_loss_pct=args.tp_sl_pct,
+            take_profit_pct=tp_sl_pct,
+            stop_loss_pct=tp_sl_pct,
             deploy_config=deploy_config,
             deploy_profile_weights=_dep_w,
             deploy_profile_id=_dep_id,
             deploy_arbitrator_mode=_dep_mode,
             timeframe=tf,
+            eval_steps=eval_steps,
+            ta_warmup_bars=ta_override,
         )
 
         need = int(args.min_trades)
@@ -529,12 +594,13 @@ def execute_run_demo(
                 file=sys.stderr,
             )
             break
-        step = max(20, min(60, limit // 2))
-        limit = min(max_fetch, limit + step)
-        if llm_cap is not None:
-            limit = min(limit, llm_cap)
+        step = max(20, min(60, eval_steps // 2))
+        eval_steps = min(max_fetch, eval_steps + step)
+        if args.llm and llm_cap is not None:
+            eval_steps = min(eval_steps, llm_cap)
+        limit = eval_steps
         print(
-            f"[online] trade_count={res.trade_count} < {need}; expanding to {limit} candles …",
+            f"[online] trade_count={res.trade_count} < {need}; expanding eval to {eval_steps} candles …",
             file=sys.stderr,
         )
 
@@ -593,8 +659,8 @@ def execute_run_demo(
                 runs_dir=runs_dir_path,
                 instrument=args.instrument,
                 leverage=run_leverage,
-                take_profit_pct=args.tp_sl_pct,
-                stop_loss_pct=args.tp_sl_pct,
+                take_profit_pct=tp_sl_pct,
+                stop_loss_pct=tp_sl_pct,
                 deploy_config=deploy_config,
                 deploy_profile_weights=_dep_w,
                 deploy_profile_id=_dep_id,
@@ -609,8 +675,8 @@ def execute_run_demo(
                 interval_sec=interval_sec,
                 run_id=f"{out.get('run_id', 'bt')}_oos",
                 runs_dir=runs_dir_path,
-                take_profit_pct=args.tp_sl_pct,
-                stop_loss_pct=args.tp_sl_pct,
+                take_profit_pct=tp_sl_pct,
+                stop_loss_pct=tp_sl_pct,
                 instrument=args.instrument,
                 leverage=run_leverage,
                 deploy_config=deploy_config,
@@ -734,6 +800,9 @@ def execute_run_demo(
 
 def main(argv: list[str] | None = None) -> dict[str, Any]:
     load_dotenv()
+    from config.llm_env import require_llm_key
+
+    require_llm_key()
     apply_strategy_env_defaults_from_settings(load_app_settings())
     parser = build_run_demo_parser()
     args = parser.parse_args(argv)
@@ -770,10 +839,8 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
 
     set_env_from_config(bt_cfg)
 
-    if bt_cfg["arbitrator_mode"] in ("weighted_convergence",):
-        os.environ["AIMM_LLM_MODE"] = "0"
-
     out = execute_run_demo(args, parser, deploy_config=bt_cfg)
+    resolved_tp_sl = _resolve_tp_sl_pct(args)
     actual_lev = bt_cfg["leverage"]
     try:
         sp = Path(out.get("summary_path", ""))
@@ -787,10 +854,11 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
         "deploy_path": bt_cfg["deploy_path"],
         "profile_id": bt_cfg["profile_id"],
         "profile_weights": bt_cfg.get("profile_weights", {}),
-        "take_profit_pct": bt_cfg["take_profit_pct"],
-        "stop_loss_pct": bt_cfg["stop_loss_pct"],
+        "take_profit_pct": resolved_tp_sl if resolved_tp_sl > 0 else bt_cfg["take_profit_pct"],
+        "stop_loss_pct": resolved_tp_sl if resolved_tp_sl > 0 else bt_cfg["stop_loss_pct"],
         "leverage": actual_lev,
         "source_description": bt_cfg["source_description"],
+        "agent_led_symbols": bt_cfg.get("agent_led_symbols", []),
     }
     print(json.dumps(out, indent=2), flush=True)
     return out

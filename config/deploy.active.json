@@ -1,0 +1,40 @@
+{
+  "profile": {
+    "profile_id": "macro_tilt"
+  },
+  "effective_weights": {
+    "2.3": 0.55,
+    "2.1": 0.15,
+    "1.1": 0.25
+  },
+  "decision_threshold": {
+    "buy": {
+      "min_composite": 53,
+      "min_confidence": 16
+    },
+    "sell": {
+      "max_composite": 41,
+      "min_confidence": 26
+    },
+    "hold": {
+      "else": true
+    },
+    "alignment_gating": {
+      "enabled": true,
+      "min_factors_for_directional": 2,
+      "risk_override_if_blocked": true
+    },
+    "ta_led": {
+      "enabled": true,
+      "agent_id": "2.3",
+      "buy_min_composite": 57,
+      "sell_max_composite": 43,
+      "min_confidence": 14
+    }
+  },
+  "execution": {
+    "arbitrator_mode": "agent_llm",
+    "allows_short": true,
+    "leverage": 2.0
+  }
+}

@@ -6,7 +6,7 @@
     "max_leverage": 2,
     "min_confidence_directional": 0.26,
     "trade_cooldown_bars": 10,
-    "allows_short": true,
+    "allows_short": false,
     "order_max_add_btc": 0.1,
     "order_max_add_notional_usd": 2000,
     "intent_notional_fraction": 0.12,

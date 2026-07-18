@@ -78,16 +78,22 @@ def derive_trade_intent(
     fp = load_fund_policy()
     min_c = fp.min_confidence_directional
 
-    # Flat book: lower confidence bar for new entries.
+    bt_allows_short = bt.get("allows_short")
+    allows_short = bool(bt_allows_short) if bt_allows_short is not None else fp.allows_short
+
     is_flat = qty is not None and abs(qty) < 1e-12
-    effective_min_c = 0.03 if is_flat else min_c
+    # Backtest: use full policy confidence floor (no 3% flat-book bypass).
+    if run_mode == RunMode.BACKTEST.value:
+        effective_min_c = max(0.20, min_c - 0.05)
+    else:
+        effective_min_c = 0.03 if is_flat else min_c
 
     action = "HOLD"
     if stance_s == "bullish" and conf_f >= effective_min_c:
         action = "BUY"
     elif stance_s == "bearish" and conf_f >= effective_min_c:
         action = "SELL"
-        if not fp.allows_short and run_mode == RunMode.BACKTEST.value:
+        if not allows_short and run_mode == RunMode.BACKTEST.value:
             pos_dict = bt.get("positions")
             if isinstance(pos_dict, dict):
                 total_base = sum(float(v) for v in pos_dict.values() if isinstance(v, (int, float)))

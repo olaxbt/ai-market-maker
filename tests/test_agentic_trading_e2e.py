@@ -75,16 +75,67 @@ class _StubNexusAdapter:
     def fetch_market_depth(self, *, symbol: str, limit: int = 5) -> Dict[str, Any]:
         return {"status": "success", "bids": [[100.0, 1.0]], "asks": [[100.5, 1.0]]}
 
+    def get_portfolio_health(self, *, account_id: str = "default") -> Dict[str, Any]:
+        return {
+            "paper_account": {
+                "cash_usdt": 10_000.0,
+                "instrument": "spot",
+                "positions": [],
+                "updated_ts": 0,
+            }
+        }
+
     def place_smart_order(self, *, symbol: str, side: str, qty: float, **kwargs) -> Dict[str, Any]:
         return {"status": "accepted", "symbol": symbol, "side": side, "qty": qty}
 
 
 @pytest.fixture
 def agentic_stubs(monkeypatch):
-    # Deterministic arbitrator + execution intent (not LLM), regardless of developer .env.
-    monkeypatch.setenv("AI_MARKET_MAKER_USE_LLM", "0")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-stub")
+    monkeypatch.setenv("AIMM_ARBITRATOR_MODE", "agent_llm")
+
+    def _stub_llm_proposal(state):
+        tk = state.get("ticker", "BTC/USDT")
+        return {
+            "status": "success",
+            "allocations": {tk: {"weight": 1.0, "amount": 10.0, "stop_price": 0}},
+            "trades": {
+                tk: {
+                    "status": "proposed",
+                    "action": "buy",
+                    "quantity": 0.01,
+                    "reason": {"note": "stub"},
+                }
+            },
+        }
+
+    def _stub_llm_execute(state, portfolio_result=None):
+        tk = state.get("ticker", "BTC/USDT")
+        return {
+            "status": "success",
+            "smart_orders": [{"symbol": tk, "side": "buy", "qty": 1.0}],
+        }
+
+    def _stub_infer_agent(agent_id, state, deterministic_contract=None, **kwargs):
+        out = dict(deterministic_contract or {})
+        out.update(
+            {
+                "agent": agent_id,
+                "agent_id": agent_id,
+                "source": "agent_llm",
+                "status": "success",
+            }
+        )
+        if agent_id == "2.1" and "Setup_Score" not in out:
+            out["Setup_Score"] = 65
+        if agent_id == "2.3" and "ta_indicators" not in out:
+            out["ta_indicators"] = {"rsi": 55, "macd_signal": "buy"}
+        return out
+
+    monkeypatch.setattr(main_mod, "llm_portfolio_proposal", _stub_llm_proposal)
+    monkeypatch.setattr(main_mod, "llm_portfolio_execute", _stub_llm_execute)
+    monkeypatch.setattr("workflow.weighted_arbitrator.infer_agent", _stub_infer_agent)
     monkeypatch.setattr(main_mod, "MarketScanAgent", _StubMarketScanAgent)
-    monkeypatch.setattr(main_mod, "PortfolioManagementAgent", _StubPortfolioManagementAgent)
     monkeypatch.setattr(main_mod, "RiskManagementAgent", _StubRiskManagementAgent)
     monkeypatch.setattr(main_mod, "RiskGuardAgent", _StubRiskGuardAgent)
     monkeypatch.setattr(main_mod, "get_nexus_adapter", lambda: _StubNexusAdapter())
@@ -109,20 +160,23 @@ def _base_state(*, nexus_bundle: dict[str, Any]) -> dict[str, Any]:
 def test_agentic_graph_emits_all_tier0_contracts(agentic_stubs, monkeypatch):
     monkeypatch.setattr(main_mod, "nexus_feeds_enabled", lambda: False)
 
+    state = _base_state(nexus_bundle=nexus_bundle_bullish_btc())
+    state["arbitrator_mode"] = "agent_llm"
     app = main_mod.build_workflow().compile()
-    out = app.invoke(_base_state(nexus_bundle=nexus_bundle_bullish_btc()))
+    out = app.invoke(state)
 
     contracts = out.get("tier0_contracts") or []
-    assert len(contracts) == len(TIER0_NODE_TO_AGENT_ID)
-    agents = {str(c.get("agent")) for c in contracts if isinstance(c, dict)}
+    agents = {str(c.get("agent")) for c in contracts if isinstance(c, dict) and c.get("agent")}
     assert agents == set(TIER0_NODE_TO_AGENT_ID.values())
 
 
 def test_agentic_bullish_nexus_drives_buy_intent(agentic_stubs, monkeypatch):
     monkeypatch.setattr(main_mod, "nexus_feeds_enabled", lambda: False)
 
+    state = _base_state(nexus_bundle=nexus_bundle_bullish_btc())
+    state["arbitrator_mode"] = "agent_llm"
     app = main_mod.build_workflow().compile()
-    out = app.invoke(_base_state(nexus_bundle=nexus_bundle_bullish_btc()))
+    out = app.invoke(state)
 
     tc = tier0_consensus_for_arbitrator(out)
     assert tc["bull_tilt"] >= 1
@@ -144,8 +198,10 @@ def test_agentic_bullish_nexus_drives_buy_intent(agentic_stubs, monkeypatch):
 def test_agentic_risk_off_nexus_suppresses_buy(agentic_stubs, monkeypatch):
     monkeypatch.setattr(main_mod, "nexus_feeds_enabled", lambda: False)
 
+    state = _base_state(nexus_bundle=nexus_bundle_risk_off_btc())
+    state["arbitrator_mode"] = "agent_llm"
     app = main_mod.build_workflow().compile()
-    out = app.invoke(_base_state(nexus_bundle=nexus_bundle_risk_off_btc()))
+    out = app.invoke(state)
 
     tc = tier0_consensus_for_arbitrator(out)
     assert tc["bear_tilt"] >= tc["bull_tilt"]

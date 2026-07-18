@@ -62,9 +62,9 @@ def warn_if_aggressive_cadence(interval_sec: int, *, env: Mapping[str, str] | No
     use_llm = use_llm_arbitrator(env_map)
     if use_llm and interval_sec < LLM_SANE_MIN_INTERVAL_SEC:
         print(
-            f"[cadence] AI_MARKET_MAKER_USE_LLM=1 with {STRATEGY_INTERVAL_ENV}={interval_sec}s "
-            f"(<{LLM_SANE_MIN_INTERVAL_SEC}s): each tick runs the full graph and LLM calls — "
-            "expect high token usage. Consider >=180s for demos, or disable LLM for fast ticks.",
+            f"[cadence] LLM key configured with {STRATEGY_INTERVAL_ENV}={interval_sec}s "
+            f"(<{LLM_SANE_MIN_INTERVAL_SEC}s): each tick runs the full agentic graph — "
+            "expect high token usage. Consider >=180s for demos.",
             file=sys.stderr,
         )
 

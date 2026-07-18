@@ -40,7 +40,7 @@ def test_bullish_above_threshold_buy(monkeypatch: pytest.MonkeyPatch):
 def test_neutral_or_low_confidence_hold():
     """When not flat, confidence below policy threshold → HOLD."""
     pol = load_fund_policy()
-    actual_min_c = pol.min_confidence_directional
+    actual_min_c = max(0.20, pol.min_confidence_directional - 0.05)
 
     # State has a position (not flat), so the book threshold (min_c) applies.
     state = {
@@ -59,22 +59,20 @@ def test_neutral_or_low_confidence_hold():
 
 
 def test_flat_book_low_confidence_entry():
-    """Flat book with directional-but-low confidence → BUY via flat-book policy."""
-    # The flat-book threshold is 0.03 (TA-alone signal on trending data).
-    # Test that conf=0.04 passes but conf=0.02 holds.
-    ps_pass = {"params": {"stance": "bullish", "confidence": 0.04}}
-    r_pass = derive_trade_intent(_state_backtest(), ps_pass)
-    assert r_pass["action"] == "BUY", (
-        f"Expected BUY with conf=0.04: got {r_pass['action']} "
-        f"(min={r_pass['meta'].get('effective_min_confidence')})"
-    )
+    """Flat backtest book uses policy min_confidence (no 3% bypass)."""
+    pol = load_fund_policy()
+    min_c = max(0.20, pol.min_confidence_directional - 0.05)
 
-    ps_hold = {"params": {"stance": "bullish", "confidence": 0.02}}
+    ps_pass = {"params": {"stance": "bullish", "confidence": min_c + 0.05}}
+    r_pass = derive_trade_intent(_state_backtest(), ps_pass)
+    assert r_pass["action"] == "BUY"
+
+    ps_hold = {"params": {"stance": "bullish", "confidence": min_c - 0.05}}
     r_hold = derive_trade_intent(_state_backtest(), ps_hold)
-    assert r_hold["action"] == "HOLD", f"Expected HOLD with conf=0.02: got {r_hold['action']}"
+    assert r_hold["action"] == "HOLD"
 
     assert r_pass["meta"].get("is_flat") is True
-    assert r_pass["meta"].get("effective_min_confidence") == 0.03
+    assert r_pass["meta"].get("effective_min_confidence") == min_c
 
 
 def test_bearish_sell(monkeypatch: pytest.MonkeyPatch):

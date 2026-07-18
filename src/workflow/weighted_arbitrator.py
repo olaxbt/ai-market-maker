@@ -31,26 +31,45 @@ from workflow.weight_assigner import compute_weighted_arbitration
 
 logger = logging.getLogger(__name__)
 
-# v4 config defaults (configurable via env / overrides)
+# v4 config defaults — tuned for OHLCV-only backtests (NEXUS_DISABLE=1).
+# Nexus-heavy agents are disabled; desk is TA-led (2.3) with macro/pattern support.
+# Weights calibrated offline via run_agentic_sweep (macro_tilt preset).
 _V4_DECISION_THRESHOLD: dict[str, Any] = {
-    "buy": {"min_composite": 53, "min_confidence": 10},
-    "sell": {"max_composite": 47, "min_confidence": 10},
+    "buy": {"min_composite": 53, "min_confidence": 16},
+    "sell": {"max_composite": 41, "min_confidence": 26},
     "hold": {"else": True},
     "alignment_gating": {
         "enabled": True,
-        "min_factors_for_directional": 3,
+        "min_factors_for_directional": 2,
         "risk_override_if_blocked": True,
+    },
+    "ta_led": {
+        "enabled": True,
+        "agent_id": "2.3",
+        "buy_min_composite": 57,
+        "sell_max_composite": 43,
+        "min_confidence": 14,
     },
 }
 
-_V4_DISABLED_AGENTS: set[str] = {"4.1"}  # Whale Behavior disabled by default
+
+def _resolve_decision_threshold(state: HedgeFundState) -> dict[str, Any]:
+    """Per-run threshold from state (backtest deploy_config) or v4 defaults."""
+    override = state.get("decision_threshold")
+    if isinstance(override, dict) and override:
+        return dict(override)
+    return dict(_V4_DECISION_THRESHOLD)
+
+
+# Agents that require live Nexus feeds (news, OI, sentiment, depth) — skip in backtest.
+_V4_DISABLED_AGENTS: set[str] = {"1.2", "2.2", "3.1", "3.2", "4.1", "4.2"}
 
 _V4_AGENT_WEIGHTS: dict[str, float] = {
-    "1.1": 0.05,
+    "1.1": 0.25,
     "1.2": 0.05,
-    "2.1": 0.25,
+    "2.1": 0.15,
     "2.2": 0.10,
-    "2.3": 0.30,
+    "2.3": 0.55,
     "3.1": 0.05,
     "3.2": 0.05,
     "4.1": 0.05,
@@ -110,8 +129,14 @@ def _arbitration_to_proposed_signal(
     state: HedgeFundState,
 ) -> dict[str, Any]:
     """Map ArbitrationResult → proposed_signal (same shape as LLM path)."""
-    # Map composite to stance string for execution_intent
-    stance = result.stance  # "bullish" | "bearish" | "neutral"
+    # Only pass directional stance when arbitration explicitly triggered BUY/SELL.
+    # Raw composite stance can be bearish/bullish while gates still say HOLD.
+    if result.buy_triggered:
+        stance = "bullish"
+    elif result.sell_triggered:
+        stance = "bearish"
+    else:
+        stance = "neutral"
     confidence = result.confidence
 
     return {
@@ -180,35 +205,32 @@ def _resolve_arbitrator_mode(state: HedgeFundState) -> str:
     Priority:
     1. ``state.arbitrator_mode`` (from runtime settings)
     2. Deploy config active file
-    3. Default: ``weighted_convergence``
-
-    When ``AI_MARKET_MAKER_USE_LLM=1`` (set by ``--llm``) but no deploy
-    config is found, raises a clear error with remediation instructions.
+    3. Default: ``agent_llm``
     """
     mode = state.get("arbitrator_mode") or ""
     if mode in ("agent_llm", "weighted_convergence"):
+        if mode == "weighted_convergence":
+            logger.warning("weighted_convergence requested; using agent_llm (LLM required).")
+            return "agent_llm"
         return mode
     try:
         from config.deploy_loader import get_arbitrator_mode
 
         deploy_mode = get_arbitrator_mode()
         if deploy_mode in ("agent_llm", "weighted_convergence"):
+            if deploy_mode == "weighted_convergence":
+                return "agent_llm"
             return deploy_mode
     except Exception:
         pass
 
-    llm_flag = os.environ.get("AI_MARKET_MAKER_USE_LLM", "0") == "1"
-    if llm_flag:
-        cfg_path = os.environ.get("AIMM_DEPLOY_CONFIG_PATH", "config/deploy.active.json")
-        raise RuntimeError(
-            f"--llm mode requires a deploy config. File not found: {cfg_path}.\n"
-            f"To fix:\n"
-            f"  1. Copy the example: cp config/deploy.example.json {cfg_path}\n"
-            f"  2. Edit {cfg_path} to match your agent topology, or\n"
-            f"  3. Set AIMM_DEPLOY_CONFIG_PATH to a custom path."
-        )
+    env_mode = (os.environ.get("AIMM_ARBITRATOR_MODE") or "").strip().lower()
+    if env_mode == "agent_llm":
+        return "agent_llm"
+    if env_mode == "weighted_convergence":
+        return "agent_llm"
 
-    return "weighted_convergence"
+    return "agent_llm"
 
 
 def _get_llm_enabled_agents(state: HedgeFundState) -> list[str]:
@@ -218,7 +240,8 @@ def _get_llm_enabled_agents(state: HedgeFundState) -> list[str]:
     1. ``AIMM_LLM_AGENTS`` env var — comma-separated agent IDs
        (e.g. ``AIMM_LLM_AGENTS=2.1,2.3``). Overrides deploy config.
     2. ``config/deploy.active.json`` → ``agents[id].llm_enabled: true``
-    3. If neither is set, all agents are LLM-enabled (full-agentic).
+    3. ``state.profile_weights`` — agents with weight > 0 in the active preset
+    4. All known agents when no combination is configured.
     """
     # 1. Env var override (highest priority)
     env_agents = os.environ.get("AIMM_LLM_AGENTS", "").strip()
@@ -235,11 +258,17 @@ def _get_llm_enabled_agents(state: HedgeFundState) -> list[str]:
             for aid, cfg in deploy_agents.items():
                 if isinstance(cfg, dict) and cfg.get("llm_enabled", False):
                     enabled.append(aid)
-            return enabled
+            if enabled:
+                return enabled
     except Exception:
         pass
 
-    # 3. Full-agentic: all known agents (from agent_llm_client)
+    # 3. Profile / preset weights — only LLM-call agents in the active combination.
+    profile = state.get("profile_weights") or {}
+    if isinstance(profile, dict) and profile:
+        return [str(aid) for aid, w in profile.items() if float(w or 0) > 0]
+
+    # 4. Full-agentic fallback when no combination is configured.
     _KNOWN_AGENTS = ["1.1", "1.2", "2.1", "2.2", "2.3", "3.1", "3.2", "4.1", "4.2"]
     return list(_KNOWN_AGENTS)
 
@@ -384,7 +413,7 @@ def weighted_arbitrator_node(state: HedgeFundState) -> dict[str, Any]:
             state,
             agent_weights=agent_weights,
             disabled_agents=_V4_DISABLED_AGENTS,
-            decision_threshold=_V4_DECISION_THRESHOLD,
+            decision_threshold=_resolve_decision_threshold(state),
         )
 
     proposed_signal = _arbitration_to_proposed_signal(result, state)
