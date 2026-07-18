@@ -308,8 +308,9 @@ class PortfolioManagementAgent:
 
             allocations: Dict[str, Any] = {}
             total_budget = float(self._trading.config.portfolio_budget_usd)
-            # Backtest sizing should actually put capital to work. When the engine passes cash,
-            # use it as the base budget and scale by leverage so 3x/5x/10x changes exposure.
+            # Backtest sizing uses mark NAV (via external_cash_usd) as the budget base,
+            # scaled by leverage so 3x/5x/10x changes exposure. Free collateral alone
+            # collapses toward ~0 when margined and would starve the book.
             run_m = (run_mode or "").strip().lower()
             if run_m == "backtest" and external_cash_usd is not None:
                 cash_f = float(external_cash_usd)

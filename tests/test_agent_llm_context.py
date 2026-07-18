@@ -33,6 +33,26 @@ class TestSimulationContext:
         assert "Run ID: bt_12345" in result
         assert "Primary ticker: BTC/USDT" in result
 
+    def test_backtest_book_cash_and_equity(self):
+        state = {
+            "run_mode": "backtest",
+            "ticker": "BTC/USDT",
+            "shared_memory": {
+                "backtest": {
+                    "window_last_ts_ms": 1700000000000.0,
+                    "window_len": 10,
+                    "interval_sec": 86400,
+                    "timeframe": "1d",
+                    "run_id": "bt_book",
+                    "cash": 1200.0,
+                    "equity": 10_450.5,
+                }
+            },
+        }
+        result = _build_simulation_context(state, "BTC/USDT")
+        assert "Free collateral (USDT): 1200.00" in result
+        assert "Mark equity / NAV (USDT): 10450.50" in result
+
     def test_backtest_without_ticker_falls_back(self):
         state = {
             "run_mode": "backtest",

@@ -754,7 +754,12 @@ def _portfolio_agent_kwargs(state: HedgeFundState) -> dict[str, Any]:
     out: dict[str, Any] = {"run_mode": state.get("run_mode")}
     if str(state.get("run_mode") or "").lower() == RunMode.BACKTEST.value:
         cash_raw = bt.get("cash", 0.0)
-        out["external_cash_usd"] = float(cash_raw) if isinstance(cash_raw, (int, float)) else 0.0
+        eq_raw = bt.get("equity")
+        # Portfolio target notionals are sized as a fraction of mark NAV when available.
+        budget = eq_raw if isinstance(eq_raw, (int, float)) else cash_raw
+        out["external_cash_usd"] = float(budget) if isinstance(budget, (int, float)) else 0.0
+        if isinstance(cash_raw, (int, float)):
+            out["external_free_collateral_usd"] = float(cash_raw)
         pos = bt.get("positions")
         if isinstance(pos, dict):
             ext_pos = {str(k): _coerce_bt_position_qty(v) for k, v in pos.items()}

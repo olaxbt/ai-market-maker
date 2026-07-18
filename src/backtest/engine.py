@@ -322,14 +322,13 @@ class BacktestEngine:
                 if tier0_fb:
                     rec["tier0_summary"] = tier0_fb
 
-        def _signal_fn(
-            symbol: str,
-            window: list,
-            positions,
-            capital: float,
-            equity: float | None = None,
-        ) -> float:
+        def _signal_fn(symbol: str, window: list, positions, account) -> float:
+            from backtest.engines.perp import coerce_account
             from schemas.state import initial_hedge_fund_state
+
+            book = coerce_account(account)
+            capital = book.cash
+            equity = book.equity
 
             bar_index = len(window) if isinstance(window, list) else 0
             min_warmup_bars = int(
@@ -426,6 +425,7 @@ class BacktestEngine:
             iv_sec = int(c.get("interval_sec", 300))
             sm["backtest"] = {
                 "cash": float(capital),
+                "equity": float(equity),
                 "positions": {
                     k: {"size": v.size, "entry": v.entry_price} for k, v in positions.items()
                 },
@@ -642,11 +642,7 @@ class BacktestEngine:
                         wf_output=output,
                         action=action,
                         confidence=conf,
-                        equity=(
-                            float(equity)
-                            if equity is not None
-                            else (float(capital) if capital is not None else None)
-                        ),
+                        equity=float(equity),
                         invoke_cache_hit=invoke_cache_hit,
                         active_agent_ids=_active_agents,
                     )

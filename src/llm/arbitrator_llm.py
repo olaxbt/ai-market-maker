@@ -134,6 +134,11 @@ def _backtest_prompt_context(state: HedgeFundState, *, ticker: str) -> dict[str,
     bt = sm.get("backtest") if isinstance(sm.get("backtest"), dict) else {}
     if bt:
         ctx["sim_cash_usd"] = float(bt.get("cash", 0.0) or 0.0)
+        # Mark equity (NAV); fall back to cash when older receipts omit equity.
+        eq_raw = bt.get("equity")
+        ctx["sim_equity_usd"] = (
+            float(eq_raw) if isinstance(eq_raw, (int, float)) else ctx["sim_cash_usd"]
+        )
         pos = bt.get("positions")
         if isinstance(pos, dict):
             ctx["sim_qty_by_symbol"] = {}
@@ -230,8 +235,10 @@ def signal_arbitrator_llm(state: HedgeFundState) -> Dict[str, Any]:
         "- (B) tier1_deterministic_execution is present with conviction_score >= 70 AND backtest_prompt_context.window_close_to_close_return_pct is > 0.\n"
         "If quant is sell and Tier-1 is long, default to neutral with confidence <= 0.54 unless (B) is satisfied.\n"
         "Risk JSON semantics: risk.analysis[ticker].position_size is a **risk-budget / sizing scalar for the allocator**, "
-        "NOT an open position in base coin. The simulated book is in backtest_prompt_context (sim_cash_usd, sim_qty_base "
-        "or sim_qty_by_symbol). Never infer a huge BTC position from risk.analysis alone.\n"
+        "NOT an open position in base coin. The simulated book is in backtest_prompt_context "
+        "(sim_cash_usd = free collateral, sim_equity_usd = mark-to-market NAV, sim_qty_base "
+        "or sim_qty_by_symbol). Size conviction relative to sim_equity_usd; use sim_cash_usd only "
+        "as open-capacity. Never infer a huge BTC position from risk.analysis alone.\n"
         'Quant / MACD warmup: macd_signal "hold" with empty or sparse desk_sources often means **insufficient bars** '
         "for MACD, not a bearish veto. If the active Tier-1 blueprint enables ``Portfolio_Desk_Bridge.Close_Momentum_When_TA_Hold``, "
         "the desk may emit **buy** with ``close_momentum`` in desk_sources when OHLCV drift is positive; otherwise treat hold "

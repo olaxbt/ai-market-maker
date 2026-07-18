@@ -66,7 +66,9 @@ class RiskGuardAgent(BaseAgent):
         smd = sm if isinstance(sm, dict) else {}
         bt = smd.get("backtest") if isinstance(smd.get("backtest"), dict) else {}
         # Generic portfolio snapshot keys (works for backtest engine; live can adopt same schema).
+        # cash = free collateral; equity = mark NAV when the engine provides it.
         cash = bt.get("cash")
+        equity_raw = bt.get("equity")
         positions = bt.get("positions")
         md = data.get("market_data")
         last_closes: dict[str, float] = {}
@@ -89,19 +91,38 @@ class RiskGuardAgent(BaseAgent):
             cash_f = float(cash) if cash is not None else None
         except (TypeError, ValueError):
             cash_f = None
-        if isinstance(positions, dict) and cash_f is not None and last_closes:
-            m = 0.0
-            g = 0.0
-            for sym, q in positions.items():
+        try:
+            if isinstance(equity_raw, (int, float)):
+                equity = float(equity_raw)
+        except (TypeError, ValueError):
+            equity = None
+
+        def _pos_qty(q: Any) -> float | None:
+            if isinstance(q, dict):
+                raw = q.get("size", q.get("qty", q.get("qty_signed")))
                 try:
-                    qf = float(q)
+                    return float(raw) if raw is not None else None
                 except (TypeError, ValueError):
+                    return None
+            try:
+                return float(q)
+            except (TypeError, ValueError):
+                return None
+
+        if isinstance(positions, dict) and last_closes:
+            g = 0.0
+            m = 0.0
+            for sym, q in positions.items():
+                qf = _pos_qty(q)
+                if qf is None:
                     continue
                 px = float(last_closes.get(str(sym), 0.0))
                 m += qf * px
                 g += abs(qf * px)
-            equity = cash_f + m
             gross = g
+            # Spot-style fallback only when the engine did not publish mark equity.
+            if equity is None and cash_f is not None:
+                equity = cash_f + m
 
         # Drawdown stop is enforced in the engine, but in live mode we also want governance veto.
         dd_stop = fp.risk_max_drawdown_stop

@@ -349,6 +349,21 @@ def _build_simulation_context(state: dict[str, Any], ticker: str | None) -> str:
         f"- As-of bar (UTC): {fmt(window_ts)}",
         f"- Window: {window_len or '?'} bars | first bar: {fmt(first_bar_ts)} | last bar: {fmt(last_bar_ts)}",
     ]
+    run_id = str(bt.get("run_id") or "").strip()
+    if run_id:
+        lines.append(f"- Run ID: {run_id}")
+    # Book state: free collateral vs mark NAV (agents size vs equity, not cash).
+    cash_raw = bt.get("cash")
+    eq_raw = bt.get("equity")
+    try:
+        if isinstance(cash_raw, (int, float)):
+            lines.append(f"- Free collateral (USDT): {float(cash_raw):.2f}")
+        if isinstance(eq_raw, (int, float)):
+            lines.append(f"- Mark equity / NAV (USDT): {float(eq_raw):.2f}")
+        elif isinstance(cash_raw, (int, float)):
+            lines.append(f"- Mark equity / NAV (USDT): {float(cash_raw):.2f}")
+    except (TypeError, ValueError):
+        pass
     if len(universe) > 1:
         lines.append(f"- Universe: {', '.join(universe)}")
 

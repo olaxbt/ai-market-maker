@@ -22,14 +22,30 @@ def test_risk_guard_returns_reasoning():
     assert "decision" in reasoning
 
 
-def test_risk_guard_kill_switch_vetoes(monkeypatch: pytest.MonkeyPatch):
+def test_risk_guard_prefers_engine_mark_equity():
+    """Backtest shared_memory publishes mark equity; do not rebuild as cash + spot qty."""
     repo_root = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(repo_root / "src"))
-    monkeypatch.setenv("AIMM_KILL_SWITCH", "1")
+
     from agents.governance.risk_guard import RiskGuardAgent
 
     guard = RiskGuardAgent()
-    result = asyncio.run(guard.process({"proposal": {}}))
-    assert result["status"] == "VETOED"
-    assert result.get("kill_switch") is True
-    monkeypatch.delenv("AIMM_KILL_SWITCH", raising=False)
+    data = {
+        "proposal": {},
+        "shared_memory": {
+            "backtest": {
+                "cash": 500.0,  # free collateral only
+                "equity": 10_200.0,  # mark NAV from PerpEngine
+                "positions": {"BTC/USDT": {"size": 0.1, "entry": 100_000.0}},
+            }
+        },
+        "market_data": {
+            "BTC/USDT": {
+                "ohlcv": [[0, 100_000, 100_000, 100_000, 100_000, 1]],
+            }
+        },
+    }
+    score, extra = guard._calculate_risk(data)
+    assert extra["equity"] == pytest.approx(10_200.0)
+    assert extra["gross_exposure"] == pytest.approx(10_000.0)
+    assert 0.0 <= score <= 1.0

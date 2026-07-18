@@ -104,7 +104,15 @@ class TestDefaultDeployPath:
         if "AIMM_DEPLOY_CONFIG_PATH" in os.environ:
             del os.environ["AIMM_DEPLOY_CONFIG_PATH"]
 
-        cfg = resolve_backtest_config()
+        # Default path is config/deploy.active.json relative to CWD; use an empty
+        # temp tree so the shipped repo file does not count as "loaded".
+        with tempfile.TemporaryDirectory() as tmp:
+            orig_cwd = os.getcwd()
+            try:
+                os.chdir(tmp)
+                cfg = resolve_backtest_config()
+            finally:
+                os.chdir(orig_cwd)
         assert cfg["deploy_loaded"] is False
         assert cfg["arbitrator_mode"] == "agent_llm"
         assert cfg["use_llm"] is True

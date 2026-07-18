@@ -47,7 +47,7 @@ def _make_bars(
     return bars
 
 
-def _mock_signal_fn(symbol, window, positions, capital, equity=None) -> float:
+def _mock_signal_fn(symbol, window, positions, capital) -> float:
     """Return a constant long signal for testing."""
     if not window or len(window) < 2:
         return 0.0

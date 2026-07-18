@@ -28,6 +28,33 @@ from config.runs_paths import runs_dir as _default_runs_dir
 
 logger = logging.getLogger(__name__)
 
+
+@dataclass(frozen=True)
+class AccountSnapshot:
+    """Perp book state passed into ``signal_fn`` each bar.
+
+    ``cash`` — free USDT collateral available for new margin.
+    ``equity`` — mark-to-market NAV (free + locked margin + unrealized PnL).
+
+    Agents need both: cash for open-capacity, equity for risk/sizing as % of book.
+    """
+
+    cash: float
+    equity: float
+
+    @classmethod
+    def from_cash(cls, cash: float) -> AccountSnapshot:
+        c = float(cash)
+        return cls(cash=c, equity=c)
+
+
+def coerce_account(account: AccountSnapshot | float | int) -> AccountSnapshot:
+    """Accept ``AccountSnapshot`` or a legacy bare cash float."""
+    if isinstance(account, AccountSnapshot):
+        return account
+    return AccountSnapshot.from_cash(float(account))
+
+
 _TIER_TABLE = [
     (100_000, 0.004),
     (500_000, 0.006),
@@ -246,6 +273,16 @@ class PerpEngine:
         progress_callback=None,
         benchmark_symbol: str | None = None,
     ) -> dict[str, Any]:
+        """
+        ``signal_fn(symbol, window, positions, account) -> float``
+
+        ``account`` is always an ``AccountSnapshot`` (cash + mark equity).
+        Callers that still treat the 4th arg as a bare float should use
+        ``coerce_account`` (or ignore unused fields).
+
+        Returns target weight in [-1, 1] (sign = side, magnitude vs equity).
+        ``window`` is completed bars only (no look-ahead).
+        """
         symbols = sorted(bars_by_symbol.keys())
         aligned = self._align_bars(bars_by_symbol)
         total_bars = len(aligned.get(symbols[0], []))
@@ -264,14 +301,18 @@ class PerpEngine:
 
             if bar_idx > 0:
                 mark_closes = {s: float(aligned[s][bar_idx - 1][4]) for s in symbols}
-                mark_equity = self._equity(mark_closes)
+                account = AccountSnapshot(
+                    cash=float(self.capital),
+                    equity=float(self._equity(mark_closes)),
+                )
                 for sym in symbols:
-                    target = signal_fn(
-                        sym,
-                        completed[sym],
-                        {k: v for k, v in self.positions.items()},
-                        self.capital,
-                        mark_equity,
+                    target = float(
+                        signal_fn(
+                            sym,
+                            completed[sym],
+                            {k: v for k, v in self.positions.items()},
+                            account,
+                        )
                     )
                     self._rebalance(
                         sym,
