@@ -15,6 +15,8 @@ from typing import Any
 
 from openai import OpenAI
 
+from config.llm_env import resolve_llm_config
+
 # Lazy-loaded decision cache
 _DECISION_CACHE: Any = None
 
@@ -137,16 +139,25 @@ def _init_llm() -> None:
     if _LLM_CLIENT is not None:
         return
 
-    api_key = _env("DEEPSEEK_API_KEY") or _env("OPENAI_API_KEY")
-    if not api_key:
+    llm_config = resolve_llm_config(
+        key_names=("DEEPSEEK_API_KEY", "OPENAI_API_KEY", "LLM_API_KEY"),
+        base_url_names=("AIMM_LLM_BASE_URL",),
+        model_names=("AIMM_LLM_MODEL",),
+        default_base_url="https://api.deepseek.com/v1",
+        default_model="deepseek-chat",
+    )
+    if not llm_config.api_key:
         raise ValueError(
             "agent_llm mode requires an LLM API key. "
-            "Set DEEPSEEK_API_KEY or OPENAI_API_KEY environment variable."
+            "Set DEEPSEEK_API_KEY, OPENAI_API_KEY, or ATLASCLOUD_API_KEY."
         )
-    base_url = _env("AIMM_LLM_BASE_URL", default="https://api.deepseek.com/v1")
-    _LLM_CLIENT = OpenAI(api_key=api_key, base_url=base_url)
-    _LLM_MODEL = _env("AIMM_LLM_MODEL", default="deepseek-chat")
-    logger.info("agent_llm client initialised (model=%s, base=%s)", _LLM_MODEL, base_url)
+    _LLM_CLIENT = OpenAI(api_key=llm_config.api_key, base_url=llm_config.base_url)
+    _LLM_MODEL = llm_config.model
+    logger.info(
+        "agent_llm client initialised (model=%s, base=%s)",
+        _LLM_MODEL,
+        llm_config.base_url,
+    )
 
 
 def _get_client() -> OpenAI:
