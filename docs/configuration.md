@@ -4,7 +4,7 @@
 
 AIMM is designed to run **with an LLM token** — no LLM-less fallback paths.
 This eliminates the `AI_MARKET_MAKER_USE_LLM` toggle. If you have an
-`OPENAI_API_KEY` (or compatible endpoint), the system runs at full capability.
+`OPENAI_API_KEY` or an OpenAI-compatible provider key, the system runs at full capability.
 
 Three configuration layers:
 
@@ -24,6 +24,19 @@ config/policy.default.json  → trading policy (risk, sizing, rules)
 | `BINANCE_API_KEY`   | Binance API key for market data               |
 | `BINANCE_API_SECRET`| Binance API secret                            |
 | `NEXUS_API_KEY`     | Olaxbt Nexus data API key                     |
+
+Atlas Cloud can be selected without replacing the existing OpenAI variables:
+
+```bash
+ATLASCLOUD_API_KEY=your-key
+ATLASCLOUD_BASE_URL=https://api.atlascloud.ai/v1
+ATLASCLOUD_MODEL=deepseek-ai/deepseek-v4-pro
+```
+
+The `ATLAS_CLOUD_API_KEY`, `ATLAS_CLOUD_BASE_URL`, and `ATLAS_CLOUD_MODEL`
+spellings are accepted as aliases. `ATLASCLOUD_API_BASE` and
+`ATLAS_CLOUD_API_BASE` are also accepted for the endpoint. Existing `OPENAI_*`
+settings keep priority.
 
 > **No LLM key → the process exits with a clear error.** No fallback, no silent
 > degradation. This is intentional — the system is an LLM-native architecture.
@@ -153,5 +166,3 @@ AI_MARKET_MAKER_ALLOW_LIVE ← double-gate for live
 ```
 AIMM_RISK_GUARD_KILL_SWITCH ← emergency stop
 ```
-
-
