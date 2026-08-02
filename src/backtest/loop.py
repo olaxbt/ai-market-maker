@@ -163,9 +163,20 @@ def run_multi_step_backtest(
         if closes and trades:
             from backtest.validation import generate_quality_report
 
+            eval_n = 0
+            if summary_path and summary_path.is_file():
+                try:
+                    _sum = json.loads(summary_path.read_text(encoding="utf-8"))
+                    eval_n = int(_sum.get("eval_bars") or _sum.get("steps") or 0)
+                except Exception:
+                    eval_n = 0
+            if eval_n <= 0:
+                eval_n = int(res.get("steps") or res.get("eval_bars") or 0)
+            if eval_n > 0 and len(closes) > eval_n:
+                closes = closes[-eval_n:]
             qual_report = generate_quality_report(
                 close_prices=closes,
-                total_bars=len(closes),
+                total_bars=int(eval_n or len(closes)),
                 trade_count=len(trades),
                 profit_factor=float(res.get("metrics", {}).get("profit_factor") or 0),
                 trades=trades,
@@ -179,11 +190,19 @@ def run_multi_step_backtest(
                 rc = dict(deploy_config)
                 if summary.get("leverage") is not None:
                     rc["leverage"] = summary["leverage"]
+                rc["take_profit_pct"] = float(take_profit_pct)
+                rc["stop_loss_pct"] = float(stop_loss_pct)
                 summary["resolved_config"] = rc
             summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     except Exception as exc:
         logger.warning("quality-report post-process failed: %s", exc)
         qual_report = None
+
+    stamped_config: dict[str, Any] | None = None
+    if deploy_config:
+        stamped_config = dict(deploy_config)
+        stamped_config["take_profit_pct"] = float(take_profit_pct)
+        stamped_config["stop_loss_pct"] = float(stop_loss_pct)
 
     return MultiStepResult(
         run_id=str(res.get("run_id") or ""),
@@ -199,5 +218,5 @@ def run_multi_step_backtest(
         events_path=Path(str(paths.get("events"))),
         iterations_path=iterations_path,
         quality_report=qual_report,
-        resolved_config=deploy_config or None,
+        resolved_config=stamped_config,
     )

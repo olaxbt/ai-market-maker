@@ -337,19 +337,26 @@ class PerpEngine:
             self.snapshots.append(snap)
             if progress_callback is not None:
                 try:
+                    # Report scored-window progress only (0…eval_total), not TA warmup bars.
+                    eval_start = max(0, int(self._eval_start_bar))
+                    eval_total = max(1, int(total_bars) - eval_start)
+                    if bar_idx < eval_start:
+                        eval_i = -1  # still preparing indicators
+                    else:
+                        eval_i = int(bar_idx) - eval_start
                     progress_callback(
-                        int(bar_idx),
-                        int(total_bars),
+                        eval_i,
+                        eval_total,
                         {
                             "ts": int(last_ts),
                             "equity": float(eq),
                             "capital": float(self.capital),
                             "positions": int(len(self.positions)),
                             "trade_count": int(len(self.trades)),
+                            "warmup": bool(bar_idx < eval_start),
                         },
                     )
                 except Exception:
-                    # Progress is best-effort; never break backtests for UI telemetry.
                     pass
 
         if total_bars > 0:
@@ -636,6 +643,8 @@ class PerpEngine:
         out_dir.mkdir(parents=True, exist_ok=True)
 
         benchmark: dict[str, Any] = {}
+        # Chart / report window = scored bars only (warmup is TA context, not plotted).
+        eval_start = max(0, int(self._eval_start_bar))
         rows = bars_primary or []
         tr_pct = metrics.get("total_return_pct")
         bh_curve: list[dict[str, float]] = []
@@ -668,8 +677,13 @@ class PerpEngine:
                     float(tr_pct) - float(bh), 6
                 )
 
+        eval_snaps = (
+            self.snapshots[eval_start:]
+            if self.snapshots and eval_start < len(self.snapshots)
+            else self.snapshots
+        )
         eq_records = []
-        for s in self.snapshots:
+        for s in eval_snaps:
             eq_records.append(
                 {
                     "ts": s.timestamp,
@@ -681,7 +695,7 @@ class PerpEngine:
             )
         pd.DataFrame(eq_records).to_json(out_dir / "equity.jsonl", orient="records", lines=True)
 
-        # Persist OHLCV bars for the charts API (/bars endpoint).
+        # Persist OHLCV + buy&hold for the charts API (same scored window as equity).
         bar_rows = [
             {
                 "ts": int(row[0]),
@@ -693,18 +707,26 @@ class PerpEngine:
             }
             for row in (rows or [])
         ]
+        # Plain floats for /bars clients; keep ts-aligned objects under benchmark_equity_points.
+        bh_values = [float(p["equity"]) for p in bh_curve if "equity" in p]
         if bar_rows:
             bars_payload: dict[str, Any] = {
                 "ticker": benchmark_symbol or (symbols[0] if symbols else ""),
                 "benchmark_symbol": benchmark_symbol or (symbols[0] if symbols else ""),
                 "interval_sec": self.interval_sec,
                 "bars": bar_rows,
-                "benchmark_equity": bh_curve,
+                "benchmark_equity": bh_values,
+                "benchmark_equity_points": bh_curve,
                 "fill_model": "signal_on_completed_bars_fill_at_next_open",
             }
             if aligned_bars:
                 ohlcv_by_symbol: dict[str, list[dict[str, float]]] = {}
                 for sym, sym_rows in aligned_bars.items():
+                    scored = (
+                        sym_rows[eval_start:]
+                        if eval_start > 0 and eval_start < len(sym_rows)
+                        else sym_rows
+                    )
                     ohlcv_by_symbol[sym] = [
                         {
                             "ts": int(row[0]),
@@ -714,7 +736,7 @@ class PerpEngine:
                             "c": float(row[4]),
                             "v": float(row[5]),
                         }
-                        for row in sym_rows
+                        for row in scored
                     ]
                 bars_payload["ohlcv_by_symbol"] = ohlcv_by_symbol
             (out_dir / "bars.json").write_text(json.dumps(bars_payload, indent=1))
@@ -746,8 +768,9 @@ class PerpEngine:
             trade_records.append(rec)
         pd.DataFrame(trade_records).to_json(out_dir / "trades.jsonl", orient="records", lines=True)
 
-        start_ts = int(self.snapshots[0].timestamp) if self.snapshots else None
-        end_ts = int(self.snapshots[-1].timestamp) if self.snapshots else None
+        # Dates follow the scored From→To window (same series as equity.jsonl / B&H).
+        start_ts = int(eval_snaps[0].timestamp) if eval_snaps else None
+        end_ts = int(eval_snaps[-1].timestamp) if eval_snaps else None
         start_iso = None
         end_iso = None
         if start_ts is not None and end_ts is not None:
@@ -779,8 +802,8 @@ class PerpEngine:
                 "+ unrealized_pnl) per open position. Not spot wallet balances; exposure is via contract PnL."
             ),
             "total_bars": len(self.snapshots),
-            "eval_bars": max(0, len(self.snapshots) - max(0, int(self._eval_start_bar))),
-            "ta_warmup_bars": max(0, int(self._eval_start_bar)),
+            "eval_bars": max(0, len(self.snapshots) - eval_start),
+            "ta_warmup_bars": eval_start,
             "start_ts": start_ts,
             "end_ts": end_ts,
             "start_iso": start_iso,

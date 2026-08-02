@@ -43,7 +43,7 @@ def main() -> None:
 
     runs_dir = Path(".runs")
     runs_dir.mkdir(parents=True, exist_ok=True)
-    (runs_dir / "latest_run.txt").write_text(args.run_id)
+    (runs_dir / "latest_backtest.txt").write_text(args.run_id)
     log_path = runs_dir / f"{args.run_id}.events.jsonl"
     if log_path.exists():
         log_path.unlink()

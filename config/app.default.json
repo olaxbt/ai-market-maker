@@ -13,7 +13,6 @@
     "desk_strategy_preset": "all_weather"
   },
   "backtest": {
-    "hold_signal_fallback": "off",
     "min_warmup_bars": 50
   },
   "ui": {

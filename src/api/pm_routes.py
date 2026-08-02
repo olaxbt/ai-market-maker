@@ -25,6 +25,7 @@ from backtest.exchange_trade_format import (
     trade_row_symbol_for_analytics,
 )
 from backtest.trade_book import read_jsonl_dict_records
+from config.llm_env import llm_key_available
 from llm.openai_client import run_tool_calling_chat, stream_chat_completion
 
 RUNS_DIR = Path(".runs")
@@ -98,11 +99,26 @@ def _extract_first_json_object(text: str) -> dict[str, Any] | None:
 
 
 def _resolve_backtest_dir(run_id: str) -> Path:
-    rid = run_id
-    if rid == "latest" and LATEST_RUN_FILE.exists():
-        latest = LATEST_RUN_FILE.read_text().strip()
-        if latest:
-            rid = latest
+    rid = (run_id or "").strip()
+    if rid == "latest":
+        # Prefer newest *completed* bt-* (must have summary.json). Orphaned
+        # mid-run folders get fresh mtimes when job.json is updated on restart.
+        if BACKTESTS_DIR.is_dir():
+            candidates = sorted(
+                [
+                    p
+                    for p in BACKTESTS_DIR.iterdir()
+                    if p.is_dir() and p.name.startswith("bt") and (p / "summary.json").is_file()
+                ],
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            if candidates:
+                rid = candidates[0].name
+        if rid == "latest" and LATEST_RUN_FILE.exists():
+            latest = LATEST_RUN_FILE.read_text().strip()
+            if latest.startswith("bt") and (BACKTESTS_DIR / latest / "summary.json").is_file():
+                rid = latest
     d = BACKTESTS_DIR / rid
     if not d.exists():
         raise HTTPException(status_code=404, detail=f"run not found: {rid}")
@@ -395,22 +411,23 @@ def _build_run_snapshot(
 def get_pm_snapshot(
     run_id: str,
     llm: bool = Query(
-        False, description="If true and OPENAI_API_KEY is set, add LLM narrative summary."
+        False, description="If true and an LLM API key is set, add LLM narrative summary."
     ),
 ) -> dict[str, Any]:
     run_dir = _resolve_backtest_dir(run_id)
     snap = _build_snapshot(run_dir)
     out: dict[str, Any] = {"snapshot": snap}
-    if llm and os.getenv("OPENAI_API_KEY"):
+    if llm and llm_key_available():
         out["llm_summary"] = _llm_exec_summary(snap)
     return out
 
 
 @router.post("/pm/backtests/{run_id}/ask", response_model=AskResponse)
 def post_pm_ask(run_id: str, req: AskRequest) -> AskResponse:
-    if not os.getenv("OPENAI_API_KEY"):
+    if not llm_key_available():
         raise HTTPException(
-            status_code=400, detail="OPENAI_API_KEY is not set (LLM supervisor disabled)."
+            status_code=400,
+            detail="LLM API key is not set (OPENAI_API_KEY or LLM_API_KEY). Supervisor disabled.",
         )
     run_dir = _resolve_backtest_dir(run_id)
     snap = _build_snapshot(run_dir)
@@ -425,21 +442,22 @@ def post_pm_ask(run_id: str, req: AskRequest) -> AskResponse:
 def get_pm_run_snapshot(
     run_id: str,
     llm: bool = Query(
-        True, description="If true and OPENAI_API_KEY is set, add LLM narrative summary."
+        True, description="If true and an LLM API key is set, add LLM narrative summary."
     ),
 ) -> dict[str, Any]:
     snap = _build_run_snapshot(run_id)
     out: dict[str, Any] = {"snapshot": snap}
-    if llm and os.getenv("OPENAI_API_KEY"):
+    if llm and llm_key_available():
         out["llm_summary"] = _llm_exec_summary(snap)
     return out
 
 
 @router.post("/pm/runs/{run_id}/ask", response_model=AskResponse)
 def post_pm_run_ask(run_id: str, req: AskRequest) -> AskResponse:
-    if not os.getenv("OPENAI_API_KEY"):
+    if not llm_key_available():
         raise HTTPException(
-            status_code=400, detail="OPENAI_API_KEY is not set (LLM supervisor disabled)."
+            status_code=400,
+            detail="LLM API key is not set (OPENAI_API_KEY or LLM_API_KEY). Supervisor disabled.",
         )
     snap = _build_run_snapshot(run_id)
     ans = _llm_supervisor_answer(snap, question=req.question, max_tokens=int(req.max_tokens))
@@ -452,9 +470,10 @@ def post_pm_run_ask(run_id: str, req: AskRequest) -> AskResponse:
 @router.post("/pm/runs/{run_id}/ask_stream")
 def post_pm_run_ask_stream(run_id: str, req: AskRequest) -> StreamingResponse:
     """SSE stream for Supervisor chat (token-by-token)."""
-    if not os.getenv("OPENAI_API_KEY"):
+    if not llm_key_available():
         raise HTTPException(
-            status_code=400, detail="OPENAI_API_KEY is not set (LLM supervisor disabled)."
+            status_code=400,
+            detail="LLM API key is not set (OPENAI_API_KEY or LLM_API_KEY). Supervisor disabled.",
         )
     snap = _build_run_snapshot(run_id)
 
@@ -504,9 +523,10 @@ def post_pm_run_ask_stream(run_id: str, req: AskRequest) -> StreamingResponse:
 @router.post("/pm/backtests/{run_id}/ask_stream")
 def post_pm_backtest_ask_stream(run_id: str, req: AskRequest) -> StreamingResponse:
     """SSE stream for Supervisor chat (token-by-token) over a backtest snapshot."""
-    if not os.getenv("OPENAI_API_KEY"):
+    if not llm_key_available():
         raise HTTPException(
-            status_code=400, detail="OPENAI_API_KEY is not set (LLM supervisor disabled)."
+            status_code=400,
+            detail="LLM API key is not set (OPENAI_API_KEY or LLM_API_KEY). Supervisor disabled.",
         )
     run_dir = _resolve_backtest_dir(run_id)
     snap = _build_snapshot(run_dir)

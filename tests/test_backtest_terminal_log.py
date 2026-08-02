@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import logging
 
 from backtest.terminal_log import (
     configure_backtest_terminal_logging,
@@ -113,3 +114,14 @@ def test_terminal_log_disabled(monkeypatch):
         stream=buf,
     )
     assert buf.getvalue() == ""
+
+
+def test_quiet_library_loggers_even_when_cot_disabled(monkeypatch):
+    """SDK/HTTP loggers stay muted when desk CoT is off."""
+    from backtest.terminal_log import quiet_backtest_library_loggers
+
+    monkeypatch.setenv("MODE", "backtest")
+    monkeypatch.setenv("AIMM_BACKTEST_TERMINAL_LOG", "0")
+    quiet_backtest_library_loggers()
+    assert logging.getLogger("httpx").level == logging.WARNING
+    assert logging.getLogger("workflow.weighted_arbitrator").level == logging.WARNING

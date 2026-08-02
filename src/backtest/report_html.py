@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import html
 import json
+import logging
 import math
 import statistics
 from collections import Counter, defaultdict
@@ -49,8 +50,13 @@ def _read_trades_csv(path: Path) -> list[dict[str, str]]:
 
 def _trade_pnl(t: dict[str, Any]) -> float:
     for key in ("pnl_usd", "pnl"):
+        if key not in t:
+            continue
+        raw = t.get(key)
+        if raw is None or raw == "":
+            continue
         try:
-            return float(t.get(key, 0) or 0)
+            return float(raw)
         except (TypeError, ValueError):
             continue
     return 0.0
@@ -75,15 +81,146 @@ def _fmt_date_short(iso_or_ts: str | int | None) -> tuple[str, str]:
             dt = datetime.fromtimestamp(float(iso_or_ts) / 1000, tz=timezone.utc)
         else:
             s = str(iso_or_ts).replace("Z", "+00:00")
-            dt = datetime.fromisoformat(s)
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
+            if s.isdigit() or (s.startswith("-") and s[1:].isdigit()):
+                dt = datetime.fromtimestamp(float(s) / 1000, tz=timezone.utc)
+            else:
+                dt = datetime.fromisoformat(s)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
         return dt.strftime("%Y-%m-%d"), dt.strftime("%d %b %Y")
     except (ValueError, OSError, OverflowError):
         return str(iso_or_ts)[:10], str(iso_or_ts)
 
 
-def _load_equity_curve(run_dir: Path) -> list[_EquityPoint]:
+def _normalize_trade_row(t: dict[str, Any], *, idx: int = 0) -> dict[str, Any]:
+    """Normalize CSV / JSONL trade rows for the HTML report."""
+    out = dict(t)
+    if not out.get("trade_id"):
+        out["trade_id"] = idx + 1
+    if not out.get("side"):
+        try:
+            d = int(float(out.get("direction") or 0))
+        except (TypeError, ValueError):
+            d = 0
+        out["side"] = "long" if d > 0 else ("short" if d < 0 else "")
+    # JSONL may store exit time as Binance-style ``time``.
+    if not out.get("exit_ts_ms") and out.get("time"):
+        out["exit_ts_ms"] = out.get("time")
+    if "pnl_usd" not in out or out.get("pnl_usd") in (None, ""):
+        if out.get("pnl") not in (None, ""):
+            out["pnl_usd"] = out.get("pnl")
+    return out
+
+
+def _load_trades(run_dir: Path) -> list[dict[str, Any]]:
+    """Load trades from JSONL, or CSV if JSONL is absent."""
+    rows = _read_jsonl(run_dir / "trades.jsonl")
+    if not rows:
+        rows = list(_read_trades_csv(run_dir / "trades_record.csv"))
+    return [_normalize_trade_row(t, idx=i) for i, t in enumerate(rows)]
+
+
+def _price_trade_series(
+    ohlcv_by_symbol: dict[str, list[dict[str, float]]],
+    trades: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Per-symbol close series with entry/exit markers."""
+    symbols = sorted({str(t.get("symbol") or "") for t in trades if t.get("symbol")})
+    out: dict[str, Any] = {}
+    for sym in symbols:
+        bars = ohlcv_by_symbol.get(sym) or []
+        if not bars:
+            continue
+        labels: list[str] = []
+        closes: list[float | None] = []
+        ts_to_idx: dict[int, int] = {}
+        for b in bars:
+            try:
+                ts = int(b.get("ts") if isinstance(b, dict) else b[0])
+                c = float(b.get("c") if isinstance(b, dict) else b[4])
+            except (TypeError, ValueError, KeyError, IndexError, AttributeError):
+                continue
+            short, _ = _fmt_date_short(ts)
+            labels.append(short)
+            closes.append(round(c, 6))
+            ts_to_idx[ts] = len(labels) - 1
+
+        entries: list[dict[str, Any]] = []
+        exits: list[dict[str, Any]] = []
+        for t in trades:
+            if str(t.get("symbol") or "") != sym:
+                continue
+            side = str(t.get("side") or "")
+            pnl = _trade_pnl(t)
+            try:
+                entry_px = float(t.get("entry_price"))
+                exit_px = float(t.get("exit_price"))
+            except (TypeError, ValueError):
+                continue
+
+            def _idx_for(
+                ts_raw: Any,
+                bar_key: str,
+                *,
+                _map: dict[int, int] = ts_to_idx,
+                _labels: list[str] = labels,
+                _trade: dict[str, Any] = t,
+            ) -> int | None:
+                if ts_raw not in (None, ""):
+                    try:
+                        ts_i = int(float(ts_raw))
+                        if ts_i in _map:
+                            return _map[ts_i]
+                        short, _ = _fmt_date_short(ts_i)
+                        if short in _labels:
+                            return _labels.index(short)
+                    except (TypeError, ValueError):
+                        pass
+                try:
+                    bi = int(_trade.get(bar_key))
+                    if 0 <= bi < len(_labels):
+                        return bi
+                except (TypeError, ValueError):
+                    return None
+                return None
+
+            ei = _idx_for(t.get("entry_ts_ms"), "entry_bar_index")
+            xi = _idx_for(t.get("exit_ts_ms") or t.get("time"), "exit_bar_index")
+            hold = t.get("holding_bars")
+            reason = str(t.get("exit_reason") or "")
+            if ei is not None:
+                entries.append(
+                    {
+                        "x": ei,
+                        "y": round(entry_px, 6),
+                        "side": side,
+                        "pnl": round(pnl, 2),
+                        "hold": hold,
+                        "reason": reason,
+                    }
+                )
+            if xi is not None:
+                exits.append(
+                    {
+                        "x": xi,
+                        "y": round(exit_px, 6),
+                        "side": side,
+                        "pnl": round(pnl, 2),
+                        "hold": hold,
+                        "reason": reason,
+                    }
+                )
+
+        out[sym] = {
+            "labels": labels,
+            "closes": closes,
+            "entries": entries,
+            "exits": exits,
+        }
+    return out
+
+
+def _load_equity_curve(run_dir: Path, summary: dict[str, Any] | None = None) -> list[_EquityPoint]:
     eq_csv = run_dir / "equity_curve.csv"
     if eq_csv.is_file():
         out: list[_EquityPoint] = []
@@ -105,8 +242,18 @@ def _load_equity_curve(run_dir: Path) -> list[_EquityPoint]:
         if out:
             return out
 
+    raw_rows = [r for r in _read_jsonl(run_dir / "equity.jsonl") if isinstance(r, dict)]
+    # Legacy equity.jsonl may include TA warmup; drop it when total_bars matches.
+    if summary:
+        try:
+            warmup = int(summary.get("ta_warmup_bars") or 0)
+            total_bars = int(summary.get("total_bars") or 0)
+            if warmup > 0 and total_bars > warmup and len(raw_rows) >= total_bars:
+                raw_rows = raw_rows[warmup:]
+        except (TypeError, ValueError):
+            pass
     out = []
-    for i, row in enumerate(_read_jsonl(run_dir / "equity.jsonl")):
+    for i, row in enumerate(raw_rows):
         try:
             eq = float(row.get("equity", row.get("capital", 0)))
         except (TypeError, ValueError):
@@ -126,11 +273,10 @@ def _load_benchmark_equity(run_dir: Path, summary: dict[str, Any]) -> tuple[str,
     if bars_path.is_file():
         payload = json.loads(bars_path.read_text(encoding="utf-8"))
         label = str(payload.get("benchmark_symbol") or payload.get("ticker") or label)
-        be = payload.get("benchmark_equity")
-        if isinstance(be, list) and be:
-            vals = [float(x.get("equity", 0)) for x in be if isinstance(x, dict)]
-            if vals and label.upper().startswith("BTC"):
-                return label, vals
+        be = payload.get("benchmark_equity") or payload.get("benchmark_equity_points")
+        vals = _coerce_benchmark_equity_list(be)
+        if vals and label.upper().startswith("BTC"):
+            return label, vals
         bars = payload.get("bars") or []
         if bars and label.upper().startswith("BTC"):
             vals = _price_index_equity(bars, initial)
@@ -145,17 +291,32 @@ def _load_benchmark_equity(run_dir: Path, summary: dict[str, Any]) -> tuple[str,
     if bars_path.is_file():
         payload = json.loads(bars_path.read_text(encoding="utf-8"))
         label = str(payload.get("benchmark_symbol") or payload.get("ticker") or label)
-        be = payload.get("benchmark_equity")
-        if isinstance(be, list) and be:
-            vals = [float(x.get("equity", 0)) for x in be if isinstance(x, dict)]
-            if vals:
-                return label, vals
+        be = payload.get("benchmark_equity") or payload.get("benchmark_equity_points")
+        vals = _coerce_benchmark_equity_list(be)
+        if vals:
+            return label, vals
         bars = payload.get("bars") or []
         if bars:
             vals = _price_index_equity(bars, initial)
             if vals:
                 return label, vals
     return label, []
+
+
+def _coerce_benchmark_equity_list(be: Any) -> list[float]:
+    """Accept plain floats or ``{equity: …}`` objects from bars.json."""
+    if not isinstance(be, list) or not be:
+        return []
+    out: list[float] = []
+    for x in be:
+        try:
+            if isinstance(x, dict):
+                out.append(float(x.get("equity", 0)))
+            else:
+                out.append(float(x))
+        except (TypeError, ValueError):
+            continue
+    return out
 
 
 def _price_index_equity(bars: list[Any], initial: float) -> list[float]:
@@ -601,13 +762,18 @@ def _quality_section(summary: dict[str, Any]) -> str:
     ss = qr.get("sample_size") or {}
     if ss:
         ok = ss.get("passed", False)
+        min_bars = int(ss.get("min_bars") or 90)
+        min_trades = int(ss.get("min_trades") or 15)
         rows.append(
             (
                 "Sample size",
-                "≥100 bars & ≥30 trades",
+                f"≥{min_bars} eval bars & ≥{min_trades} trades",
                 f"{ss.get('total_bars', '?')} bars, {ss.get('trade_count', '?')} trades",
                 "PASS" if ok else "FAIL",
-                str(ss.get("warning") or "Use --steps 100 or --quality."),
+                str(
+                    ss.get("warning")
+                    or f"Need at least {min_bars} bars and {min_trades} closed trades."
+                ),
             )
         )
     pl = qr.get("profit_loss_ratio") or {}
@@ -619,7 +785,7 @@ def _quality_section(summary: dict[str, Any]) -> str:
                 f"≥ {pl.get('threshold', 1.3)}",
                 _fmt_num(pl.get("profit_factor"), digits=2),
                 "PASS" if ok else "FAIL",
-                str(pl.get("warning") or ""),
+                str(pl.get("warning") or "Survive fees + slippage after deployment."),
             )
         )
     rc = qr.get("regime_coverage") or {}
@@ -644,10 +810,13 @@ def _quality_section(summary: dict[str, Any]) -> str:
         rows.append(
             (
                 "Exit diversity",
-                "No reason &gt;80%",
+                "No non-signal reason &gt;85%",
                 f"{top} ({top_pct:.1f}%)" if dist else "—",
                 "PASS" if ok else "FAIL",
-                str(er.get("warning") or ""),
+                str(
+                    er.get("warning")
+                    or "Signal exits are expected; fail on stop/liquidation dominance."
+                ),
             )
         )
 
@@ -660,10 +829,11 @@ def _quality_section(summary: dict[str, Any]) -> str:
 
     why = ""
     if overall is False and ss and not ss.get("passed"):
+        min_bars = int(ss.get("min_bars") or 90)
         why = (
             '<div class="callout info"><strong>Why failed:</strong> '
-            f"Only <strong>{ss.get('total_bars')} bars</strong> (need ≥100). "
-            "Re-run with <code>--steps 100</code> or <code>--quality</code>.</div>"
+            f"Only <strong>{ss.get('total_bars')} bars</strong> (need ≥{min_bars} eval bars). "
+            f"Re-run with <code>--steps {min_bars}</code> (or longer).</div>"
         )
     warnings = qr.get("warnings") or []
     warn = ""
@@ -705,16 +875,52 @@ def build_backtest_report_html(run_dir: Path) -> str:
     bench = summary.get("benchmark") or {}
     quality = summary.get("quality_report") or {}
     iterations = _read_jsonl(run_dir / "iterations.jsonl")
-    trades_raw = _read_trades_csv(run_dir / "trades_record.csv")
-    trades: list[dict[str, Any]] = list(trades_raw)
-    if not trades:
-        trades = _read_jsonl(run_dir / "trades.jsonl")
+    trades = _load_trades(run_dir)
 
-    equity_pts = _load_equity_curve(run_dir)
+    equity_pts = _load_equity_curve(run_dir, summary)
     bench_label, bench_vals = _load_benchmark_equity(run_dir, summary)
     bench_vals = _align_benchmark(bench_vals, len(equity_pts))
     decision_ct = _decision_summary(iterations)
     attribution = _per_symbol_attribution(trades)
+
+    try:
+        from backtest.validation import generate_quality_report
+
+        closes: list[float] = []
+        bars_path = run_dir / "bars.json"
+        if bars_path.is_file():
+            payload = json.loads(bars_path.read_text(encoding="utf-8"))
+            for b in payload.get("bars") or []:
+                try:
+                    closes.append(float(b["c"] if isinstance(b, dict) else b[4]))
+                except (TypeError, ValueError, KeyError, IndexError):
+                    continue
+        eval_bars = int(
+            summary.get("eval_bars")
+            or summary.get("steps")
+            or metrics.get("eval_bars")
+            or len(closes)
+            or len(equity_pts)
+        )
+        if closes and eval_bars > 0 and len(closes) > eval_bars:
+            closes = closes[-eval_bars:]
+        if closes:
+            quality = generate_quality_report(
+                close_prices=closes,
+                total_bars=eval_bars,
+                trade_count=len(trades),
+                profit_factor=(
+                    float(metrics["profit_factor"])
+                    if isinstance(metrics.get("profit_factor"), (int, float))
+                    else None
+                ),
+                trades=trades,
+            ).to_dict()
+            summary["quality_report"] = quality
+    except Exception:
+        logging.getLogger(__name__).debug(
+            "quality_report refresh skipped for %s", run_dir, exc_info=True
+        )
 
     run_id = str(summary.get("run_id", run_dir.name))
     run_id_esc = html.escape(run_id)
@@ -762,15 +968,29 @@ def build_backtest_report_html(run_dir: Path) -> str:
     chart_strat = [round(p.equity, 2) for p in equity_pts]
     chart_bench = [round(v, 2) for v in bench_vals] if bench_vals else []
     chart_dd = [round(abs(p.drawdown_pct), 4) for p in equity_pts]
+    ohlcv_by_symbol = _load_ohlcv_by_symbol(run_dir)
+    price_trades = _price_trade_series(ohlcv_by_symbol, trades)
+    primary_price_sym = (
+        str(summary.get("ticker") or "")
+        if str(summary.get("ticker") or "") in price_trades
+        else (next(iter(price_trades), "") if price_trades else "")
+    )
 
-    chart_payload = json.dumps(
-        {
-            "labels": chart_labels,
-            "strategy": chart_strat,
-            "benchmark": chart_bench,
-            "drawdown": chart_dd,
-            "benchLabel": bench_label,
-        }
+    chart_payload = (
+        json.dumps(
+            {
+                "labels": chart_labels,
+                "strategy": chart_strat,
+                "benchmark": chart_bench,
+                "benchLabel": bench_label,
+                "drawdown": chart_dd,
+                "priceTrades": price_trades,
+                "primaryPriceSym": primary_price_sym,
+            }
+        )
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
     )
 
     exec_summary = _executive_summary(
@@ -788,7 +1008,6 @@ def build_backtest_report_html(run_dir: Path) -> str:
     )
     highlights = _performance_highlights(trades, quality, attribution)
     params_html = _params_section(rc, summary)
-    ohlcv_by_symbol = _load_ohlcv_by_symbol(run_dir)
     fill_quality = _compute_fill_quality(trades, ohlcv_by_symbol)
     fill_model = ""
     bars_meta_path = run_dir / "bars.json"
@@ -854,11 +1073,15 @@ def build_backtest_report_html(run_dir: Path) -> str:
     for t in trades[:300]:
         pnl_v = _trade_pnl(t)
         pnl_cls = "pos" if pnl_v > 0 else ("neg" if pnl_v < 0 else "")
+        entry_d, _ = _fmt_date_short(t.get("entry_ts_ms"))
+        exit_d, _ = _fmt_date_short(t.get("exit_ts_ms") or t.get("time"))
         trade_rows += (
             "<tr>"
             f"<td>{html.escape(str(t.get('trade_id', '')))}</td>"
             f"<td>{html.escape(str(t.get('symbol', '')))}</td>"
             f"<td>{html.escape(str(t.get('side', '')))}</td>"
+            f"<td>{html.escape(entry_d)}</td>"
+            f"<td>{html.escape(exit_d)}</td>"
             f"<td>{html.escape(str(t.get('entry_price', '')))}</td>"
             f"<td>{html.escape(str(t.get('exit_price', '')))}</td>"
             f'<td class="{pnl_cls}">{pnl_v:,.2f}</td>'
@@ -1043,6 +1266,15 @@ code {{ background: var(--table-head); padding: 2px 6px; border-radius: 4px; fon
     <div class="chart-wrap sm"><canvas id="drawdownChart"></canvas></div>
   </div>
 
+  <div class="card">
+    <h2>Price &amp; Trades</h2>
+    <p class="note" style="margin-top:-8px;margin-bottom:12px">
+      Close price with entry ▲ / exit ◆ markers. Green = long, red = short. Switch symbol to audit fills.
+    </p>
+    <div id="priceSymTabs" class="legend" style="margin-bottom:12px"></div>
+    <div class="chart-wrap"><canvas id="priceTradeChart"></canvas></div>
+  </div>
+
   <div class="grid-3">
     <div class="card">
       <h2>Strategy Parameters</h2>
@@ -1082,10 +1314,11 @@ code {{ background: var(--table-head); padding: 2px 6px; border-radius: 4px; fon
     <div style="overflow-x:auto">
       <table class="data-table">
         <thead><tr>
-          <th>ID</th><th>Symbol</th><th>Side</th><th>Entry</th><th>Exit</th>
-          <th>PnL (USD)</th><th>Bars</th><th>Reason</th>
+          <th>ID</th><th>Symbol</th><th>Side</th><th>Entry (UTC)</th><th>Exit (UTC)</th>
+          <th>Entry px</th><th>Exit px</th>
+          <th>PnL (USD)</th><th>Hold bars</th><th>Reason</th>
         </tr></thead>
-        <tbody>{trade_rows or '<tr><td colspan="8" class="note">No trades</td></tr>'}</tbody>
+        <tbody>{trade_rows or '<tr><td colspan="10" class="note">No trades</td></tr>'}</tbody>
       </table>
     </div>
   </div>
@@ -1184,6 +1417,148 @@ function buildCharts() {{
       }},
     }},
   }});
+  buildPriceTradeChart(window._activePriceSym || d.primaryPriceSym);
+}}
+
+function buildPriceTradeChart(sym) {{
+  const d = REPORT_DATA;
+  const pt = d.priceTrades || {{}};
+  const tabs = document.getElementById('priceSymTabs');
+  const ctx = document.getElementById('priceTradeChart');
+  if (!ctx) return;
+  const syms = Object.keys(pt);
+  if (tabs) {{
+    tabs.innerHTML = syms.map((s) =>
+      '<button type="button" class="btn' + (s === sym ? ' btn-primary' : '') +
+      '" data-sym="' + s + '">' + s + '</button>'
+    ).join(' ');
+    tabs.querySelectorAll('button[data-sym]').forEach((btn) => {{
+      btn.onclick = () => {{
+        window._activePriceSym = btn.getAttribute('data-sym');
+        if (window._priceChart) window._priceChart.destroy();
+        buildPriceTradeChart(window._activePriceSym);
+      }};
+    }});
+  }}
+  if (!sym || !pt[sym]) {{
+    if (window._priceChart) {{ window._priceChart.destroy(); window._priceChart = null; }}
+    return;
+  }}
+  window._activePriceSym = sym;
+  const series = pt[sym];
+  const closePts = (series.closes || []).map((y, i) => ({{ x: i, y }}));
+  const entryPts = (series.entries || []).map((e) => ({{ x: e.x, y: e.y, meta: e }}));
+  const exitPts = (series.exits || []).map((e) => ({{ x: e.x, y: e.y, meta: e }}));
+  if (window._priceChart) window._priceChart.destroy();
+  window._priceChart = new Chart(ctx, {{
+    data: {{
+      datasets: [
+        {{
+          type: 'line',
+          label: sym + ' close',
+          data: closePts,
+          parsing: false,
+          borderColor: '#64748b',
+          backgroundColor: 'rgba(100,116,139,0.08)',
+          fill: true,
+          tension: 0.15,
+          pointRadius: 0,
+          borderWidth: 2,
+          order: 3,
+        }},
+        {{
+          type: 'scatter',
+          label: 'Entry',
+          data: entryPts,
+          parsing: false,
+          pointStyle: 'triangle',
+          pointRadius: 8,
+          pointHoverRadius: 10,
+          backgroundColor: (c) => {{
+            const m = c.raw && c.raw.meta;
+            return (m && m.side === 'short') ? '#ef4444' : '#10b981';
+          }},
+          borderColor: '#fff',
+          borderWidth: 1,
+          order: 1,
+        }},
+        {{
+          type: 'scatter',
+          label: 'Exit',
+          data: exitPts,
+          parsing: false,
+          pointStyle: 'rectRot',
+          pointRadius: 7,
+          pointHoverRadius: 9,
+          backgroundColor: (c) => {{
+            const m = c.raw && c.raw.meta;
+            if (!m) return '#64748b';
+            return m.pnl >= 0 ? '#10b981' : '#ef4444';
+          }},
+          borderColor: '#fff',
+          borderWidth: 1,
+          order: 2,
+        }},
+      ],
+    }},
+    options: {{
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {{ mode: 'nearest', intersect: true }},
+      plugins: {{
+        legend: {{
+          display: true,
+          labels: {{ color: textColor(), boxWidth: 12 }},
+        }},
+        tooltip: {{
+          callbacks: {{
+            title: (items) => {{
+              const it = items[0];
+              if (!it || it.parsed == null) return '';
+              const i = Math.round(it.parsed.x);
+              const when = series.labels[i] || '';
+              return when + (it.dataset ? ' · ' + it.dataset.label : '');
+            }},
+            label: (ctx) => {{
+              const m = ctx.raw && ctx.raw.meta;
+              if (m) {{
+                const pnl = (m.pnl >= 0 ? '+' : '') + Number(m.pnl).toFixed(2);
+                return [
+                  m.side + ' @ ' + Number(m.y).toLocaleString(undefined, {{maximumFractionDigits: 4}}),
+                  'Hold ' + m.hold + ' bars · ' + m.reason,
+                  'PnL $' + pnl,
+                ];
+              }}
+              return ctx.dataset.label + ': ' + Number(ctx.parsed.y).toLocaleString(undefined, {{maximumFractionDigits: 2}});
+            }},
+          }},
+        }},
+      }},
+      scales: {{
+        x: {{
+          type: 'linear',
+          min: 0,
+          max: Math.max(1, (series.labels || []).length - 1),
+          ticks: {{
+            maxTicksLimit: 10,
+            color: textColor(),
+            callback: (v) => {{
+              const i = Math.round(Number(v));
+              return (series.labels && series.labels[i]) ? series.labels[i] : '';
+            }},
+          }},
+          grid: {{ color: gridColor() }},
+        }},
+        y: {{
+          ticks: {{
+            color: textColor(),
+            callback: (v) => Number(v).toLocaleString(undefined, {{maximumFractionDigits: 2}}),
+          }},
+          grid: {{ color: gridColor() }},
+        }},
+      }},
+    }},
+  }});
 }}
 
 document.getElementById('themeToggle').addEventListener('click', () => {{
@@ -1194,6 +1569,7 @@ document.getElementById('themeToggle').addEventListener('click', () => {{
   document.getElementById('themeToggle').textContent = next === 'dark' ? 'Light mode' : 'Dark mode';
   if (window._equityChart) window._equityChart.destroy();
   if (window._ddChart) window._ddChart.destroy();
+  if (window._priceChart) window._priceChart.destroy();
   buildCharts();
 }});
 

@@ -54,12 +54,40 @@ class _BacktestTerminalNoiseFilter(logging.Filter):
             return False
         if "LLM portfolio_proposal failed" in msg or "LLM portfolio_execute failed" in msg:
             return False
+        if "agent_llm mode: running LLM inference" in msg:
+            return False
+        if "HTTP Request:" in msg:
+            return False
         return True
 
 
+def quiet_backtest_library_loggers() -> None:
+    """Mute SDK/HTTP loggers in backtest mode (independent of desk CoT)."""
+    if (os.environ.get("MODE") or "").strip().lower() != "backtest":
+        return
+    for name in (
+        "httpx",
+        "httpcore",
+        "openai",
+        "openai._base_client",
+        "urllib3",
+        "llm.agent_llm_client",
+        "llm.openai_client",
+        "workflow.weighted_arbitrator",
+        "main",
+        "llm.portfolio_llm",
+        "agents.portfolio_management",
+    ):
+        lg = logging.getLogger(name)
+        lg.setLevel(logging.WARNING)
+        if not any(isinstance(f, _BacktestTerminalNoiseFilter) for f in lg.filters):
+            lg.addFilter(_BacktestTerminalNoiseFilter())
+
+
 def configure_backtest_terminal_logging() -> None:
-    """Quiet HTTP/SDK loggers; keep our transcript on stderr."""
+    """Mute SDK/HTTP loggers; desk CoT uses stderr prints."""
     global _CONFIGURED
+    quiet_backtest_library_loggers()
     if _CONFIGURED or not backtest_terminal_log_enabled():
         return
     _CONFIGURED = True
@@ -67,16 +95,16 @@ def configure_backtest_terminal_logging() -> None:
         "httpx",
         "httpcore",
         "openai",
+        "openai._base_client",
         "urllib3",
         "llm.agent_llm_client",
         "llm.openai_client",
         "workflow.weighted_arbitrator",
         "main",
         "llm.portfolio_llm",
+        "agents.portfolio_management",
     ):
-        lg = logging.getLogger(name)
-        lg.setLevel(logging.CRITICAL)
-        lg.addFilter(_BacktestTerminalNoiseFilter())
+        logging.getLogger(name).setLevel(logging.CRITICAL)
 
 
 def note_llm_api_error(message: str) -> None:
@@ -497,6 +525,7 @@ def print_run_summary(
 
 __all__ = [
     "backtest_terminal_log_enabled",
+    "quiet_backtest_library_loggers",
     "configure_backtest_terminal_logging",
     "note_llm_api_error",
     "print_run_header",

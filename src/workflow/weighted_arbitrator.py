@@ -304,7 +304,7 @@ def _inject_llm_signals(state: HedgeFundState) -> tuple[HedgeFundState, list[dic
     if not llm_agents:
         return state, []
 
-    logger.info(
+    logger.debug(
         "agent_llm mode: running LLM inference for %d agents: %s",
         len(llm_agents),
         llm_agents,
@@ -497,7 +497,10 @@ def weighted_arbitrator_node(state: HedgeFundState) -> dict[str, Any]:
         "arbitration_result": {
             "composite": result.composite_score,
             "confidence": result.confidence,
-            "stance": result.stance,
+            # Gated stance (matches trade_intent), not raw composite lean.
+            "stance": proposed_signal.get("params", {}).get("stance") or "neutral",
+            "buy_triggered": bool(result.buy_triggered),
+            "sell_triggered": bool(result.sell_triggered),
             "conviction": result.conviction_level,
             "consensus_ratio": result.consensus_ratio,
             "alignment_gated": result.alignment_gated,

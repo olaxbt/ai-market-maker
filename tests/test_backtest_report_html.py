@@ -6,6 +6,8 @@ import json
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from backtest.iteration_decision import decision_from_iteration
 from backtest.report_html import build_backtest_report_html, write_backtest_report_html
 
@@ -132,9 +134,28 @@ def test_report_html_minimal_run():
                 }
             )
         )
+        (run_dir / "trades.jsonl").write_text(
+            json.dumps(
+                {
+                    "trade_id": 1,
+                    "symbol": "BTC/USDT",
+                    "direction": 1,
+                    "entry_price": 50000,
+                    "exit_price": 51000,
+                    "pnl": 100,
+                    "holding_bars": 2,
+                    "exit_reason": "take_profit",
+                    "entry_bar_index": 0,
+                    "exit_bar_index": 2,
+                    "entry_ts_ms": 1700000000000,
+                    "exit_ts_ms": 1700172800000,
+                }
+            )
+            + "\n"
+        )
         (run_dir / "trades_record.csv").write_text(
-            "trade_id,symbol,side,entry_price,exit_price,pnl_usd,holding_bars,exit_reason,entry_bar_index,exit_bar_index\n"
-            "1,BTC/USDT,long,50000,51000,100,2,take_profit,1,3\n"
+            "trade_id,symbol,side,entry_ts_ms,exit_ts_ms,entry_price,exit_price,pnl_usd,holding_bars,exit_reason,entry_bar_index,exit_bar_index\n"
+            "1,BTC/USDT,long,1700000000000,1700172800000,50000,51000,100,2,take_profit,0,2\n"
         )
         html = build_backtest_report_html(run_dir)
         assert "Executive Summary" in html
@@ -142,5 +163,21 @@ def test_report_html_minimal_run():
         assert "BTC/USDT" in html
         assert "bt_test" in html
         assert "Fill Quality" in html
+        assert "Entry (UTC)" in html
+        assert "2023-11-14" in html
+        assert "priceTradeChart" in html
+        assert "-475.97" not in html
+        assert "100.00" in html or "100" in html
+        assert "≥90 eval bars" in html or "eval bars" in html
         out = write_backtest_report_html(run_dir)
         assert out.is_file()
+
+
+def test_trade_pnl_reads_jsonl_pnl_field():
+    from backtest.report_html import _normalize_trade_row, _trade_pnl
+
+    row = _normalize_trade_row(
+        {"symbol": "SOL/USDT", "direction": 1, "pnl": -475.96970241},
+        idx=0,
+    )
+    assert _trade_pnl(row) == pytest.approx(-475.96970241)

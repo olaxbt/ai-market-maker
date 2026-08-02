@@ -309,10 +309,6 @@ export default function ControlCenterPage() {
               <span>External submit requires signature</span>
               <code className="text-[rgba(226,232,240,0.82)]">{caps?.leaderboard?.external_submit_requires_signature ? "yes" : "no"}</code>
             </div>
-            <div className="flex items-center justify-between gap-3">
-              <span>Provider keys configured</span>
-              <code className="text-[rgba(226,232,240,0.82)]">{caps?.leaderboard?.provider_keys_configured ? "yes" : "no"}</code>
-            </div>
           </div>
         </div>
       </div>

@@ -1,7 +1,6 @@
 """Multi-step backtest CLI: **online** exchange candles (public fetch) or cached CSV (offline).
 
-Public defaults for strategy env vars and HOLD shaping live in ``config/app.default.json``
-(``strategy.*``, ``backtest.hold_signal_fallback``); see also ``AIMM_BACKTEST_HOLD_FALLBACK`` in ``.env.example``.
+Public defaults for strategy env vars live in ``config/app.default.json`` (``strategy.*``).
 
 **CSV cache:** ``--ohlcv-cache-dir DIR`` (or ``config/app.default.json`` ``market.ohlcv_cache_dir``) stores one ``.csv`` per
 symbol/timeframe; combine with ``--online`` to fill on first run and reuse later. ``--csv-only``
@@ -83,7 +82,7 @@ from backtest.bars import (
     nominal_interval_sec_for_timeframe,
 )
 from backtest.loop import run_multi_step_backtest
-from backtest.ohlcv_csv_cache import ensure_bars_cached, load_bars_csv_only
+from backtest.ohlcv_csv_cache import ensure_bars_cached
 from config.app_settings import apply_strategy_env_defaults_from_settings, load_app_settings
 
 try:
@@ -135,6 +134,15 @@ def build_run_demo_parser() -> argparse.ArgumentParser:
         "--no-warmup",
         action="store_true",
         help="Disable TA warmup prefix (fetch --steps bars only).",
+    )
+    parser.add_argument(
+        "--until",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help=(
+            "Lock the eval window end date (UTC). Bars after this day are dropped before "
+            "taking the trailing warmup+eval slice."
+        ),
     )
     parser.add_argument(
         "--interval-sec",
@@ -320,13 +328,20 @@ def resolve_run_demo_symbols(
     return [], str(args.ticker)
 
 
-def _resolve_tp_sl_pct(args: argparse.Namespace) -> float:
-    if float(args.tp_sl_pct) > 0:
-        return float(args.tp_sl_pct)
-    from config.fund_policy import load_fund_policy
+def _resolve_tp_sl_pct(
+    args: argparse.Namespace,
+    deploy_config: dict[str, Any] | None = None,
+) -> tuple[float, float]:
+    """Resolve TP/SL percent via shared helper (CLI > deploy > fund policy)."""
+    from backtest.config import resolve_tp_sl_pct
 
-    fp = load_fund_policy()
-    return float(fp.take_profit_pct) * 100.0
+    dc = deploy_config or {}
+    tp = float(dc.get("take_profit_pct") or 0.0)
+    sl = float(dc.get("stop_loss_pct") or 0.0)
+    if tp > 0 or sl > 0:
+        return tp, sl
+    cli = float(args.tp_sl_pct) if float(args.tp_sl_pct) > 0 else None
+    return resolve_tp_sl_pct(cli_tp_sl_pct=cli)
 
 
 def _resolve_run_leverage(
@@ -356,6 +371,54 @@ def _resolve_fetch_plan(
     return fetch_limit, warmup, None
 
 
+def _until_end_ms(until: str | None) -> int | None:
+    """Inclusive end-of-day UTC ms for ``YYYY-MM-DD``, or None."""
+    raw = (until or "").strip()
+    if not raw:
+        return None
+    from datetime import datetime, timezone
+
+    dt = datetime.strptime(raw, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    return int(dt.timestamp() * 1000) + 86_400_000 - 1
+
+
+def _trailing_bars_locked(
+    rows: list[list[float]], *, limit: int, until: str | None, symbol: str
+) -> list[list[float]]:
+    """Take trailing ``limit`` bars, optionally dropping anything after ``--until``."""
+    end_ms = _until_end_ms(until)
+    cut = rows
+    if end_ms is not None:
+        cut = [r for r in rows if int(r[0]) <= end_ms]
+        if len(cut) < limit:
+            raise ValueError(
+                f"{symbol}: only {len(cut)} bars through --until {until}, need {limit}"
+            )
+        print(
+            f"[lock] {symbol}: window ends {until} ({len(cut)} bars available, using last {limit})",
+            file=sys.stderr,
+        )
+    if len(cut) < limit:
+        raise ValueError(f"{symbol}: only {len(cut)} bars, need {limit}")
+    return cut[-limit:]
+
+
+def _load_csv_bars_for_demo(
+    symbol: str,
+    limit: int,
+    *,
+    timeframe: str,
+    cache_dir: Path,
+    until: str | None,
+) -> list[list[float]]:
+    from backtest.ohlcv_csv_cache import load_bars_csv_only, load_ohlcv_csv, ohlcv_cache_path
+
+    if not until:
+        return load_bars_csv_only(symbol, limit, timeframe=timeframe, cache_dir=cache_dir)
+    path = ohlcv_cache_path(cache_dir, symbol, timeframe)
+    return _trailing_bars_locked(load_ohlcv_csv(path), limit=limit, until=until, symbol=symbol)
+
+
 def execute_run_demo(
     args: argparse.Namespace,
     parser: argparse.ArgumentParser,
@@ -363,7 +426,7 @@ def execute_run_demo(
 ) -> dict[str, Any]:
     sym_list, primary = resolve_run_demo_symbols(args, parser)
     run_leverage = _resolve_run_leverage(args, deploy_config)
-    tp_sl_pct = _resolve_tp_sl_pct(args)
+    take_profit_pct, stop_loss_pct = _resolve_tp_sl_pct(args, deploy_config)
     runs_dir_path = Path(args.runs_dir).expanduser() if args.runs_dir else None
     fee_bps = float(load_app_settings().paper.fee_bps)
 
@@ -431,18 +494,27 @@ def execute_run_demo(
                     f"[csv] loading {fetch_limit_m} x {tf} {sym} from {ohlcv_cache} …",
                     file=sys.stderr,
                 )
-                bars_map[sym] = load_bars_csv_only(
-                    sym, fetch_limit_m, timeframe=tf, cache_dir=ohlcv_cache
+                bars_map[sym] = _load_csv_bars_for_demo(
+                    sym,
+                    fetch_limit_m,
+                    timeframe=tf,
+                    cache_dir=ohlcv_cache,
+                    until=getattr(args, "until", None),
                 )
             elif args.online:
+                until = getattr(args, "until", None)
+                # Over-fetch so a locked --until window still has warmup+eval bars.
+                online_limit = fetch_limit_m
+                if until:
+                    online_limit = max(fetch_limit_m * 3, fetch_limit_m + 200)
                 if ohlcv_cache is not None:
                     print(
-                        f"[cache] ensure {fetch_limit_m} x {tf} {sym} under {ohlcv_cache} …",
+                        f"[cache] ensure {online_limit} x {tf} {sym} under {ohlcv_cache} …",
                         file=sys.stderr,
                     )
-                    bars_map[sym] = ensure_bars_cached(
+                    fetched = ensure_bars_cached(
                         sym,
-                        fetch_limit_m,
+                        online_limit,
                         timeframe=tf,
                         exchange_id=str(args.exchange),
                         cache_dir=ohlcv_cache,
@@ -450,15 +522,18 @@ def execute_run_demo(
                     )
                 else:
                     print(
-                        f"[online] fetching {fetch_limit_m} x {tf} {sym} from {args.exchange} …",
+                        f"[online] fetching {online_limit} x {tf} {sym} from {args.exchange} …",
                         file=sys.stderr,
                     )
-                    bars_map[sym] = fetch_ccxt_ohlcv_bars(
+                    fetched = fetch_ccxt_ohlcv_bars(
                         sym,
-                        fetch_limit_m,
+                        online_limit,
                         timeframe=tf,
                         exchange_id=args.exchange,
                     )
+                bars_map[sym] = _trailing_bars_locked(
+                    fetched, limit=fetch_limit_m, until=until, symbol=sym
+                )
             elif args.flat:
                 raise ValueError(
                     "--flat is no longer supported (synthetic bars removed). Use --online or --csv-only."
@@ -480,8 +555,8 @@ def execute_run_demo(
             runs_dir=runs_dir_path,
             instrument=args.instrument,
             leverage=run_leverage,
-            take_profit_pct=tp_sl_pct,
-            stop_loss_pct=tp_sl_pct,
+            take_profit_pct=take_profit_pct,
+            stop_loss_pct=stop_loss_pct,
             deploy_config=deploy_config,
             deploy_profile_weights=_dep_w,
             deploy_profile_id=_dep_id,
@@ -514,16 +589,24 @@ def execute_run_demo(
         if _csv_only:
             assert ohlcv_cache is not None
             print(f"[csv] loading {fetch_limit} x {tf} {args.ticker} …", file=sys.stderr)
-            bars = load_bars_csv_only(
-                str(args.ticker), fetch_limit, timeframe=tf, cache_dir=ohlcv_cache
+            bars = _load_csv_bars_for_demo(
+                str(args.ticker),
+                fetch_limit,
+                timeframe=tf,
+                cache_dir=ohlcv_cache,
+                until=getattr(args, "until", None),
             )
             interval_sec = _infer_interval_sec_from_bars(bars)
         elif args.online:
+            until = getattr(args, "until", None)
+            online_limit = fetch_limit
+            if until:
+                online_limit = max(fetch_limit * 3, fetch_limit + 200)
             if ohlcv_cache is not None:
-                print(f"[cache] ensure {fetch_limit} x {tf} {args.ticker} …", file=sys.stderr)
-                bars = ensure_bars_cached(
+                print(f"[cache] ensure {online_limit} x {tf} {args.ticker} …", file=sys.stderr)
+                fetched = ensure_bars_cached(
                     str(args.ticker),
-                    fetch_limit,
+                    online_limit,
                     timeframe=tf,
                     exchange_id=str(args.exchange),
                     cache_dir=ohlcv_cache,
@@ -531,15 +614,18 @@ def execute_run_demo(
                 )
             else:
                 print(
-                    f"[online] fetching {fetch_limit} x {tf} {args.ticker} from {args.exchange} …",
+                    f"[online] fetching {online_limit} x {tf} {args.ticker} from {args.exchange} …",
                     file=sys.stderr,
                 )
-                bars = fetch_ccxt_ohlcv_bars(
+                fetched = fetch_ccxt_ohlcv_bars(
                     args.ticker,
-                    fetch_limit,
+                    online_limit,
                     timeframe=tf,
                     exchange_id=args.exchange,
                 )
+            bars = _trailing_bars_locked(
+                fetched, limit=fetch_limit, until=until, symbol=str(args.ticker)
+            )
             interval_sec = _infer_interval_sec_from_bars(bars)
         elif args.flat:
             raise ValueError(
@@ -574,8 +660,8 @@ def execute_run_demo(
             runs_dir=runs_dir_path,
             instrument=args.instrument,
             leverage=run_leverage,
-            take_profit_pct=tp_sl_pct,
-            stop_loss_pct=tp_sl_pct,
+            take_profit_pct=take_profit_pct,
+            stop_loss_pct=stop_loss_pct,
             deploy_config=deploy_config,
             deploy_profile_weights=_dep_w,
             deploy_profile_id=_dep_id,
@@ -614,6 +700,7 @@ def execute_run_demo(
     out = {
         "run_id": res.run_id,
         "steps": res.steps,
+        "eval_bars": res.steps,
         "trade_count": res.trade_count,
         "llm": bool(args.llm),
         "interval_sec": res.interval_sec,
@@ -659,8 +746,8 @@ def execute_run_demo(
                 runs_dir=runs_dir_path,
                 instrument=args.instrument,
                 leverage=run_leverage,
-                take_profit_pct=tp_sl_pct,
-                stop_loss_pct=tp_sl_pct,
+                take_profit_pct=take_profit_pct,
+                stop_loss_pct=stop_loss_pct,
                 deploy_config=deploy_config,
                 deploy_profile_weights=_dep_w,
                 deploy_profile_id=_dep_id,
@@ -675,8 +762,8 @@ def execute_run_demo(
                 interval_sec=interval_sec,
                 run_id=f"{out.get('run_id', 'bt')}_oos",
                 runs_dir=runs_dir_path,
-                take_profit_pct=tp_sl_pct,
-                stop_loss_pct=tp_sl_pct,
+                take_profit_pct=take_profit_pct,
+                stop_loss_pct=stop_loss_pct,
                 instrument=args.instrument,
                 leverage=run_leverage,
                 deploy_config=deploy_config,
@@ -733,8 +820,15 @@ def execute_run_demo(
         pf = metrics_d.get("profit_factor") if isinstance(metrics_d, dict) else None
 
         qr = generate_quality_report(
-            close_prices=closes,
-            total_bars=len(_quality_bars),
+            close_prices=closes[-int(out.get("eval_bars") or len(closes)) :]
+            if closes and out.get("eval_bars")
+            else closes,
+            # Quality gates use eval bars only (warmup is TA context).
+            total_bars=int(
+                out.get("eval_bars")
+                or (res.steps if res and getattr(res, "steps", None) else 0)
+                or len(_quality_bars)
+            ),
             trade_count=res.trade_count if res else 0,
             profit_factor=pf,
             trades=trades_list,
@@ -800,12 +894,13 @@ def execute_run_demo(
 
 def main(argv: list[str] | None = None) -> dict[str, Any]:
     load_dotenv()
-    from config.llm_env import require_llm_key
-
-    require_llm_key()
     apply_strategy_env_defaults_from_settings(load_app_settings())
     parser = build_run_demo_parser()
     args = parser.parse_args(argv)
+
+    from config.llm_env import require_llm_key
+
+    require_llm_key()
 
     if args.quality:
         if not args.steps or args.steps < 200:
@@ -840,7 +935,6 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
     set_env_from_config(bt_cfg)
 
     out = execute_run_demo(args, parser, deploy_config=bt_cfg)
-    resolved_tp_sl = _resolve_tp_sl_pct(args)
     actual_lev = bt_cfg["leverage"]
     try:
         sp = Path(out.get("summary_path", ""))
@@ -854,8 +948,8 @@ def main(argv: list[str] | None = None) -> dict[str, Any]:
         "deploy_path": bt_cfg["deploy_path"],
         "profile_id": bt_cfg["profile_id"],
         "profile_weights": bt_cfg.get("profile_weights", {}),
-        "take_profit_pct": resolved_tp_sl if resolved_tp_sl > 0 else bt_cfg["take_profit_pct"],
-        "stop_loss_pct": resolved_tp_sl if resolved_tp_sl > 0 else bt_cfg["stop_loss_pct"],
+        "take_profit_pct": bt_cfg["take_profit_pct"],
+        "stop_loss_pct": bt_cfg["stop_loss_pct"],
         "leverage": actual_lev,
         "source_description": bt_cfg["source_description"],
         "agent_led_symbols": bt_cfg.get("agent_led_symbols", []),

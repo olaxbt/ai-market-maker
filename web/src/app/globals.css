@@ -219,6 +219,12 @@ samp {
   scrollbar-color: #334155 var(--nexus-surface);
 }
 
+/* react-datepicker: sit above sticky Run CTA / panel chrome */
+.nexus-datepicker-popper,
+.react-datepicker-popper {
+  z-index: 9999 !important;
+}
+
 /* react-datepicker: Nexus dark skin */
 .nexus-datepicker.react-datepicker {
   background: var(--nexus-surface);
@@ -541,6 +547,40 @@ html.light .nexus-hub-card {
 }
 .nexus-md li {
   margin: 0.15rem 0;
+}
+
+/* Dense chat bubbles — override loose model markdown */
+.nexus-md-chat {
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.nexus-md-chat p + p {
+  margin-top: 0.35rem;
+}
+.nexus-md-chat ul,
+.nexus-md-chat ol {
+  margin: 0.25rem 0;
+  padding-left: 1rem;
+}
+.nexus-md-chat li {
+  margin: 0.05rem 0;
+}
+.nexus-md-chat h1,
+.nexus-md-chat h2,
+.nexus-md-chat h3,
+.nexus-md-chat h4 {
+  margin: 0.35rem 0 0.15rem;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.nexus-md-chat pre {
+  margin: 0.35rem 0;
+  padding: 0.45rem 0.55rem;
+}
+.nexus-md-chat hr {
+  margin: 0.4rem 0;
 }
 .nexus-md a {
   color: var(--nexus-glow);

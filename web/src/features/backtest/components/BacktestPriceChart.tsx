@@ -25,23 +25,56 @@ export function BacktestPriceChart({
   const candleData = useMemo(
     () =>
       bars
-        .filter((b) => typeof b.ts_ms === "number")
-        .map((b) => ({
-          time: toUtcTimestamp(b.ts_ms),
-          open: Number(b.open),
-          high: Number(b.high),
-          low: Number(b.low),
-          close: Number(b.close),
-        })),
+        .map((b, idx) => {
+          const anyB = b as OhlcvBar & {
+            ts?: number;
+            o?: number;
+            h?: number;
+            l?: number;
+            c?: number;
+          };
+          const tsMs =
+            typeof anyB.ts_ms === "number"
+              ? anyB.ts_ms
+              : typeof anyB.ts === "number"
+                ? anyB.ts
+                : NaN;
+          const open = Number(anyB.open ?? anyB.o);
+          const high = Number(anyB.high ?? anyB.h);
+          const low = Number(anyB.low ?? anyB.l);
+          const close = Number(anyB.close ?? anyB.c);
+          if (!Number.isFinite(tsMs) || ![open, high, low, close].every(Number.isFinite)) {
+            return null;
+          }
+          return {
+            time: toUtcTimestamp(tsMs),
+            open,
+            high,
+            low,
+            close,
+            _idx: idx,
+          };
+        })
+        .filter((row): row is NonNullable<typeof row> => row != null)
+        .map(({ _idx: _i, ...row }) => row)
+        // lightweight-charts requires ascending unique times
+        .sort((a, b) => Number(a.time) - Number(b.time))
+        .filter((row, i, arr) => i === 0 || Number(row.time) !== Number(arr[i - 1].time)),
     [bars],
   );
 
+  const candleTimes = useMemo(() => new Set(candleData.map((c) => Number(c.time))), [candleData]);
+
   const markers = useMemo((): SeriesMarker<UTCTimestamp>[] => {
-    if (!trades?.length || !bars.length) return [];
+    if (!trades?.length || !bars.length || !candleTimes.size) return [];
     const tsByStep = new Map<number, number>();
-    for (const b of bars) tsByStep.set(b.step, b.ts_ms);
-    // Aggregate fills per bar step so the chart doesn't stack 2-5 arrows on the same candle.
-    // (Multiple fills per step are valid; we just render one marker with count + avg price.)
+    for (const [idx, b] of bars.entries()) {
+      const anyB = b as OhlcvBar & { ts?: number };
+      const ts =
+        typeof anyB.ts_ms === "number" ? anyB.ts_ms : typeof anyB.ts === "number" ? anyB.ts : null;
+      const step = typeof anyB.step === "number" ? anyB.step : idx;
+      if (typeof ts === "number") tsByStep.set(step, ts);
+    }
     const key = (step: number, side: string) => `${step}:${side}`;
     const agg = new Map<
       string,
@@ -71,92 +104,116 @@ export function BacktestPriceChart({
       agg.set(k, next);
     }
     const rows = Array.from(agg.values()).sort((a, b) => a.ts - b.ts);
-    return rows.map((r) => {
-      const avg = r.qty !== 0 ? r.notional / r.qty : NaN;
-      const avgLabel = Number.isFinite(avg)
-        ? avg.toLocaleString(undefined, { maximumFractionDigits: 2 })
-        : "—";
-      const qtyLabel = r.qty.toLocaleString(undefined, { maximumFractionDigits: 6 });
-      const fillSuffix = r.fills > 1 ? ` (${r.fills})` : "";
-      return {
-        time: toUtcTimestamp(r.ts),
-        position: r.side === "buy" ? ("belowBar" as const) : ("aboveBar" as const),
-        color: r.side === "buy" ? "rgba(0, 212, 170, 0.95)" : "rgba(242, 92, 84, 0.95)",
-        shape: r.side === "buy" ? ("arrowUp" as const) : ("arrowDown" as const),
-        text: `${r.side.toUpperCase()} ${qtyLabel} @ ${avgLabel}${fillSuffix}`,
-      };
-    });
-  }, [trades, bars]);
+    return rows
+      .map((r) => {
+        const time = toUtcTimestamp(r.ts);
+        if (!candleTimes.has(Number(time))) return null;
+        const avg = r.qty !== 0 ? r.notional / r.qty : NaN;
+        const avgLabel = Number.isFinite(avg)
+          ? avg.toLocaleString(undefined, { maximumFractionDigits: 2 })
+          : "—";
+        const qtyLabel = r.qty.toLocaleString(undefined, { maximumFractionDigits: 6 });
+        const fillSuffix = r.fills > 1 ? ` (${r.fills})` : "";
+        return {
+          time,
+          position: r.side === "buy" ? ("belowBar" as const) : ("aboveBar" as const),
+          color: r.side === "buy" ? "rgba(0, 212, 170, 0.95)" : "rgba(242, 92, 84, 0.95)",
+          shape: r.side === "buy" ? ("arrowUp" as const) : ("arrowDown" as const),
+          text: `${r.side.toUpperCase()} ${qtyLabel} @ ${avgLabel}${fillSuffix}`,
+        };
+      })
+      .filter((m): m is NonNullable<typeof m> => m != null);
+  }, [trades, bars, candleTimes]);
 
+  // Keep chart host mounted while bars load async
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    if (chartRef.current) return;
 
-    const chart = createChart(host, {
-      height,
-      layout: {
-        background: { color: "transparent" },
-        textColor: "rgba(138,149,166,0.92)",
-        fontFamily: "ui-monospace, monospace",
-      },
-      grid: {
-        vertLines: { color: "rgba(138,149,166,0.08)" },
-        horzLines: { color: "rgba(138,149,166,0.08)" },
-      },
-      rightPriceScale: { borderColor: "rgba(138,149,166,0.18)" },
-      timeScale: { borderColor: "rgba(138,149,166,0.18)" },
-      crosshair: {
-        vertLine: { color: "rgba(0, 212, 170, 0.18)" },
-        horzLine: { color: "rgba(0, 212, 170, 0.18)" },
-      },
-    });
+    if (!candleData.length) {
+      if (chartRef.current) {
+        chartRef.current.remove();
+        chartRef.current = null;
+        candleRef.current = null;
+      }
+      return;
+    }
 
-    const series = chart.addCandlestickSeries({
-      upColor: "rgba(0, 212, 170, 0.75)",
-      downColor: "rgba(242, 92, 84, 0.75)",
-      borderUpColor: "rgba(0, 212, 170, 0.85)",
-      borderDownColor: "rgba(242, 92, 84, 0.85)",
-      wickUpColor: "rgba(0, 212, 170, 0.85)",
-      wickDownColor: "rgba(242, 92, 84, 0.85)",
-    });
+    if (!chartRef.current) {
+      const chart = createChart(host, {
+        width: Math.max(host.clientWidth || 0, 1),
+        height,
+        layout: {
+          background: { color: "transparent" },
+          textColor: "rgba(138,149,166,0.92)",
+          fontFamily: "ui-monospace, monospace",
+        },
+        grid: {
+          vertLines: { color: "rgba(138,149,166,0.08)" },
+          horzLines: { color: "rgba(138,149,166,0.08)" },
+        },
+        rightPriceScale: { borderColor: "rgba(138,149,166,0.18)" },
+        timeScale: { borderColor: "rgba(138,149,166,0.18)" },
+        crosshair: {
+          vertLine: { color: "rgba(0, 212, 170, 0.18)" },
+          horzLine: { color: "rgba(0, 212, 170, 0.18)" },
+        },
+      });
 
-    series.setData(candleData);
-    if (markers.length) series.setMarkers(markers);
-    chart.timeScale().fitContent();
+      const series = chart.addCandlestickSeries({
+        upColor: "rgba(0, 212, 170, 0.75)",
+        downColor: "rgba(242, 92, 84, 0.75)",
+        borderUpColor: "rgba(0, 212, 170, 0.85)",
+        borderDownColor: "rgba(242, 92, 84, 0.85)",
+        wickUpColor: "rgba(0, 212, 170, 0.85)",
+        wickDownColor: "rgba(242, 92, 84, 0.85)",
+      });
 
-    chartRef.current = chart;
-    candleRef.current = series;
+      chartRef.current = chart;
+      candleRef.current = series;
 
-    const ro = new ResizeObserver(() => {
-      if (!hostRef.current || !chartRef.current) return;
-      chartRef.current.applyOptions({ width: hostRef.current.clientWidth });
-    });
-    ro.observe(host);
+      const ro = new ResizeObserver(() => {
+        if (!hostRef.current || !chartRef.current) return;
+        chartRef.current.applyOptions({ width: Math.max(hostRef.current.clientWidth || 0, 1) });
+      });
+      ro.observe(host);
 
-    return () => {
-      ro.disconnect();
-      chart.remove();
-      chartRef.current = null;
-      candleRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [height]);
+      return () => {
+        ro.disconnect();
+        chart.remove();
+        chartRef.current = null;
+        candleRef.current = null;
+      };
+    }
+
+    chartRef.current.applyOptions({ height });
+  }, [candleData.length, height]);
 
   useEffect(() => {
     const series = candleRef.current;
-    if (!series) return;
-    series.setData(candleData);
-    series.setMarkers(markers);
+    const chart = chartRef.current;
+    if (!series || !chart || !candleData.length) return;
+    try {
+      series.setData(candleData);
+      series.setMarkers(markers);
+      chart.timeScale().fitContent();
+    } catch {
+      // Ignore transient lightweight-charts validation errors while data settles.
+    }
   }, [candleData, markers]);
 
-  if (!bars.length) {
-    return (
-      <div className="flex h-[280px] items-center justify-center rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)] font-mono text-[11px] text-[var(--nexus-muted)]">
-        No price bars available for this run yet.
-      </div>
-    );
-  }
-
-  return <div ref={hostRef} className="w-full min-w-0" style={{ height }} />;
+  return (
+    <div className="relative w-full min-w-0" style={{ height }}>
+      <div ref={hostRef} className="h-full w-full min-w-0" />
+      {!bars.length ? (
+        <div className="absolute inset-0 flex items-center justify-center rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)] font-mono text-[11px] text-[var(--nexus-muted)]">
+          No price bars available for this run yet.
+        </div>
+      ) : !candleData.length ? (
+        <div className="absolute inset-0 flex items-center justify-center rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)] font-mono text-[11px] text-[var(--nexus-muted)]">
+          Price bars could not be parsed for this run.
+        </div>
+      ) : null}
+    </div>
+  );
 }

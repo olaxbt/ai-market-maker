@@ -6,7 +6,7 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +16,42 @@ ARBITRATOR_AGENT_LLM = "agent_llm"
 ARBITRATOR_WEIGHTED_CONVERGENCE = "weighted_convergence"
 
 VALID_ARBITRATOR_MODES = (ARBITRATOR_AGENT_LLM, ARBITRATOR_WEIGHTED_CONVERGENCE)
+
+
+def resolve_tp_sl_pct(
+    *,
+    cli_tp_sl_pct: float | None = None,
+    deploy_execution: Mapping[str, Any] | None = None,
+    fund_policy: Any | None = None,
+) -> tuple[float, float]:
+    """Resolve TP/SL in engine percent units (6.0 = 6%). CLI > deploy > fund policy."""
+    if cli_tp_sl_pct is not None and float(cli_tp_sl_pct) > 0:
+        v = float(cli_tp_sl_pct)
+        return v, v
+
+    exec_cfg = deploy_execution if isinstance(deploy_execution, Mapping) else {}
+    tp_raw = exec_cfg.get("take_profit_pct")
+    sl_raw = exec_cfg.get("stop_loss_pct")
+    if tp_raw is not None or sl_raw is not None:
+        # Deploy stores fractions (0.025); engine uses percent (2.5).
+        tp = float(tp_raw) * 100.0 if tp_raw is not None else 0.0
+        sl = float(sl_raw) * 100.0 if sl_raw is not None else 0.0
+        return tp, sl
+
+    fp = fund_policy
+    if fp is None:
+        try:
+            from config.fund_policy import load_fund_policy
+
+            fp = load_fund_policy()
+        except (FileNotFoundError, OSError, ValueError) as e:
+            logger.warning("fund policy unavailable for TP/SL fallback: %s", e)
+            return 0.0, 0.0
+    tp = float(fp.take_profit_pct) * 100.0
+    sl_frac = float(getattr(fp, "stop_loss_pct", 0.0) or 0.0)
+    # Mirror TP when policy stop_loss is unset.
+    sl = sl_frac * 100.0 if sl_frac > 0 else tp
+    return tp, sl
 
 
 def resolve_backtest_config(
@@ -68,6 +104,7 @@ def resolve_backtest_config(
         )
 
     deploy_cfg: dict[str, Any] | None = None
+    deploy_execution: Mapping[str, Any] | None = None
     effective_deploy_path = deploy_path or DEFAULT_DEPLOY_PATH
     deploy_file = Path(effective_deploy_path)
     if deploy_file.is_file():
@@ -108,16 +145,9 @@ def resolve_backtest_config(
             result["profile_id"] = str(profile_id)
 
         exec_cfg = deploy_cfg.get("execution") or {}
-        tp_raw = exec_cfg.get("take_profit_pct")
-        sl_raw = exec_cfg.get("stop_loss_pct")
-        lev = exec_cfg.get("leverage") or result["leverage"]
-        mhb = exec_cfg.get("max_hold_bars") or result["max_hold_bars"]
-        # Deploy config stores TP/SL as fractions (e.g. 0.025 = 2.5%);
-        # the engine compares against unrealized P&L in percent (2.5).
-        if tp_raw is not None:
-            result["take_profit_pct"] = float(tp_raw) * 100.0
-        if sl_raw is not None:
-            result["stop_loss_pct"] = float(sl_raw) * 100.0
+        deploy_execution = exec_cfg if isinstance(exec_cfg, dict) else {}
+        lev = deploy_execution.get("leverage") or result["leverage"]
+        mhb = deploy_execution.get("max_hold_bars") or result["max_hold_bars"]
         result["leverage"] = float(lev) if lev else 2.0
         result["max_hold_bars"] = int(mhb) if mhb else 0
 
@@ -128,9 +158,12 @@ def resolve_backtest_config(
         else:
             logger.warning("unknown arbitrator mode %r, ignoring", mode)
 
-    if cli_tp_sl_pct is not None and cli_tp_sl_pct > 0:
-        result["take_profit_pct"] = float(cli_tp_sl_pct)
-        result["stop_loss_pct"] = float(cli_tp_sl_pct)
+    tp_pct, sl_pct = resolve_tp_sl_pct(
+        cli_tp_sl_pct=cli_tp_sl_pct,
+        deploy_execution=deploy_execution,
+    )
+    result["take_profit_pct"] = tp_pct
+    result["stop_loss_pct"] = sl_pct
 
     if cli_leverage is not None and cli_leverage >= 1.0:
         result["leverage"] = float(cli_leverage)
@@ -197,5 +230,6 @@ __all__ = [
     "VALID_ARBITRATOR_MODES",
     "available_arbitrator_modes",
     "resolve_backtest_config",
+    "resolve_tp_sl_pct",
     "set_env_from_config",
 ]

@@ -624,7 +624,7 @@ def run_sweep(
     report = {
         "sweep_id": sweep_id,
         "methodology": (
-            "Deterministic weighted arbitrator; hold_signal_fallback=off; "
+            "Deterministic weighted arbitrator; graph trade_intent only (no HOLD override); "
             "TA momentum via agent 2.3 ta_bundle/v2; presets vary profile_weights "
             "and decision_threshold via deploy_config only (no new env flags)."
         ),

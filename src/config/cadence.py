@@ -1,9 +1,4 @@
-"""Decision loop timing: how often the full graph runs in long-running / dev stacks.
-
-The **full LangGraph** run (Tier-1 desks + optional LLM arbitrator + risk + execution)
-is expensive in tokens and API calls. Use a conservative default and override only when you need
-fast feedback (e.g. integration testing).
-"""
+"""Seconds between full LangGraph runs in long-running stacks."""
 
 from __future__ import annotations
 
@@ -15,13 +10,11 @@ from typing import Mapping
 from config.llm_env import use_llm_arbitrator
 
 STRATEGY_INTERVAL_ENV = "STRATEGY_INTERVAL_SEC"
-# Default ~3 minutes: aligns with common “desk refresh” loops and limits token burn.
-DEFAULT_STRATEGY_INTERVAL_SEC = 180
+DEFAULT_STRATEGY_INTERVAL_SEC = 900
 
-# If LLM is enabled, intervals shorter than this are unusual for production-shaped runs.
-LLM_SANE_MIN_INTERVAL_SEC = 120
+LLM_SANE_MIN_INTERVAL_SEC = 300
 
-_MIN_INTERVAL_SEC = 1
+_MIN_INTERVAL_SEC = 300
 _MAX_INTERVAL_SEC = 86400
 
 
@@ -57,14 +50,12 @@ def load_strategy_interval_sec(
 
 
 def warn_if_aggressive_cadence(interval_sec: int, *, env: Mapping[str, str] | None = None) -> None:
-    """Emit a stderr hint when LLM is on but the loop is faster than a typical desk cycle."""
     env_map = env if env is not None else os.environ
     use_llm = use_llm_arbitrator(env_map)
     if use_llm and interval_sec < LLM_SANE_MIN_INTERVAL_SEC:
         print(
             f"[cadence] LLM key configured with {STRATEGY_INTERVAL_ENV}={interval_sec}s "
-            f"(<{LLM_SANE_MIN_INTERVAL_SEC}s): each tick runs the full agentic graph — "
-            "expect high token usage. Consider >=180s for demos.",
+            f"(<{LLM_SANE_MIN_INTERVAL_SEC}s): full graph each tick — high token use.",
             file=sys.stderr,
         )
 

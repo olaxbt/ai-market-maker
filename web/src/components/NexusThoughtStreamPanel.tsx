@@ -13,9 +13,7 @@ interface NexusThoughtStreamPanelProps {
   messageLog?: MessageLogEntry[];
   streamRef: RefObject<HTMLDivElement>;
   setCardRef: (traceId: string, el: HTMLDivElement | null) => void;
-  /** Merged onto outer section (e.g. backtest right rail: full height, no extra chrome). */
   className?: string;
-  /** Disable staggered card enter animation (backtest verbose mode). */
   reduceMotion?: boolean;
 }
 
@@ -32,6 +30,7 @@ export function NexusThoughtStreamPanel({
   const [unseenCount, setUnseenCount] = useState(0);
   const stickToBottomRef = useRef(true);
   const prevTraceCountRef = useRef(0);
+  const prevLogCountRef = useRef(0);
 
   const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
     const el = streamRef.current;
@@ -43,7 +42,7 @@ export function NexusThoughtStreamPanel({
     const el = streamRef.current;
     if (!el) return;
 
-    const NEAR_BOTTOM_PX = 120;
+    const NEAR_BOTTOM_PX = 220;
     const onScroll = () => {
       const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
       const nearBottom = distance <= NEAR_BOTTOM_PX;
@@ -52,31 +51,42 @@ export function NexusThoughtStreamPanel({
     };
 
     el.addEventListener("scroll", onScroll, { passive: true });
-    // Initialize pinned state.
+    stickToBottomRef.current = true;
     onScroll();
     return () => el.removeEventListener("scroll", onScroll);
   }, [streamRef]);
 
+  const wasStreamingRef = useRef(false);
+  useEffect(() => {
+    if (streaming && !wasStreamingRef.current) {
+      stickToBottomRef.current = true;
+      setUnseenCount(0);
+      window.requestAnimationFrame(() => scrollToBottom("auto"));
+    }
+    wasStreamingRef.current = streaming;
+  }, [streaming]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     const prev = prevTraceCountRef.current;
     const next = tracesToShow.length;
-    if (next <= prev) {
-      prevTraceCountRef.current = next;
-      return;
-    }
-
-    const newItems = next - prev;
+    const logNext = messageLog?.length ?? 0;
+    const logPrev = prevLogCountRef.current;
+    const tracesGrew = next > prev;
+    const logGrew = logNext > logPrev;
     prevTraceCountRef.current = next;
+    prevLogCountRef.current = logNext;
+    if (!tracesGrew && !logGrew) return;
+
+    const newItems = (tracesGrew ? next - prev : 0) + (logGrew ? logNext - logPrev : 0);
 
     if (stickToBottomRef.current) {
-      // Wait a tick so the new cards mount and height is updated.
-      window.setTimeout(() => scrollToBottom("auto"), 0);
+      window.requestAnimationFrame(() => scrollToBottom("auto"));
       setUnseenCount(0);
       return;
     }
 
     setUnseenCount((c) => c + newItems);
-  }, [tracesToShow.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [tracesToShow.length, messageLog?.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const hasTraces = tracesToShow.length > 0;
   const renderTraces = hasTraces ? tracesToShow.slice(-350) : tracesToShow;
@@ -102,7 +112,7 @@ export function NexusThoughtStreamPanel({
         >
           <div className="sticky top-0 z-10 border-b border-[var(--nexus-border)] bg-[var(--nexus-panel)]/95 px-3 py-2 backdrop-blur">
             <h2 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
-              Event stream · chain-of-thought & provenance · node_id / parent_id
+              Agent thoughts (live)
             </h2>
           </div>
           <div className="p-3 space-y-3">
@@ -147,7 +157,7 @@ export function NexusThoughtStreamPanel({
               <p className="text-[var(--nexus-muted)] text-xs">
                 {selectedNodeId
                   ? "No trace for this node."
-                  : "No traces. Run the pipeline or load mock data."}
+                  : "No agent thoughts yet — start Live paper above, or run a backtest in Research. Thoughts appear here over the websocket."}
               </p>
             )}
             {hasTraces &&
@@ -164,7 +174,6 @@ export function NexusThoughtStreamPanel({
                   <AgentTraceCard
                     trace={trace}
                     index={i}
-                    // Live updates look bad if every new card animates.
                     reduceMotion={reduceMotion || streaming}
                   />
                 </div>

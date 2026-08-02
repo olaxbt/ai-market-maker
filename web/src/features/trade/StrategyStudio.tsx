@@ -324,8 +324,16 @@ export default function StrategyStudio({
       } catch { /* ignore */ }
 
       const m = btResult.metrics;
-      const retPct = btResult.evaluation?.total_return_pct
-        ?? (m ? ((m.final_equity / m.initial_cash) - 1) * 100 : 0);
+      const retPct =
+        btResult.evaluation?.total_return_pct ??
+        (m &&
+        typeof m.final_equity === "number" &&
+        typeof m.initial_cash === "number" &&
+        m.initial_cash > 0
+          ? (m.final_equity / m.initial_cash - 1) * 100
+          : typeof m?.total_return_pct === "number"
+            ? m.total_return_pct
+            : 0);
       const tradeCount = btResult.trade_count ?? btResult.evaluation?.trade_count ?? 0;
 
       setMessages((prev) => [...prev, {
@@ -455,8 +463,18 @@ export default function StrategyStudio({
 
   const metrics = useMemo(() => result?.metrics ?? null, [result]);
   const totalReturn = useMemo(() => {
-    if (result?.evaluation?.total_return_pct) return result.evaluation.total_return_pct;
-    if (metrics) return ((metrics.final_equity / metrics.initial_cash) - 1) * 100;
+    if (typeof result?.evaluation?.total_return_pct === "number") {
+      return result.evaluation.total_return_pct;
+    }
+    if (typeof metrics?.total_return_pct === "number") return metrics.total_return_pct;
+    if (
+      metrics &&
+      typeof metrics.final_equity === "number" &&
+      typeof metrics.initial_cash === "number" &&
+      metrics.initial_cash > 0
+    ) {
+      return (metrics.final_equity / metrics.initial_cash - 1) * 100;
+    }
     return null;
   }, [result, metrics]);
 

@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useMemo } from "react";
 import type { HeaderNavMode } from "@/components/NexusHeaderNav";
+import { parseConsoleView } from "@/lib/consoleView";
 
 function Tab({
   href,
@@ -29,28 +30,36 @@ function Tab({
   );
 }
 
-function isPathActive(pathname: string, href: string): boolean {
-  if (href === "/") return pathname === "/";
-  if (href === "/feed") return pathname === "/feed";
-  if (href === "/console") return pathname === "/console";
-  if (href.startsWith("/console?")) return pathname === "/console";
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
-
 export function NexusSubtabs({ active }: { active: HeaderNavMode }) {
   const pathname = usePathname() || "/";
+  const searchParams = useSearchParams();
+  const viewMode = parseConsoleView(searchParams.get("view"), searchParams.get("run"));
 
   const tabs = useMemo(() => {
     if (active === "observe") {
-      return [{ href: "/feed", label: "Signals", title: "Provider signals feed" }];
+      return [{ href: "/feed", label: "Signals", title: "Provider signals feed", key: "feed" }];
     }
     if (active === "nexus") {
       return [
-        { href: "/console", label: "Topology", title: "Live topology + event stream" },
-        { href: "/console?view=grid", label: "Agents", title: "Agent grid + detail panel" },
-        { href: "/console?view=research", label: "Research", title: "Backtest + supervisor together" },
-        { href: "/console?view=monitor", label: "Monitor", title: "Balances, positions, and last decisions" },
-        { href: "/console?view=futu", label: "Futu", title: "Futu OpenD HK/US stocks" },
+        {
+          href: "/console?view=flow",
+          label: "Live desk",
+          title: "Live paper + agent map",
+          key: "nexus",
+        },
+        { href: "/console?view=grid", label: "Agents", title: "Inspect agents", key: "grid" },
+        {
+          href: "/console?view=research",
+          label: "Research",
+          title: "Backtests + Supervisor",
+          key: "research",
+        },
+        {
+          href: "/console?view=portfolio",
+          label: "Portfolio",
+          title: "Live/paper book",
+          key: "portfolio",
+        },
       ];
     }
     return [];
@@ -58,10 +67,16 @@ export function NexusSubtabs({ active }: { active: HeaderNavMode }) {
 
   return (
     <div className="inline-flex rounded-xl nexus-segmented-toggle p-1">
-      {tabs.map((t) => (
-        <Tab key={t.href} href={t.href} label={t.label} title={t.title} active={isPathActive(pathname, t.href)} />
-      ))}
+      {tabs.map((t) => {
+        const onConsole = pathname === "/console" || pathname === "/";
+        const isActive =
+          t.key === "feed"
+            ? pathname === "/feed"
+            : onConsole && viewMode === t.key;
+        return (
+          <Tab key={t.href} href={t.href} label={t.label} title={t.title} active={isActive} />
+        );
+      })}
     </div>
   );
 }
-

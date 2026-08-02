@@ -117,3 +117,49 @@ def test_bearish_long_only_flat_multi_backtest_book(monkeypatch):
     intent = derive_trade_intent(state, ps)
     assert intent["action"] == "HOLD"
     assert any("multi-asset" in r or "AIMM_ALLOW_SHORT" in r for r in intent["reasons"])
+
+
+def test_arbitrator_gated_buy_respects_low_confidence():
+    """Arbitrator-gated BUY is not re-held by the policy confidence floor."""
+    ps = {
+        "params": {
+            "stance": "bullish",
+            "confidence": 0.17,  # below policy 0.21, above arb buy gate 0.16
+            "weighted_arbitrator": True,
+            "reasons": ["BUY signal: confidence=0.17 >= 0.16"],
+        }
+    }
+    intent = derive_trade_intent(_state_backtest(), ps)
+    assert intent["action"] == "BUY"
+    assert intent["meta"]["arbitrator_gated"] is True
+    assert intent["meta"]["effective_min_confidence"] == 0.0
+
+
+def test_signed_position_dict_sets_qty():
+    state = {
+        "ticker": "BTC/USDT",
+        "run_mode": "backtest",
+        "shared_memory": {
+            "backtest": {
+                "cash": 8_000.0,
+                "equity": 10_500.0,
+                "positions": {
+                    "BTC/USDT": {"size": 0.1, "entry": 60_000.0, "direction": -1},
+                },
+            }
+        },
+        "market_data": {
+            "BTC/USDT": {"ohlcv": [[0, 1, 1, 1, 50_000.0, 1.0]]},
+        },
+    }
+    ps = {
+        "params": {
+            "stance": "bearish",
+            "confidence": 0.5,
+            "weighted_arbitrator": True,
+        }
+    }
+    intent = derive_trade_intent(state, ps)
+    assert intent["action"] == "SELL"
+    assert intent["context"]["qty_base"] == pytest.approx(-0.1)
+    assert intent["context"]["equity_usd"] == pytest.approx(10_500.0)

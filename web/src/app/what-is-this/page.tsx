@@ -33,12 +33,6 @@ export default function WhatIsThisPage() {
           >
             Get Started (local)
           </Link>
-          <Link
-            href="/tools"
-            className="rounded-xl border border-[rgba(99,102,241,0.16)] bg-[rgba(99,102,241,0.06)] px-3 py-2 text-[11px] text-[rgba(99,102,241,0.9)] hover:bg-[rgba(99,102,241,0.10)]"
-          >
-            Tools
-          </Link>
           <a
             href={REPO_URL}
             target="_blank"
@@ -57,23 +51,22 @@ export default function WhatIsThisPage() {
             <div>2) Portfolio desk proposes positions</div>
             <div>3) Risk Guard can veto any execution</div>
             <div>4) Runs produce trace + artifacts (equity/trades/events)</div>
-            <div>5) You publish results/signals via the Flow API (e.g. provider keys + curl)</div>
+            <div>5) Inspect results in Research / Monitor</div>
           </div>
         </Card>
         <Card title="What you can do here (hosted)">
           <div className="space-y-2 text-[12px] text-[rgba(226,232,240,0.86)]">
-            <div>- Read the signals feed and public provider streams</div>
-            <div>- Read published signals</div>
+            <div>- Open Research and run agentic backtests</div>
             <div>- Inspect the platform tool surface</div>
             <div>- Learn how to run locally (Get Started)</div>
           </div>
         </Card>
         <Card title="What you do locally (after cloning)">
           <div className="space-y-2 text-[12px] text-[rgba(226,232,240,0.86)]">
-            <div>- Run backtests (reproducible artifacts)</div>
-            <div>- Run paper/live simulation</div>
-            <div>- Generate signals/results</div>
-            <div>- Publish results/signals using provider keys (see Control)</div>
+            <div>- `docker compose up --build -d`</div>
+            <div>- Set OPENAI_API_KEY in `.env`</div>
+            <div>- Run backtests in Research (Binance or Yahoo)</div>
+            <div>- Review paper portfolio and supervisor output</div>
           </div>
         </Card>
         <Card title="OpenClaw usage (quick path)">

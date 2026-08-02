@@ -35,35 +35,34 @@ export default function TradePage() {
     <div className="min-h-screen">
       <NexusSectionHeader
         title="AI TRADE"
-        subtitle="One page: run, monitor, review results, read signals."
+        subtitle="Run backtests, monitor live state, review paper fills."
         active="nexus"
       />
 
       <div className="mx-auto w-full max-w-6xl px-4 py-6">
         <section className="rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/55 p-4">
           <div className="text-[11px] text-[rgba(226,232,240,0.9)]">
-            If you&apos;re new: open <b>Account</b> first for the checklist. If you&apos;re operating: use Nexus for live
-            console + monitor, and <b>Signals</b> for the provider feed. For backtests and strategy iteration, open{" "}
-            <b>Research</b>.
+            Start in <b>Research</b> for agentic backtests (Binance or Yahoo). Use <b>Monitor</b> for live state and{" "}
+            <b>Paper</b> for the paper portfolio.
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <Link
-              href="/account"
-              className="rounded-xl border border-[rgba(0,212,170,0.25)] bg-[rgba(0,212,170,0.10)] px-3 py-2 text-[11px] font-semibold text-[rgba(226,232,240,0.95)] hover:border-[rgba(0,212,170,0.45)]"
-            >
-              Start here → Account
-            </Link>
-            <Link
               href="/console?view=research"
-              className="rounded-xl border border-[rgba(138,149,166,0.18)] bg-[rgba(6,8,11,0.35)] px-3 py-2 text-[11px] text-[rgba(226,232,240,0.88)] hover:border-[rgba(0,212,170,0.32)] hover:text-white"
+              className="rounded-xl border border-[rgba(0,212,170,0.25)] bg-[rgba(0,212,170,0.10)] px-3 py-2 text-[11px] font-semibold text-[rgba(226,232,240,0.95)] hover:border-[rgba(0,212,170,0.45)]"
             >
               Open Research
             </Link>
             <Link
-              href="/feed"
+              href="/console?view=portfolio"
               className="rounded-xl border border-[rgba(138,149,166,0.18)] bg-[rgba(6,8,11,0.35)] px-3 py-2 text-[11px] text-[rgba(226,232,240,0.88)] hover:border-[rgba(0,212,170,0.32)] hover:text-white"
             >
-              Open Signals
+              Open Portfolio
+            </Link>
+            <Link
+              href="/paper"
+              className="rounded-xl border border-[rgba(138,149,166,0.18)] bg-[rgba(6,8,11,0.35)] px-3 py-2 text-[11px] text-[rgba(226,232,240,0.88)] hover:border-[rgba(0,212,170,0.32)] hover:text-white"
+            >
+              Open Paper
             </Link>
           </div>
         </section>
@@ -76,28 +75,22 @@ export default function TradePage() {
             cta="Open Research"
           />
           <Tile
-            title="Run backtest"
-            body="Backtests always run inside Research (backtest + supervisor)."
-            href="/console?view=research"
-            cta="Open Research"
+            title="Portfolio"
+            body="Watch live/paper balances, positions, and risk — not Research backtests."
+            href="/console?view=portfolio"
+            cta="Open Portfolio"
           />
           <Tile
-            title="Live monitor"
-            body="Watch balances/positions and the latest system decisions (always-on ops)."
-            href="/console?view=monitor"
-            cta="Open Monitor"
+            title="Paper portfolio"
+            body="Inspect paper fills and account state."
+            href="/paper"
+            cta="Open Paper"
           />
           <Tile
-            title="Signals feed"
-            body="Read provider strategy notes and ops updates (global or provider-filtered)."
-            href="/feed"
-            cta="Open Signals"
-          />
-          <Tile
-            title="Public providers"
-            body="Open a provider’s public stream and SSE-backed preview."
-            href="/platform/providers"
-            cta="Provider keys"
+            title="Futu quotes"
+            body="HK/US quotes when Futu OpenD is connected (status badge shows connectivity)."
+            href="/console?view=futu"
+            cta="Open Futu"
           />
         </div>
       </div>

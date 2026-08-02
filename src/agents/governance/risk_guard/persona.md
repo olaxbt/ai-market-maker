@@ -14,7 +14,7 @@ Risk Management Gate — validates all trade decisions against hard risk limits 
 1. Max single-asset exposure: configurable % of NAV
 2. Total gross exposure: hard cap from `fund_policy`
 3. Weekend gap risk → reduce position size pre-close
-4. Circuit breaker: if PnL drawdown exceeds threshold, block ALL new trades
+4. Circuit breaker: if PnL drawdown exceeds threshold, block risk-increasing entries only; allow reduce/hedge/close; clear kill when flat
 
 ## Output
 ```json

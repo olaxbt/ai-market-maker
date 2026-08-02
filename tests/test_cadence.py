@@ -15,8 +15,14 @@ def test_default_interval_matches_product_default():
 
 
 def test_explicit_env_override():
-    n = load_strategy_interval_sec(env={STRATEGY_INTERVAL_ENV: "90"})
-    assert n == 90
+    n = load_strategy_interval_sec(env={STRATEGY_INTERVAL_ENV: "1800"})
+    assert n == 1800
+
+
+def test_clamp_too_short():
+    with pytest.warns(UserWarning, match="outside"):
+        n = load_strategy_interval_sec(env={STRATEGY_INTERVAL_ENV: "60"})
+    assert n == 300
 
 
 def test_invalid_env_falls_back_with_warning():
@@ -42,7 +48,7 @@ def test_warn_if_aggressive_cadence_emits_stderr_when_llm_and_fast_tick(capsys):
 
 
 def test_warn_if_aggressive_cadence_silent_when_slow_or_no_key(capsys):
-    warn_if_aggressive_cadence(180, env=_LLM_ENV)
+    warn_if_aggressive_cadence(900, env=_LLM_ENV)
     assert capsys.readouterr().err == ""
     warn_if_aggressive_cadence(30, env={})
     assert capsys.readouterr().err == ""

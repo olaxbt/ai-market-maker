@@ -2,20 +2,16 @@
 
 import { Suspense } from "react";
 import { NexusHeaderNav, type HeaderNavMode } from "@/components/NexusHeaderNav";
-import { ThemeToggleButton } from "@/components/ThemeProvider";
-import Link from "next/link";
-import { useEffect, useState } from "react";
-import { NEXUS_LAST_RUN_ID_KEY } from "@/components/NexusConsoleHeader";
 
 function SectionExplainer({ active }: { active: HeaderNavMode }) {
   const text =
     active === "observe"
-      ? "Leaderboard = performance + signals. Use Results to compare runs/providers; use Signals to see what they’re doing now."
-      : "Nexus = operator tools. Research runs backtests; Monitor watches live state; Futu connects OpenD; Approvals/Paper are your paper-only ops loop.";
+      ? "Signals feed for published activity."
+      : "Browse Live desk and Agents anytime — that is the desk setup. Start a Live session for realtime thoughts, or Research for historical replays.";
 
   return (
-    <div className="w-full h-[44px] overflow-hidden rounded-xl border border-[rgba(138,149,166,0.16)] bg-[rgba(6,8,11,0.30)] px-3 py-2 text-[11px] leading-snug text-[rgba(226,232,240,0.82)]">
-      <span className="text-[var(--nexus-muted)]">What is this?</span> {text}
+    <div className="w-full overflow-hidden rounded-xl border border-[rgba(138,149,166,0.16)] bg-[rgba(6,8,11,0.30)] px-3 py-2 text-[11px] leading-snug text-[rgba(226,232,240,0.82)]">
+      <span className="text-[var(--nexus-muted)]">Tip</span> {text}
     </div>
   );
 }
@@ -29,72 +25,22 @@ export function NexusSectionHeader({
   subtitle: string;
   active: HeaderNavMode;
 }) {
-  const [lastRunId, setLastRunId] = useState<string | null>(null);
-  const [authed, setAuthed] = useState<boolean | null>(null);
-  useEffect(() => {
-    try {
-      const v = sessionStorage.getItem(NEXUS_LAST_RUN_ID_KEY);
-      setLastRunId(v ? String(v) : null);
-    } catch {
-      setLastRunId(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function check() {
-      try {
-        const res = await fetch("/api/platform/providers", { cache: "no-store" });
-        if (!cancelled) setAuthed(res.status !== 401);
-      } catch {
-        if (!cancelled) setAuthed(null);
-      }
-    }
-    void check();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   return (
     <header className="relative border-b border-[var(--nexus-rule-strong)] bg-[var(--nexus-panel)]/95 backdrop-blur-sm px-4 py-2.5">
       <div className="w-full">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-sm font-bold tracking-[0.2em] text-[var(--nexus-glow)] nexus-glow-text">
-              {title}
-            </h1>
-            <p className="mt-0.5 min-h-[1.5rem] text-[10px] leading-snug tracking-wide text-[var(--nexus-muted)]">
-              {subtitle}
-            </p>
-          </div>
-          <div className="shrink-0 pt-0.5">
-            <ThemeToggleButton />
-          </div>
+        <div className="min-w-0">
+          <h1 className="text-sm font-bold tracking-[0.2em] text-[var(--nexus-glow)] nexus-glow-text">
+            {title}
+          </h1>
+          <p className="mt-0.5 text-[10px] leading-snug tracking-wide text-[var(--nexus-muted)]">
+            {subtitle}
+          </p>
         </div>
 
-        <div className="mt-2 flex w-full min-h-0 flex-col gap-2 border-t border-[var(--nexus-rule-soft)] pt-2 lg:min-h-[48px] lg:flex-row lg:items-center lg:justify-start lg:gap-3">
-          <div className="min-w-0 w-full lg:flex-1">
-            <Suspense fallback={<div className="h-10 w-full max-w-md rounded-lg bg-[rgba(6,8,11,0.35)]" />}>
-              <NexusHeaderNav />
-            </Suspense>
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-            {active === "observe" && lastRunId ? (
-              <div className="rounded-lg border border-[rgba(138,149,166,0.18)] bg-[rgba(0,0,0,0.15)] px-2 py-1 text-[10px] text-[var(--nexus-muted)]">
-                Run: <span className="text-[rgba(226,232,240,0.92)]">{lastRunId}</span>
-              </div>
-            ) : null}
-            {active === "nexus" && authed === false ? (
-              <Link
-                href="/platform/login"
-                className="rounded-xl border border-[rgba(0,212,170,0.25)] bg-[rgba(0,212,170,0.10)] px-3 py-2 text-[11px] font-semibold text-[rgba(226,232,240,0.95)] hover:border-[rgba(0,212,170,0.45)]"
-                title="Sign in to access approvals, paper, and publishing"
-              >
-                Sign in
-              </Link>
-            ) : null}
-          </div>
+        <div className="mt-2 border-t border-[var(--nexus-rule-soft)] pt-2">
+          <Suspense fallback={<div className="h-10 w-full max-w-md rounded-lg bg-[rgba(6,8,11,0.35)]" />}>
+            <NexusHeaderNav />
+          </Suspense>
         </div>
 
         <div className="mt-2">

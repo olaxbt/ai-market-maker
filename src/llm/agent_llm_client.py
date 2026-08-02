@@ -120,15 +120,25 @@ def _init_llm() -> None:
     if _LLM_CLIENT is not None:
         return
 
-    api_key = _env("DEEPSEEK_API_KEY") or _env("OPENAI_API_KEY")
+    api_key = _env("DEEPSEEK_API_KEY") or _env("OPENAI_API_KEY") or _env("LLM_API_KEY")
     if not api_key:
         raise ValueError(
             "agent_llm mode requires an LLM API key. "
-            "Set DEEPSEEK_API_KEY or OPENAI_API_KEY environment variable."
+            "Set OPENAI_API_KEY (or DEEPSEEK_API_KEY) in your .env — Docker Compose passes it at runtime."
         )
-    base_url = _env("AIMM_LLM_BASE_URL", default="https://api.deepseek.com/v1")
+    # Prefer AIMM_* overrides; otherwise honor the same OPENAI_* vars users put in `.env`.
+    base_url = (
+        _env("AIMM_LLM_BASE_URL")
+        or _env("OPENAI_BASE_URL")
+        or (
+            "https://api.deepseek.com/v1"
+            if _env("DEEPSEEK_API_KEY")
+            else "https://api.openai.com/v1"
+        )
+    )
     _LLM_CLIENT = OpenAI(api_key=api_key, base_url=base_url)
-    _LLM_MODEL = _env("AIMM_LLM_MODEL", default="deepseek-chat")
+    default_model = "deepseek-chat" if "deepseek" in base_url.lower() else "gpt-4o-mini"
+    _LLM_MODEL = _env("AIMM_LLM_MODEL") or _env("OPENAI_MODEL") or default_model
     logger.info("agent_llm client initialised (model=%s, base=%s)", _LLM_MODEL, base_url)
 
 
@@ -364,6 +374,22 @@ def _build_simulation_context(state: dict[str, Any], ticker: str | None) -> str:
             lines.append(f"- Mark equity / NAV (USDT): {float(cash_raw):.2f}")
     except (TypeError, ValueError):
         pass
+    positions = bt.get("positions")
+    if isinstance(positions, dict) and positions:
+        legs: list[str] = []
+        for psym, leg in list(positions.items())[:8]:
+            if isinstance(leg, dict):
+                try:
+                    size = float(leg.get("size") or 0.0)
+                    direction = int(leg.get("direction") or 1)
+                    side = "long" if direction >= 0 else "short"
+                    legs.append(f"{psym} {side} {size:.6g}")
+                except (TypeError, ValueError):
+                    continue
+            elif isinstance(leg, (int, float)):
+                legs.append(f"{psym} qty={float(leg):.6g}")
+        if legs:
+            lines.append(f"- Open positions: {'; '.join(legs)}")
     if len(universe) > 1:
         lines.append(f"- Universe: {', '.join(universe)}")
 

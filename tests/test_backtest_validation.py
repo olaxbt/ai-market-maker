@@ -69,6 +69,12 @@ class TestSampleSize:
         assert not result.passed
         assert not result.min_bars_ok
 
+    def test_ninety_bars_fifteen_trades_passes(self):
+        result = validate_sample_size(90, 15)
+        assert result.passed
+        assert result.min_bars_ok
+        assert result.min_trades_ok
+
     def test_too_few_trades(self):
         result = validate_sample_size(200, 5)
         assert not result.passed
@@ -120,7 +126,14 @@ class TestExitReasonDistribution:
     def test_no_risk_controls(self):
         trades = [{"exit_reason": "signal"} for _ in range(20)]
         result = check_exit_reason_distribution(trades)
+        # Signal-only exits should pass concentration (agentic desks).
+        assert result.passed
+
+    def test_stop_loss_only_fails_concentration(self):
+        trades = [{"exit_reason": "stop_loss"} for _ in range(20)]
+        result = check_exit_reason_distribution(trades)
         assert not result.passed
+        assert "stop_loss" in (result.warning or "")
 
     def test_unknown_reasons(self):
         result = check_exit_reason_distribution([])

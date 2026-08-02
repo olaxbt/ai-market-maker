@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -19,10 +20,12 @@ from config.runs_paths import runs_dir as _resolved_runs_dir
 
 from .agent_prompt_routes import router as agent_prompt_router
 from .auth_routes import router as auth_router
+from .backtest_routes import recover_stale_backtest_jobs
 from .backtest_routes import router as backtest_router
 from .capabilities_routes import router as capabilities_router
 from .copy_routes import router as copy_router
 from .deploy_routes import router as deploy_router
+from .engine_routes import router as engine_router
 from .follow_routes import router as follow_router
 from .leadpage_routes import router as leadpage_router
 from .ops_routes import router as ops_router
@@ -45,12 +48,25 @@ logger = logging.getLogger(__name__)
 
 RUNS_DIR = _resolved_runs_dir()
 LATEST_RUN_FILE = RUNS_DIR / "latest_run.txt"
+LATEST_PAPER_FILE = RUNS_DIR / "latest_paper.txt"
+LATEST_BACKTEST_FILE = RUNS_DIR / "latest_backtest.txt"
 
 DEFAULT_TAIL_EVENTS = int((os.getenv("AIMM_UI_TAIL_EVENTS") or "1200").strip() or "1200")
 DEFAULT_TAIL_TRACES = int((os.getenv("AIMM_UI_TAIL_TRACES") or "350").strip() or "350")
 DEFAULT_TAIL_MESSAGE_LOG = int((os.getenv("AIMM_UI_TAIL_MESSAGES") or "600").strip() or "600")
 
-app = FastAPI(title="AI Market Maker Flow Stream", version="0.1.0")
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    # Daemon backtest threads die on restart; flip orphaned job.json out of "running".
+    try:
+        recover_stale_backtest_jobs(reason="api_startup")
+    except Exception:
+        logger.exception("failed to recover orphaned backtest jobs")
+    yield
+
+
+app = FastAPI(title="AI Market Maker Flow Stream", version="0.1.0", lifespan=_lifespan)
 
 
 def _expected_api_key() -> str | None:
@@ -127,19 +143,44 @@ app.include_router(capabilities_router)
 app.include_router(ops_router)
 app.include_router(profile_router)
 app.include_router(deploy_router)
+app.include_router(engine_router)
 
 
 def _resolve_run_log(run_id: str) -> Path:
-    if run_id == "latest" and LATEST_RUN_FILE.exists():
+    """Resolve run id / lane aliases to an events jsonl path."""
+    try:
+        from api.desk_ownership import resolve_alias
+
+        resolved = resolve_alias(run_id)
+        if resolved:
+            return RUNS_DIR / f"{resolved}.events.jsonl"
+    except Exception:
+        pass
+    rid = (run_id or "").strip()
+    if rid == "latest" and LATEST_RUN_FILE.exists():
         latest = LATEST_RUN_FILE.read_text().strip()
+        if latest and not latest.lower().startswith("bt"):
+            return RUNS_DIR / f"{latest}.events.jsonl"
+    if rid in ("latest-paper", "latest_paper", "paper") and LATEST_PAPER_FILE.exists():
+        latest = LATEST_PAPER_FILE.read_text().strip()
         if latest:
             return RUNS_DIR / f"{latest}.events.jsonl"
-    return RUNS_DIR / f"{run_id}.events.jsonl"
+    if rid in ("latest-backtest", "latest_backtest", "backtest") and LATEST_BACKTEST_FILE.exists():
+        latest = LATEST_BACKTEST_FILE.read_text().strip()
+        if latest:
+            return RUNS_DIR / f"{latest}.events.jsonl"
+    return RUNS_DIR / f"{rid}.events.jsonl"
 
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    return {"ok": True}
+    from config.llm_env import llm_key_available
+
+    return {
+        "ok": True,
+        "llm_configured": llm_key_available(),
+        "futu_required": False,
+    }
 
 
 @app.get("/futu/price")

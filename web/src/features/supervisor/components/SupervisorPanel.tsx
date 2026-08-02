@@ -1,11 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import { getFlowApiOrigin } from "@/lib/flowApiOrigin";
+import { researchConsoleHref } from "@/lib/consoleView";
 import { supervisorMemoryCache } from "@/features/supervisor/lib/supervisorMemoryCache";
+import type { SavedRunListItem } from "@/types/backtest";
 import type { PortfolioManagerSnapshotResponse as PmSnapshotResponse } from "@/types/portfolio-manager";
 
 type ChatMsg = {
@@ -19,10 +22,24 @@ function _id(prefix: string) {
   return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
+function runSortTs(item: SavedRunListItem): number {
+  if (typeof item.sort_ts === "number" && Number.isFinite(item.sort_ts)) return item.sort_ts;
+  return Date.parse(item.end_iso || item.start_iso || "") || 0;
+}
+
+function formatRunOption(item: SavedRunListItem): string {
+  const ticker = (item.ticker || "").trim() || "—";
+  const ret =
+    typeof item.total_return_pct === "number" && Number.isFinite(item.total_return_pct)
+      ? `${item.total_return_pct >= 0 ? "+" : ""}${item.total_return_pct.toFixed(1)}%`
+      : null;
+  const shortId = item.run_id.length > 22 ? `${item.run_id.slice(0, 20)}…` : item.run_id;
+  return ret ? `${ticker} · ${ret} · ${shortId}` : `${ticker} · ${shortId}`;
+}
+
 function MarkdownMessage({ text }: { text: string }) {
-  // Render safe markdown (no raw HTML), styled for Nexus.
   return (
-    <div className="nexus-md min-w-0">
+    <div className="nexus-md nexus-md-chat min-w-0">
       <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
         {text}
       </ReactMarkdown>
@@ -31,8 +48,11 @@ function MarkdownMessage({ text }: { text: string }) {
 }
 
 function normalizeChatText(text: string): string {
-  // Models sometimes emit excessive blank lines during streaming; keep it readable.
-  return (text || "").replace(/\n{3,}/g, "\n\n");
+  return (text || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/\n\n(?=[-*•]|\d+\.\s)/g, "\n")
+    .trim();
 }
 
 export function SupervisorPanel({
@@ -42,17 +62,23 @@ export function SupervisorPanel({
   initialRunId?: string | null;
   embedded?: boolean;
 }) {
-  const [target, setTarget] = useState<"live" | "backtest">("live");
+  const router = useRouter();
+  const [target, setTarget] = useState<"live" | "backtest">("backtest");
   const [runId, setRunId] = useState(initialRunId?.trim() || "latest");
+  const [savedRuns, setSavedRuns] = useState<SavedRunListItem[]>([]);
+  const [savedRunsLoading, setSavedRunsLoading] = useState(true);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [idleHint, setIdleHint] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<PmSnapshotResponse | null>(null);
+  const [llmConfigured, setLlmConfigured] = useState<boolean | null>(null);
   const [showRaw, setShowRaw] = useState(false);
   const [question, setQuestion] = useState("");
   const [askBusy, setAskBusy] = useState(false);
   const [messages, setMessages] = useState<ChatMsg[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const questionRef = useRef<HTMLTextAreaElement>(null);
   const stickToBottomRef = useRef(true);
 
   const scrollToBottom = (behavior: ScrollBehavior = "auto") => {
@@ -61,46 +87,130 @@ export function SupervisorPanel({
     el.scrollTo({ top: el.scrollHeight, behavior });
   };
 
-  const effectiveRunId = useMemo(() => (runId?.trim() ? runId.trim() : "latest"), [runId]);
-  const cacheKey = useMemo(() => `${target}:${effectiveRunId}`, [target, effectiveRunId]);
+  const effectiveRunId = useMemo(() => (runId?.trim() ? runId.trim() : ""), [runId]);
+  const cacheKey = useMemo(
+    () => `${target}:${effectiveRunId || "none"}`,
+    [target, effectiveRunId],
+  );
   const resolvedRunId = useMemo(() => {
     const rid = snapshot?.snapshot?.run_id;
     return typeof rid === "string" && rid.trim() ? rid.trim() : null;
   }, [snapshot]);
 
-  // Restore in-RAM state when navigating away/back.
   useEffect(() => {
     const cached = supervisorMemoryCache.get(cacheKey);
     if (!cached) return;
     if (cached.snapshot) setSnapshot(cached.snapshot);
     if (cached.messages?.length) setMessages(cached.messages);
-    // Don't restore transient flags (loading/busy/error); those should reflect current view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cacheKey]);
 
   useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/health", { cache: "no-store" });
+        const data = (await res.json().catch(() => ({}))) as { llm_configured?: boolean };
+        if (!cancelled) setLlmConfigured(Boolean(data.llm_configured));
+      } catch {
+        if (!cancelled) setLlmConfigured(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSavedRunsLoading(true);
+    void (async () => {
+      try {
+        const base = getFlowApiOrigin();
+        const res = await fetch(`${base}/backtests`, { cache: "no-store" });
+        const data = (await res.json().catch(() => ({}))) as {
+          items?: SavedRunListItem[];
+          runs?: string[];
+        };
+        if (cancelled) return;
+        let items = Array.isArray(data.items) ? data.items : [];
+        if (!items.length && Array.isArray(data.runs)) {
+          items = data.runs.map((run_id) => ({ run_id }));
+        }
+        items = [...items].sort((a, b) => {
+          const tb = runSortTs(b);
+          const ta = runSortTs(a);
+          if (tb !== ta) return tb - ta;
+          return String(b.run_id).localeCompare(String(a.run_id));
+        });
+        setSavedRuns(items);
+      } catch {
+        if (!cancelled) setSavedRuns([]);
+      } finally {
+        if (!cancelled) setSavedRunsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const selectBacktestRun = useCallback(
+    (nextId: string) => {
+      const id = nextId.trim();
+      if (!id) return;
+      setTarget("backtest");
+      setRunId(id);
+      setIdleHint(null);
+      setError(null);
+      setSnapshot(null);
+      router.replace(id === "latest" ? researchConsoleHref(null) : researchConsoleHref(id), {
+        scroll: false,
+      });
+      window.setTimeout(() => questionRef.current?.focus(), 0);
+    },
+    [router],
+  );
+
+  useEffect(() => {
     const id = initialRunId?.trim() || "";
-    if (!id) return;
-    // If a backtest run id is provided via URL (Research / Backtest lab), bind Supervisor to it.
-    const looksBacktest = /^bt[-_]/i.test(id);
-    if (looksBacktest) setTarget("backtest");
+    if (!id) {
+      setTarget("backtest");
+      setRunId("latest");
+      setIdleHint(
+        savedRunsLoading
+          ? null
+          : savedRuns.length
+            ? "Using the latest completed backtest. Pick another from the dropdown to switch."
+            : "No Saved runs yet — finish a New backtest on the left, then pick it here.",
+      );
+      setError(null);
+      return;
+    }
+    const looksBacktest = /^bt[-_]/i.test(id) || /^perp[-_]/i.test(id);
+    setTarget(looksBacktest ? "backtest" : "live");
     setRunId(id);
-    // When switching runs via URL, clear ephemeral error; keep messages cached per cacheKey.
+    setIdleHint(null);
     setError(null);
+    setSnapshot(null); // force refresh for the newly selected run
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialRunId]);
 
-  // Keep cache hot without re-fetching.
   useEffect(() => {
     supervisorMemoryCache.set(cacheKey, { snapshot, messages });
   }, [cacheKey, messages, snapshot]);
 
   const load = useCallback(async () => {
+    if (!effectiveRunId) {
+      setLoading(false);
+      setIdleHint("Waiting for a run. Start a Research backtest or live paper session first.");
+      setError(null);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
       const base = getFlowApiOrigin();
-      // Default refresh is snapshot-only (no LLM) to avoid burning tokens on navigation/state changes.
       const url =
         target === "backtest"
           ? `${base}/pm/backtests/${encodeURIComponent(effectiveRunId)}/snapshot?llm=0`
@@ -108,16 +218,41 @@ export function SupervisorPanel({
       const res = await fetch(url, { cache: "no-store" });
       const data = (await res.json().catch(() => ({}))) as PmSnapshotResponse & {
         error?: string;
-        detail?: string;
+        detail?: string | { msg?: string };
       };
       if (!res.ok) {
-        // Keep any cached snapshot in view; only surface the error.
-        setError(data.error || data.detail || `Snapshot failed (${res.status})`);
+        const raw = data.error || data.detail || `Snapshot failed (${res.status})`;
+        const detail = typeof raw === "string" ? raw : JSON.stringify(raw);
+        const soft404 =
+          res.status === 404 ||
+          /run not found/i.test(detail) ||
+          /missing summary/i.test(detail) ||
+          /unknown backtest/i.test(detail) ||
+          /not found/i.test(detail);
+        if (soft404) {
+          const midOrIncomplete =
+            /missing summary|unknown backtest/i.test(detail) ||
+            (Boolean(effectiveRunId) && effectiveRunId !== "latest");
+          setIdleHint(
+            midOrIncomplete
+              ? "That backtest is still running or never finished. Wait for it on the left, or pick a completed run."
+              : "No completed Research backtest found yet. Run one on the left, then pick it from the dropdown.",
+          );
+          setError(null);
+          setSnapshot(null);
+          if (effectiveRunId && effectiveRunId !== "latest") {
+            setRunId("latest");
+          }
+          return;
+        }
+        setError(detail);
         return;
       }
       setSnapshot(data);
+      if (effectiveRunId === "latest") {
+        setIdleHint(null);
+      }
     } catch (e) {
-      // Keep any cached snapshot in view; only surface the error.
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
@@ -153,6 +288,10 @@ export function SupervisorPanel({
   const ask = useCallback(async () => {
     const q = question.trim();
     if (!q) return;
+    if (!effectiveRunId) {
+      setError("No run selected. Finish a Research backtest on the left, then pick it from the dropdown.");
+      return;
+    }
     setAskBusy(true);
     setError(null);
     const userMsg: ChatMsg = { id: _id("u"), role: "user", text: q, ts: Date.now() };
@@ -188,7 +327,18 @@ export function SupervisorPanel({
       });
       if (!res.ok) {
         const txt = await res.text().catch(() => "");
-        setError(txt || `Ask failed (${res.status})`);
+        let msg = txt || `Ask failed (${res.status})`;
+        try {
+          const parsed = JSON.parse(txt) as { detail?: unknown };
+          if (typeof parsed.detail === "string") msg = parsed.detail;
+        } catch {
+          // keep raw text
+        }
+        if (res.status === 404 || /not found/i.test(msg)) {
+          msg =
+            "Supervisor could not find that run. Pick a completed Saved run from the dropdown (or open one on the left).";
+        }
+        setError(msg);
         return;
       }
       if (!res.body) {
@@ -205,17 +355,14 @@ export function SupervisorPanel({
         done = rdDone;
         if (!value) continue;
         buf += decoder.decode(value, { stream: true });
-        // Parse SSE events separated by blank lines.
         const parts = buf.split("\n\n");
         buf = parts.pop() || "";
         for (const ev of parts) {
           const lines = ev.split("\n");
           for (const line of lines) {
             if (!line.startsWith("data:")) continue;
-            // Per SSE spec, "data:" may be followed by a single optional space.
-            // Do NOT trim arbitrary leading whitespace; it breaks token streaming (spaces/newlines).
+            // SSE data: keep whitespace after "data:"
             const raw = line.startsWith("data: ") ? line.slice(6) : line.slice(5);
-            // If backend emitted an empty data line, that represents a newline in the original text.
             const data = raw.length === 0 ? "\n" : raw;
             if (data === "[DONE]") {
               done = true;
@@ -226,7 +373,6 @@ export function SupervisorPanel({
               done = true;
               break;
             }
-            // Append chunk to assistant message.
             setMessages((m) => {
               const next = m.map((msg) =>
                 msg.id === assistantId ? { ...msg, text: (msg.text || "") + data } : msg,
@@ -268,49 +414,96 @@ export function SupervisorPanel({
   }, []);
 
   useEffect(() => {
-    // When a new message is added, stick to bottom if user is already there.
     if (!stickToBottomRef.current) return;
     scrollToBottom("auto");
   }, [messages.length]);
 
-  // Shared pane height so Chat and Summary align.
-  // In embedded layout (split view), let the parent control height.
-  const paneHeightClass = embedded ? "min-h-0" : "h-[min(calc(100vh-320px),740px)] min-h-[420px]";
+  const selectValue = useMemo(() => {
+    if (target !== "backtest") return "";
+    if (effectiveRunId && effectiveRunId !== "latest") return effectiveRunId;
+    if (resolvedRunId && savedRuns.some((r) => r.run_id === resolvedRunId)) return resolvedRunId;
+    if (effectiveRunId === "latest") return "latest";
+    return "";
+  }, [effectiveRunId, resolvedRunId, savedRuns, target]);
+
+  const runLabel = effectiveRunId
+    ? effectiveRunId === "latest"
+      ? `latest${resolvedRunId ? ` → ${resolvedRunId}` : ""}`
+      : effectiveRunId
+    : "—";
 
   return (
     <div
+      id="nexus-supervisor"
       className={
         embedded
-          ? "min-h-0 w-full px-2 pb-2 pt-2"
-          : "mx-auto w-full max-w-6xl space-y-4 px-4 pb-6 pt-10"
+          ? "flex h-full min-h-0 w-full flex-col overflow-hidden"
+          : "mx-auto flex w-full max-w-6xl flex-col gap-3 px-4 pb-6 pt-10"
       }
     >
-      <div className="rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-glow)]">
-              Supervisor
-            </p>
-            <h2 className="mt-1 text-base font-semibold">Supervisor (live system + backtests)</h2>
-            <p className="mt-1 text-[12px] leading-relaxed text-[var(--nexus-muted)]">
-              Always LLM-enabled. Requires backend{" "}
-              <code className="font-mono text-[var(--nexus-text)]">OPENAI_API_KEY</code>.
-            </p>
-            <p className="mt-2 font-mono text-[11px] text-[var(--nexus-muted)]">
-              Target:{" "}
-              <span className="text-[var(--nexus-text)]">
-                {target === "live" ? "live" : "backtest"} ·{" "}
-                {effectiveRunId === "latest"
-                  ? `latest${resolvedRunId ? ` → ${resolvedRunId}` : ""}`
-                  : effectiveRunId}
-              </span>
-            </p>
+      {/* Compact toolbar — keep Research chat tall */}
+      <div
+        className={
+          embedded
+            ? "shrink-0 border-b border-[color:var(--nexus-card-stroke)] px-3 py-2"
+            : "shrink-0 rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 p-4"
+        }
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[var(--nexus-glow)]">
+                Supervisor
+              </p>
+              {!embedded ? (
+                <h2 className="text-sm font-semibold text-[var(--nexus-text)]">Chat</h2>
+              ) : null}
+              {llmConfigured === false ? (
+                <span className="font-mono text-[9px] text-[rgba(248,113,113,0.95)]">
+                  LLM key missing
+                </span>
+              ) : null}
+            </div>
+            <div className="mt-1.5 flex min-w-0 flex-col gap-1">
+              <label className="font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-muted)]">
+                Saved run
+              </label>
+              <select
+                value={selectValue}
+                disabled={savedRunsLoading || target === "live"}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (!v) return;
+                  selectBacktestRun(v);
+                }}
+                className="nexus-prompt-input h-8 w-full max-w-md truncate rounded-md px-2 font-mono text-[11px] disabled:opacity-50"
+                aria-label="Select saved backtest run"
+              >
+                <option value="latest">
+                  {savedRunsLoading
+                    ? "Loading runs…"
+                    : resolvedRunId
+                      ? `Latest completed → ${resolvedRunId}`
+                      : "Latest completed"}
+                </option>
+                {savedRuns.map((item) => (
+                  <option key={item.run_id} value={item.run_id}>
+                    {formatRunOption(item)}
+                  </option>
+                ))}
+              </select>
+              {target === "live" ? (
+                <p className="font-mono text-[10px] text-[var(--nexus-muted)]">
+                  Advanced live target · {runLabel}
+                </p>
+              ) : null}
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-center gap-1.5 self-end">
             <button
               type="button"
               onClick={() => setAdvancedOpen((v) => !v)}
-              className="h-8 rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)]/70 px-3 font-mono text-[10px] uppercase tracking-wider text-[var(--nexus-muted)] outline-none hover:border-[var(--nexus-glow)]/40"
+              className="h-7 rounded-md border border-[color:var(--nexus-card-stroke)] px-2.5 font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-muted)] hover:border-[var(--nexus-glow)]/40 hover:text-[var(--nexus-text)]"
             >
               {advancedOpen ? "Hide" : "Advanced"}
             </button>
@@ -318,27 +511,27 @@ export function SupervisorPanel({
               type="button"
               onClick={() => void load()}
               disabled={loading}
-              className="h-8 rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)]/70 px-3 font-mono text-[10px] uppercase tracking-wider text-[var(--nexus-muted)] outline-none hover:border-[var(--nexus-glow)]/40 disabled:opacity-40"
+              className="h-7 rounded-md border border-[color:var(--nexus-card-stroke)] px-2.5 font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-muted)] hover:border-[var(--nexus-glow)]/40 hover:text-[var(--nexus-text)] disabled:opacity-40"
             >
-              {loading ? "Loading…" : "Refresh"}
+              {loading ? "…" : "Refresh"}
             </button>
           </div>
         </div>
 
         {advancedOpen ? (
-          <div className="mt-3 rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)]/30 p-3">
-            <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
-              Target & manual run id (optional)
+          <div className="mt-2 rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)]/30 p-2.5">
+            <p className="mb-1.5 font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-muted)]">
+              Manual override
             </p>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <div className="mr-2 inline-flex rounded-lg border border-[color:var(--nexus-card-stroke)] p-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="inline-flex rounded-md border border-[color:var(--nexus-card-stroke)] p-0.5">
                 <button
                   type="button"
                   onClick={() => setTarget("live")}
-                  className={`rounded px-2 py-1 font-mono text-[9px] uppercase tracking-wide ${
+                  className={`rounded px-2 py-1 font-mono text-[9px] uppercase ${
                     target === "live"
                       ? "bg-[var(--nexus-glow)]/15 text-[var(--nexus-glow)]"
-                      : "text-[var(--nexus-muted)] hover:text-[var(--nexus-text)]"
+                      : "text-[var(--nexus-muted)]"
                   }`}
                 >
                   Live
@@ -346,10 +539,10 @@ export function SupervisorPanel({
                 <button
                   type="button"
                   onClick={() => setTarget("backtest")}
-                  className={`rounded px-2 py-1 font-mono text-[9px] uppercase tracking-wide ${
+                  className={`rounded px-2 py-1 font-mono text-[9px] uppercase ${
                     target === "backtest"
                       ? "bg-[var(--nexus-glow)]/15 text-[var(--nexus-glow)]"
-                      : "text-[var(--nexus-muted)] hover:text-[var(--nexus-text)]"
+                      : "text-[var(--nexus-muted)]"
                   }`}
                 >
                   Backtest
@@ -358,129 +551,156 @@ export function SupervisorPanel({
               <input
                 value={runId}
                 onChange={(e) => setRunId(e.target.value)}
-                className="nexus-prompt-input h-8 w-[min(26rem,92vw)] rounded-lg px-2 font-mono text-[11px] focus:border-[var(--nexus-glow)]/40"
-                placeholder="latest (default) or explicit run id"
-                aria-label="Backtest run id override"
+                onBlur={() => {
+                  const id = runId.trim();
+                  if (!id) return;
+                  if (target === "backtest") selectBacktestRun(id);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  const id = runId.trim();
+                  if (!id) return;
+                  if (target === "backtest") selectBacktestRun(id);
+                  else void load();
+                }}
+                className="nexus-prompt-input h-7 min-w-[10rem] flex-1 rounded-md px-2 font-mono text-[11px]"
+                placeholder="paste run id only if needed"
+                aria-label="Manual run id"
               />
               <button
                 type="button"
-                onClick={() => setRunId("latest")}
-                className="h-8 rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/40 px-3 font-mono text-[10px] uppercase tracking-wider text-[var(--nexus-muted)] hover:border-[var(--nexus-glow)]/40"
+                onClick={() => selectBacktestRun("latest")}
+                className="h-7 rounded-md border border-[color:var(--nexus-card-stroke)] px-2 font-mono text-[9px] uppercase text-[var(--nexus-muted)]"
               >
-                Use latest
+                Latest
               </button>
             </div>
           </div>
         ) : null}
+        {idleHint ? (
+          <p className="mt-1.5 font-mono text-[10px] leading-snug text-[var(--nexus-muted)]">{idleHint}</p>
+        ) : null}
         {error ? (
-          <div className="mt-3 rounded border border-red-900/45 bg-red-950/35 px-3 py-2 font-mono text-[11px] text-red-100">
+          <p className="mt-1.5 font-mono text-[10px] text-[rgba(248,113,113,0.95)]" role="alert">
             {error}
-          </div>
+          </p>
         ) : null}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,460px)]">
+      <div
+        className={
+          embedded
+            ? "flex min-h-0 flex-1 flex-col overflow-hidden"
+            : "grid min-h-0 flex-1 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]"
+        }
+      >
         <section
-          className={`flex min-h-0 flex-col rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/60 p-4 ${paneHeightClass}`}
+          className={
+            embedded
+              ? "flex min-h-0 flex-1 flex-col overflow-hidden"
+              : "flex h-[min(calc(100vh-280px),720px)] min-h-[420px] flex-col overflow-hidden rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/60"
+          }
         >
-          <div className="flex items-center justify-between gap-3">
-            <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
-              Chat
-            </p>
-            <span className="font-mono text-[10px] text-[var(--nexus-muted)]">
-              run={effectiveRunId}
-            </span>
-          </div>
-
           <div
             ref={scrollRef}
-            className="nexus-scroll mt-3 min-h-0 flex-1 overflow-auto overflow-x-hidden rounded-xl border border-[color:var(--nexus-card-stroke)] bg-black/15 p-3"
+            className="nexus-scroll min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-3"
           >
             {messages.length === 0 ? (
-              <div className="font-mono text-[11px] leading-relaxed text-[var(--nexus-muted)]">
-                Ask a question to start. Examples:
-                <ul className="mt-2 list-disc pl-5">
-                  <li>Why did this run trade so much?</li>
-                  <li>Did Risk Guard veto anything? Why?</li>
-                  <li>What should I tune next to reduce churn?</li>
+              <div className="rounded-xl border border-dashed border-[color:var(--nexus-card-stroke)] bg-black/20 px-3 py-4 font-mono text-[11px] leading-relaxed text-[var(--nexus-muted)]">
+                <p className="text-[var(--nexus-text)]">Ask about this run</p>
+                <ul className="mt-2 space-y-1 pl-3">
+                  <li className="list-disc">Why did this run trade so much?</li>
+                  <li className="list-disc">Did Risk Guard veto anything?</li>
+                  <li className="list-disc">What should I tune next?</li>
                 </ul>
               </div>
             ) : (
-              <div className="space-y-3.5">
-                {messages.map((m) => (
-                  <div
-                    key={m.id}
-                    className={`flex ${m.role === "user" ? "justify-end" : "justify-start"} mb-2`}
-                  >
+              <div className="flex flex-col gap-2.5">
+                {messages.map((m) => {
+                  const isUser = m.role === "user";
+                  return (
                     <div
-                      className={`min-w-0 max-w-[min(34rem,92%)] rounded-2xl px-4 py-3 font-mono text-[12px] leading-relaxed shadow-sm ${
-                        m.role === "user"
-                          ? "bg-gradient-to-b from-[rgba(0,212,170,0.20)] via-[rgba(0,212,170,0.10)] to-[rgba(59,130,246,0.05)] text-[var(--nexus-text)] ring-1 ring-[rgba(0,212,170,0.38)] shadow-[0_0_18px_rgba(0,212,170,0.06)]"
-                          : "bg-[var(--nexus-surface)]/70 text-[var(--nexus-text)] ring-1 ring-[rgba(138,149,166,0.20)] shadow-[0_0_16px_rgba(0,0,0,0.20)]"
-                      }`}
+                      key={m.id}
+                      className={`flex ${isUser ? "justify-end" : "justify-start"}`}
                     >
-                      <div className="mb-1 flex items-center justify-between gap-3">
-                        <span
-                          className={`text-[10px] uppercase tracking-wider ${
-                            m.role === "user"
-                              ? "text-[var(--nexus-glow)]"
-                              : "text-[var(--nexus-muted)]"
-                          }`}
-                        >
-                          {m.role === "user" ? "You" : "Supervisor"}
-                        </span>
-                        <span className="text-[10px] tabular-nums text-[var(--nexus-muted)]">
-                          {new Date(m.ts).toLocaleTimeString(undefined, {
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </span>
-                      </div>
                       <div
-                        className={`whitespace-pre-wrap break-words ${m.role === "assistant" ? "pl-0.5" : ""}`}
+                        className={`min-w-0 max-w-[min(100%,28rem)] px-3 py-2 text-[12px] leading-snug ${
+                          isUser
+                            ? "rounded-2xl rounded-br-md bg-[rgba(0,212,170,0.16)] text-[var(--nexus-text)] ring-1 ring-[rgba(0,212,170,0.4)]"
+                            : "rounded-2xl rounded-bl-md border-l-2 border-[rgba(96,165,250,0.65)] bg-[rgba(15,23,42,0.85)] text-[var(--nexus-text)] ring-1 ring-[rgba(96,165,250,0.22)]"
+                        }`}
                       >
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <span
+                            className={`font-mono text-[9px] uppercase tracking-wider ${
+                              isUser ? "text-[var(--nexus-glow)]" : "text-[rgba(147,197,253,0.95)]"
+                            }`}
+                          >
+                            {isUser ? "You" : "Supervisor"}
+                          </span>
+                          <span className="font-mono text-[9px] tabular-nums text-[var(--nexus-muted)]">
+                            {new Date(m.ts).toLocaleTimeString(undefined, {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                        </div>
                         {m.text ? (
-                          <MarkdownMessage text={normalizeChatText(m.text)} />
-                        ) : askBusy && m.role === "assistant" ? (
-                          <span className="text-[var(--nexus-muted)]">Typing…</span>
-                        ) : (
-                          ""
-                        )}
+                          isUser ? (
+                            <p className="break-words font-sans text-[12px] leading-snug">
+                              {m.text}
+                            </p>
+                          ) : (
+                            <MarkdownMessage text={normalizeChatText(m.text)} />
+                          )
+                        ) : askBusy && !isUser ? (
+                          <span className="font-mono text-[11px] text-[var(--nexus-muted)]">
+                            Typing…
+                          </span>
+                        ) : null}
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
 
-          <div className="mt-3 flex items-end gap-2">
-            <textarea
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              rows={2}
-              placeholder="Message Supervisor…"
-              className="nexus-prompt-input min-h-[44px] flex-1 resize-none rounded-xl p-3 font-mono text-[12px] placeholder:text-[var(--nexus-muted)] focus:border-[var(--nexus-glow)]/40"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  void ask();
-                }
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => void ask()}
-              disabled={askBusy || !question.trim()}
-              className="h-[44px] rounded-xl bg-[var(--nexus-glow)]/12 px-4 font-mono text-[10px] uppercase tracking-wider text-[var(--nexus-glow)] outline-none ring-1 ring-[var(--nexus-glow)]/25 hover:bg-[var(--nexus-glow)]/16 disabled:opacity-40"
-            >
-              Send
-            </button>
+          <div className="shrink-0 border-t border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/90 px-3 py-2.5">
+            <div className="flex items-end gap-2">
+              <textarea
+                id="nexus-supervisor-input"
+                ref={questionRef}
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                rows={2}
+                placeholder="Message Supervisor…"
+                className="nexus-prompt-input max-h-28 min-h-[40px] flex-1 resize-none rounded-xl px-3 py-2 font-sans text-[13px] placeholder:text-[var(--nexus-muted)] focus:border-[var(--nexus-glow)]/40"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void ask();
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => void ask()}
+                disabled={askBusy || !question.trim() || !effectiveRunId}
+                title={!effectiveRunId ? "Select a run first" : undefined}
+                className="h-10 shrink-0 rounded-xl bg-[var(--nexus-glow)] px-4 font-mono text-[10px] font-semibold uppercase tracking-wider text-[var(--nexus-bg)] disabled:opacity-40"
+              >
+                Send
+              </button>
+            </div>
           </div>
         </section>
 
+        {/* Full-page supervisor only: keep summary aside. Embedded Research = chat-only. */}
+        {!embedded ? (
         <aside
-          className={`flex min-h-0 flex-col rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/60 p-4 ${paneHeightClass}`}
+          className="flex h-[min(calc(100vh-280px),720px)] min-h-[420px] flex-col overflow-hidden rounded-2xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/60 p-4"
         >
           <div className="flex items-center justify-between gap-3">
             <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
@@ -570,9 +790,9 @@ export function SupervisorPanel({
             ) : (
               <div className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-black/15 p-3">
                 <p className="font-mono text-[11px] leading-relaxed text-[var(--nexus-muted)]">
-                  No executive summary yet. Ensure backend has{" "}
-                  <code className="font-mono text-[var(--nexus-text)]">OPENAI_API_KEY</code> set,
-                  then hit Generate summary.
+                  {llmConfigured === false
+                    ? "No executive summary yet. Set OPENAI_API_KEY in the repo .env, then restart docker compose."
+                    : "No executive summary yet. Hit Generate summary (uses the backend LLM key)."}
                 </p>
                 <div className="mt-3 flex items-center gap-2">
                   <button
@@ -588,6 +808,7 @@ export function SupervisorPanel({
             )}
           </div>
         </aside>
+        ) : null}
       </div>
     </div>
   );

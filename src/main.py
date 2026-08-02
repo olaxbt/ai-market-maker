@@ -858,7 +858,9 @@ def risk_guard(state: HedgeFundState) -> dict[str, Any]:
         guard.process(
             {
                 "proposal": state.get("proposal") or {},
+                "trade_intent": state.get("trade_intent") or {},
                 "shared_memory": state.get("shared_memory") or {},
+                "market_data": state.get("market_data") or {},
                 "ticker": state.get("ticker"),
                 "run_mode": state.get("run_mode"),
             }
@@ -892,6 +894,20 @@ def risk_guard(state: HedgeFundState) -> dict[str, Any]:
             "status": "skipped",
             "message": "Execution vetoed by Risk Guard",
             "risk_guard": decision,
+        }
+        # Force HOLD so fills stay flat after veto.
+        prev_intent = (
+            state.get("trade_intent") if isinstance(state.get("trade_intent"), dict) else {}
+        )
+        out["trade_intent"] = {
+            **prev_intent,
+            "action": "HOLD",
+            "confidence": float(prev_intent.get("confidence") or 0.0),
+            "meta": {
+                **(prev_intent.get("meta") if isinstance(prev_intent.get("meta"), dict) else {}),
+                "vetoed_by": "risk_guard",
+                "veto_reason": veto_reason,
+            },
         }
 
     _emit_flow(
@@ -1587,8 +1603,24 @@ def main():
     set_log_publisher(publisher)
     runs_dir = Path(".runs")
     runs_dir.mkdir(parents=True, exist_ok=True)
-    latest_file = runs_dir / "latest_run.txt"
-    latest_file.write_text(run_id)
+    # Paper runs only; backtests use latest_backtest.txt
+    (runs_dir / "latest_run.txt").write_text(run_id)
+    if run_mode.value == "paper":
+        (runs_dir / "latest_paper.txt").write_text(run_id)
+        status_path = runs_dir / "paper_engine.status.json"
+        try:
+            st: dict = {}
+            if status_path.is_file():
+                import json as _json
+
+                raw = _json.loads(status_path.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    st = raw
+            st["paper_run_id"] = run_id
+            st["updated_at"] = int(time.time())
+            status_path.write_text(_json.dumps(st, indent=2), encoding="utf-8")
+        except Exception:
+            pass
     flow_log_path = runs_dir / f"{run_id}.events.jsonl"
     if flow_log_path.exists():
         flow_log_path.unlink()

@@ -15,6 +15,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 COPY src /app/src
 COPY config /app/config
+COPY scripts /app/scripts
 COPY alembic.ini /app/alembic.ini
 COPY alembic /app/alembic
 

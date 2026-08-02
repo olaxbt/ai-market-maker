@@ -17,7 +17,7 @@ from typing import Any, Dict, List
 from typing import Any as _Any
 
 from backtest.data_quality import validate_ohlcv_window
-from config.app_settings import load_app_settings, normalize_hold_signal_fallback
+from config.app_settings import load_app_settings
 from config.run_mode import RunMode
 from flow_log import FlowEventRepo, set_flow_repo
 from harness.run_memory import IterationReceiptWriter, RunWorkingMemory, now_s, run_memory_config
@@ -197,12 +197,6 @@ class BacktestEngine:
             _active_agents = ["2.3", "2.1", "1.1"]
 
         run_mem = RunWorkingMemory(cfg=run_memory_config(settings))
-        env_fb = (os.getenv("AIMM_BACKTEST_HOLD_FALLBACK") or "").strip()
-        hold_signal_fallback = (
-            normalize_hold_signal_fallback(env_fb)
-            if env_fb
-            else settings.backtest.hold_signal_fallback
-        )
 
         from backtest.symbol_routing import resolve_agent_led_symbols, uses_mixed_routing
 
@@ -224,6 +218,7 @@ class BacktestEngine:
         btc_ref_sym = ticker if ticker in bars_by_symbol else next(iter(bars_by_symbol), "")
 
         _invoke_cache: dict[Any, dict[str, Any]] = {}
+        _equity_peak: dict[str, float] = {"v": 0.0}
 
         def _compact_agent_contract(c: dict[str, Any]) -> dict[str, Any]:
             aid = str(c.get("agent_id", c.get("agent", "?")))
@@ -423,11 +418,36 @@ class BacktestEngine:
 
             sm = state.setdefault("shared_memory", {})
             iv_sec = int(c.get("interval_sec", 300))
+            peak = float(_equity_peak.get("v") or 0.0)
+            eq_f = float(equity)
+            if eq_f > peak:
+                peak = eq_f
+                _equity_peak["v"] = peak
+            dd_frac = (1.0 - (eq_f / peak)) if peak > 1e-12 else 0.0
+            primary_pos = positions.get(symbol)
+            primary_qty = 0.0
+            if primary_pos is not None:
+                try:
+                    primary_qty = float(primary_pos.size) * (
+                        1.0 if int(getattr(primary_pos, "direction", 1) or 1) >= 0 else -1.0
+                    )
+                except (TypeError, ValueError, AttributeError):
+                    primary_qty = 0.0
             sm["backtest"] = {
                 "cash": float(capital),
-                "equity": float(equity),
+                "equity": eq_f,
+                "equity_peak": peak,
+                "dd_frac": dd_frac,
+                "qty": primary_qty,
                 "positions": {
-                    k: {"size": v.size, "entry": v.entry_price} for k, v in positions.items()
+                    k: {
+                        "size": float(v.size),
+                        "entry": float(v.entry_price),
+                        "direction": int(getattr(v, "direction", 1) or 1),
+                        "qty_signed": float(v.size)
+                        * (1.0 if int(getattr(v, "direction", 1) or 1) >= 0 else -1.0),
+                    }
+                    for k, v in positions.items()
                 },
                 "window_len": len(window) if isinstance(window, list) else None,
                 "window_last_ts_ms": (
@@ -539,31 +559,10 @@ class BacktestEngine:
                     conf = 0.0
                 conf = max(0.0, min(1.0, conf))
 
-                if hold_signal_fallback in ("momentum", "legacy") and action == "HOLD":
-                    if isinstance(window, list) and len(window) >= 6:
-                        try:
-                            look = min(6, len(window))
-                            c0 = float(window[-look][4])
-                            c1 = float(window[-1][4])
-                            if c0 > 0:
-                                r = (c1 - c0) / c0
-                                if r >= 0.0006:
-                                    action = "BUY"
-                                elif r <= -0.0006:
-                                    action = "SELL"
-                        except Exception:
-                            pass
-
-                if hold_signal_fallback == "legacy" and action == "HOLD":
-                    if isinstance(window, list) and len(window) >= 3:
-                        try:
-                            cur = positions.get(symbol)
-                            if cur is None:
-                                action = "BUY" if ((len(window) // 6) % 2 == 0) else "SELL"
-                            else:
-                                action = "SELL" if getattr(cur, "direction", 0) >= 0 else "BUY"
-                        except Exception:
-                            pass
+                # Risk Guard must gate fills — portfolio_execute skip alone is not enough.
+                if isinstance(output, dict) and output.get("is_vetoed"):
+                    action = "HOLD"
+                    conf = 0.0
 
                 stance = "neutral"
                 sign = 0.0
@@ -719,5 +718,11 @@ class BacktestEngine:
         lp = runs_dir / f"{run_id}.events.jsonl"
         if lp.exists():
             lp.unlink()
+        # Research owns backtest streams (explicit /ws/runs/{bt-id}).
+        # Do not steal Live desk's latest_run.txt — write a dedicated pointer instead.
+        try:
+            (runs_dir / "latest_backtest.txt").write_text(run_id)
+        except Exception:
+            pass
         flow_repo = FlowEventRepo(run_id=run_id, log_path=lp)
         set_flow_repo(flow_repo)
