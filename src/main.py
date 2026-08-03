@@ -21,7 +21,6 @@ from agents.market_scan import MarketScanAgent
 from agents.monetary_sentinel import MonetarySentinelAgent
 from agents.news_narrative_miner import NewsNarrativeMinerAgent
 from agents.pattern_recognition_bot import PatternRecognitionBotAgent
-from agents.portfolio_management import PortfolioManagementAgent
 from agents.pro_bias_analyst import ProBiasAnalystAgent
 from agents.retail_hype_tracker import RetailHypeTrackerAgent
 from agents.risk_management import RiskManagementAgent
@@ -30,7 +29,7 @@ from agents.technical_ta_engine import TechnicalTaEngineAgent
 from agents.whale_behavior_analyst import WhaleBehaviorAnalystAgent
 from config.app_settings import apply_strategy_env_defaults_from_settings, load_app_settings
 from config.fund_policy import load_fund_policy
-from config.llm_mode import llm_mode_enabled
+from config.llm_env import require_llm_key
 from config.run_mode import RunMode, load_run_mode
 from flow_log import FlowEventRepo, get_flow_repo, set_flow_repo
 from leadpage_local_scan import append_local_scan_result
@@ -755,7 +754,12 @@ def _portfolio_agent_kwargs(state: HedgeFundState) -> dict[str, Any]:
     out: dict[str, Any] = {"run_mode": state.get("run_mode")}
     if str(state.get("run_mode") or "").lower() == RunMode.BACKTEST.value:
         cash_raw = bt.get("cash", 0.0)
-        out["external_cash_usd"] = float(cash_raw) if isinstance(cash_raw, (int, float)) else 0.0
+        eq_raw = bt.get("equity")
+        # Portfolio target notionals are sized as a fraction of mark NAV when available.
+        budget = eq_raw if isinstance(eq_raw, (int, float)) else cash_raw
+        out["external_cash_usd"] = float(budget) if isinstance(budget, (int, float)) else 0.0
+        if isinstance(cash_raw, (int, float)):
+            out["external_free_collateral_usd"] = float(cash_raw)
         pos = bt.get("positions")
         if isinstance(pos, dict):
             ext_pos = {str(k): _coerce_bt_position_qty(v) for k, v in pos.items()}
@@ -812,45 +816,14 @@ def merged_quant_analysis_for_universe(state: HedgeFundState) -> dict[str, Any]:
 
 def portfolio_proposal(state: HedgeFundState) -> dict[str, Any]:
     logger.debug("Running portfolio_proposal node with state: %s", state)
-    tk = state.get("ticker", "BTC/USDT")
-    if llm_mode_enabled():
-        proposal = llm_portfolio_proposal(state)
-        # Fallback if provider/model is misconfigured or output invalid.
-        if not isinstance(proposal, dict) or proposal.get("status") == "error":
-            logger.warning("LLM portfolio_proposal failed; falling back to deterministic agent.")
-            agent = PortfolioManagementAgent(testnet=True)
-            proposal = agent.analyze(
-                tk,
-                state.get("market_data") or {},
-                state.get("pattern_analysis") or {},
-                state.get("sentiment_analysis") or {},
-                state.get("arb_analysis") or {},
-                merged_quant_analysis_for_universe(state),
-                state.get("valuation") or {},
-                state.get("risk") or {},
-                state.get("liquidity") or {},
-                execute=False,
-                strategy_context=state.get("proposed_signal") or {},
-                trade_intent=state.get("trade_intent") or {},
-                **_portfolio_agent_kwargs(state),
-            )
-    else:
-        agent = PortfolioManagementAgent(testnet=True)
-        proposal = agent.analyze(
-            tk,
-            state.get("market_data") or {},
-            state.get("pattern_analysis") or {},
-            state.get("sentiment_analysis") or {},
-            state.get("arb_analysis") or {},
-            merged_quant_analysis_for_universe(state),
-            state.get("valuation") or {},
-            state.get("risk") or {},
-            state.get("liquidity") or {},
-            execute=False,
-            strategy_context=state.get("proposed_signal") or {},
-            trade_intent=state.get("trade_intent") or {},
-            **_portfolio_agent_kwargs(state),
-        )
+    proposal = llm_portfolio_proposal(state)
+    if not isinstance(proposal, dict) or proposal.get("status") == "error":
+        logger.error("LLM portfolio_proposal failed (no non-LLM fallback).")
+        proposal = {
+            "status": "error",
+            "error": "llm_portfolio_proposal_failed",
+            "detail": proposal if isinstance(proposal, dict) else str(proposal),
+        }
     prop = proposal if isinstance(proposal, dict) else {}
     signal_context = state.get("proposed_signal") or {}
     if isinstance(prop, dict):
@@ -885,7 +858,9 @@ def risk_guard(state: HedgeFundState) -> dict[str, Any]:
         guard.process(
             {
                 "proposal": state.get("proposal") or {},
+                "trade_intent": state.get("trade_intent") or {},
                 "shared_memory": state.get("shared_memory") or {},
+                "market_data": state.get("market_data") or {},
                 "ticker": state.get("ticker"),
                 "run_mode": state.get("run_mode"),
             }
@@ -919,6 +894,20 @@ def risk_guard(state: HedgeFundState) -> dict[str, Any]:
             "status": "skipped",
             "message": "Execution vetoed by Risk Guard",
             "risk_guard": decision,
+        }
+        # Force HOLD so fills stay flat after veto.
+        prev_intent = (
+            state.get("trade_intent") if isinstance(state.get("trade_intent"), dict) else {}
+        )
+        out["trade_intent"] = {
+            **prev_intent,
+            "action": "HOLD",
+            "confidence": float(prev_intent.get("confidence") or 0.0),
+            "meta": {
+                **(prev_intent.get("meta") if isinstance(prev_intent.get("meta"), dict) else {}),
+                "vetoed_by": "risk_guard",
+                "veto_reason": veto_reason,
+            },
         }
 
     _emit_flow(
@@ -971,50 +960,14 @@ def portfolio_execute(state: HedgeFundState) -> dict[str, Any]:
 
     # For safety + tool-calling parity, treat this node as "execution intent" and place via adapter.
     tk = state.get("ticker", "BTC/USDT")
-    if llm_mode_enabled():
-        # Prefer the proposal from the previous node if present.
-        portfolio_result = state.get("proposal")
-        if not isinstance(portfolio_result, dict):
-            portfolio_result = llm_portfolio_proposal(state)
-        exec_blk = llm_portfolio_execute(
-            state, portfolio_result=portfolio_result if isinstance(portfolio_result, dict) else {}
-        )
-        if not isinstance(exec_blk, dict) or exec_blk.get("status") in ("error",):
-            logger.warning("LLM portfolio_execute failed; falling back to deterministic agent.")
-            agent = PortfolioManagementAgent(testnet=True)
-            portfolio_result = agent.analyze(
-                tk,
-                state.get("market_data") or {},
-                state.get("pattern_analysis") or {},
-                state.get("sentiment_analysis") or {},
-                state.get("arb_analysis") or {},
-                merged_quant_analysis_for_universe(state),
-                state.get("valuation") or {},
-                state.get("risk") or {},
-                state.get("liquidity") or {},
-                execute=False,
-                strategy_context=state.get("proposed_signal") or {},
-                trade_intent=state.get("trade_intent") or {},
-                **_portfolio_agent_kwargs(state),
-            )
-            exec_blk = None
-    else:
-        agent = PortfolioManagementAgent(testnet=True)
-        portfolio_result = agent.analyze(
-            tk,
-            state.get("market_data") or {},
-            state.get("pattern_analysis") or {},
-            state.get("sentiment_analysis") or {},
-            state.get("arb_analysis") or {},
-            merged_quant_analysis_for_universe(state),
-            state.get("valuation") or {},
-            state.get("risk") or {},
-            state.get("liquidity") or {},
-            execute=False,
-            strategy_context=state.get("proposed_signal") or {},
-            trade_intent=state.get("trade_intent") or {},
-            **_portfolio_agent_kwargs(state),
-        )
+    portfolio_result = state.get("proposal")
+    if not isinstance(portfolio_result, dict):
+        portfolio_result = llm_portfolio_proposal(state)
+    exec_blk = llm_portfolio_execute(
+        state, portfolio_result=portfolio_result if isinstance(portfolio_result, dict) else {}
+    )
+    if not isinstance(exec_blk, dict) or exec_blk.get("status") in ("error",):
+        logger.error("LLM portfolio_execute failed (no non-LLM fallback).")
         exec_blk = None
 
     # P3: emit a safe "smart order" record via NexusAdapter (mock by default).
@@ -1074,7 +1027,7 @@ def portfolio_execute(state: HedgeFundState) -> dict[str, Any]:
     exec_notes: list[str] = []
     clamped_orders: list[dict[str, Any]] = []
 
-    if llm_mode_enabled() and isinstance(exec_blk, dict):
+    if isinstance(exec_blk, dict):
         s = load_app_settings()
         fp = load_fund_policy()
         inst = str(s.paper.instrument or "spot").lower()
@@ -1650,8 +1603,24 @@ def main():
     set_log_publisher(publisher)
     runs_dir = Path(".runs")
     runs_dir.mkdir(parents=True, exist_ok=True)
-    latest_file = runs_dir / "latest_run.txt"
-    latest_file.write_text(run_id)
+    # Paper runs only; backtests use latest_backtest.txt
+    (runs_dir / "latest_run.txt").write_text(run_id)
+    if run_mode.value == "paper":
+        (runs_dir / "latest_paper.txt").write_text(run_id)
+        status_path = runs_dir / "paper_engine.status.json"
+        try:
+            st: dict = {}
+            if status_path.is_file():
+                import json as _json
+
+                raw = _json.loads(status_path.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    st = raw
+            st["paper_run_id"] = run_id
+            st["updated_at"] = int(time.time())
+            status_path.write_text(_json.dumps(st, indent=2), encoding="utf-8")
+        except Exception:
+            pass
     flow_log_path = runs_dir / f"{run_id}.events.jsonl"
     if flow_log_path.exists():
         flow_log_path.unlink()
@@ -1690,4 +1659,5 @@ def main():
 
 
 if __name__ == "__main__":
+    require_llm_key()
     main()

@@ -38,4 +38,5 @@ def run_perp_backtest(
         run_id=run_id,
         runs_dir=runs_dir,
         progress_callback=progress_callback,
+        benchmark_symbol=ticker,
     )

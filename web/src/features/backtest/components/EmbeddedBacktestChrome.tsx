@@ -1,139 +1,179 @@
 "use client";
 
-import { copyText } from "@/features/backtest/lib/embeddedBacktestUtils";
-
 export type EmbeddedWorkspaceTab = "saved" | "new";
+
+export type SavedRunListItem = {
+  run_id: string;
+  ticker?: string | null;
+  start_iso?: string | null;
+  end_iso?: string | null;
+  interval_sec?: number | null;
+  initial_cash?: number | null;
+  final_equity?: number | null;
+  total_return_pct?: number | null;
+  total_pnl_usd?: number | null;
+  sharpe?: number | null;
+  total_trades?: number | null;
+  eval_bars?: number | null;
+  equity_points?: number | null;
+  has_charts?: boolean;
+  sort_ts?: number;
+};
 
 type Props = {
   tab: EmbeddedWorkspaceTab;
   onTabChange: (t: EmbeddedWorkspaceTab) => void;
-  runList: string[];
-  selectedHistoryId: string;
-  historyLoading: boolean;
-  activeRunId: string;
-  shortRunLabel: (id: string) => string;
-  onSelectRun: (runId: string) => void;
-  onClearRun: () => void;
+  jobRunning?: boolean;
+  jobStep?: number;
+  jobTotal?: number;
+  jobEquity?: number | null;
+  jobClosed?: number;
+  jobOpen?: number;
+  jobWarmup?: boolean;
+  onResumeRunning?: () => void;
+  reportReady?: boolean;
+  onOpenReport?: () => void;
+  savedDetailOpen?: boolean;
 };
 
 export function EmbeddedBacktestChrome({
   tab,
   onTabChange,
-  runList,
-  selectedHistoryId,
-  historyLoading,
-  activeRunId,
-  shortRunLabel,
-  onSelectRun,
-  onClearRun,
+  jobRunning = false,
+  jobStep = 0,
+  jobTotal = 0,
+  jobEquity = null,
+  jobClosed = 0,
+  jobOpen = 0,
+  jobWarmup = false,
+  onResumeRunning,
+  reportReady = false,
+  onOpenReport,
+  savedDetailOpen = false,
 }: Props) {
+  const pct =
+    jobWarmup || jobTotal <= 0
+      ? 0
+      : Math.min(100, Math.round((jobStep / jobTotal) * 100));
+
+  const tabBtn =
+    "relative -mb-px border-b-2 px-1 pb-2 font-mono text-[10px] uppercase tracking-[0.16em] transition-colors";
+
   return (
     <div
       id="backtest-embedded-summary"
-      className="shrink-0 scroll-mt-1 border-b border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 px-3 py-2"
+      className="shrink-0 scroll-mt-1 border-b border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 px-3 pt-2"
     >
       <div className="flex h-7 w-full min-w-0 items-center gap-2">
         <span className="inline-flex h-7 shrink-0 items-center font-mono text-[9px] font-semibold uppercase tracking-widest leading-none text-[var(--nexus-glow)]">
           Backtest
         </span>
-        {/* Keep stable slots so controls don't jump when switching tabs. */}
-        <div className="min-w-0 grow-0 basis-[min(100%,16rem)] sm:basis-[22rem] sm:max-w-[22rem]">
-          {tab === "saved" ? (
-            runList.length > 0 ? (
-              <select
-                className="h-7 w-full min-w-0 rounded border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)] px-2 font-mono text-[10px] leading-none text-[var(--nexus-text)]"
-                value={selectedHistoryId}
-                disabled={historyLoading}
-                title={selectedHistoryId ? `Full id: ${selectedHistoryId}` : "Saved runs"}
-                aria-label="Browse saved backtest runs"
-                onChange={(e) => {
-                  const id = e.target.value.trim();
-                  if (id) onSelectRun(id);
-                  else onClearRun();
-                }}
-              >
-                <option value="">Saved runs…</option>
-                {[...runList].reverse().map((id) => (
-                  <option key={id} value={id} title={id}>
-                    {shortRunLabel(id)}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <span className="inline-flex h-7 w-full items-center rounded border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)]/45 px-2 font-mono text-[9px] uppercase tracking-wider leading-none text-[var(--nexus-muted)]">
-                No saved runs
-              </span>
-            )
-          ) : (
-            <span className="block h-7 w-full" aria-hidden="true" />
-          )}
-        </div>
-
-        {tab === "saved" ? (
-          <button
-            type="button"
-            disabled={historyLoading || runList.length === 0}
-            onClick={() => {
-              const latest = [...runList].slice(-1)[0];
-              if (latest) onSelectRun(latest);
-            }}
-            className="h-7 w-[4.25rem] shrink-0 rounded border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)] px-2 font-mono text-[9px] uppercase tracking-wider leading-none text-[var(--nexus-muted)] hover:border-[var(--nexus-glow)]/35 hover:text-[var(--nexus-text)] disabled:opacity-40"
-          >
-            Latest
-          </button>
-        ) : (
-          <span className="h-7 w-[4.25rem] shrink-0" aria-hidden="true" />
-        )}
-        <div
-          className="nexus-segmented-toggle ml-auto inline-flex h-7 shrink-0 items-center gap-1 rounded-xl p-1"
-          role="tablist"
-          aria-label="Backtest workspace"
-        >
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "saved"}
-            onClick={() => onTabChange("saved")}
-            className={`nexus-segment-btn flex h-7 items-center rounded-lg px-2.5 font-mono text-[9px] uppercase tracking-[0.18em] leading-none transition-all ${
-              tab === "saved" ? "is-active" : "text-[var(--nexus-muted)]"
-            }`}
-          >
-            Saved run
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "new"}
-            onClick={() => onTabChange("new")}
-            className={`nexus-segment-btn flex h-7 items-center rounded-lg px-2.5 font-mono text-[9px] uppercase tracking-[0.18em] leading-none transition-all ${
-              tab === "new" ? "is-active" : "text-[var(--nexus-muted)]"
-            }`}
-          >
-            New backtest
-          </button>
+        <div className="min-w-0 flex-1 font-mono text-[9px] text-[var(--nexus-muted)]">
+          {tab === "saved"
+            ? savedDetailOpen
+              ? "Statistical report"
+              : "Saved runs · newest first"
+            : jobRunning
+              ? jobWarmup
+                ? "Preparing…"
+                : "Running…"
+              : reportReady
+                ? "Finished"
+                : "New replay"}
         </div>
       </div>
-      {tab === "saved" && (historyLoading || activeRunId) ? (
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-[var(--nexus-rule-soft)] pt-1.5 font-mono text-[10px]">
-          <span className="shrink-0 text-[var(--nexus-muted)]">Id</span>
-          {historyLoading ? (
-            <span className="animate-pulse text-[var(--nexus-glow)]">loading…</span>
-          ) : (
-            <div className="inline-flex min-w-0 max-w-full items-center gap-1.5 rounded border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)]/50 py-0.5 pl-1.5 pr-0.5">
-              <span className="min-w-0 truncate text-[var(--nexus-glow)]" title={activeRunId}>
-                {activeRunId}
-              </span>
+
+      <div
+        className="mt-1 flex items-end gap-4"
+        role="tablist"
+        aria-label="Backtest workspace"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "saved"}
+          onClick={() => onTabChange("saved")}
+          className={`${tabBtn} ${
+            tab === "saved"
+              ? "border-[var(--nexus-glow)] text-[var(--nexus-glow)]"
+              : "border-transparent text-[var(--nexus-muted)] hover:text-[var(--nexus-text)]"
+          }`}
+        >
+          Saved run
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === "new"}
+          onClick={() => onTabChange("new")}
+          className={`${tabBtn} inline-flex items-center gap-1.5 ${
+            tab === "new"
+              ? "border-[var(--nexus-glow)] text-[var(--nexus-glow)]"
+              : "border-transparent text-[var(--nexus-muted)] hover:text-[var(--nexus-text)]"
+          }`}
+        >
+          New backtest
+          {jobRunning ? (
+            <span
+              className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--nexus-glow)]"
+              aria-hidden
+            />
+          ) : null}
+        </button>
+      </div>
+
+      {jobRunning ? (
+        <div className="mt-2 mb-2 rounded-lg bg-[var(--nexus-glow)]/8 px-2.5 py-2 ring-1 ring-[color:var(--nexus-glow)]/25">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-glow)]">
+              {jobWarmup ? "Preparing…" : `${jobStep}/${jobTotal || "…"} · ${pct}%`}
+            </p>
+            {tab !== "new" && onResumeRunning ? (
               <button
                 type="button"
-                onClick={() => void copyText(activeRunId)}
-                className="shrink-0 rounded border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/80 px-1.5 py-0.5 text-[9px] uppercase text-[var(--nexus-muted)] hover:border-[var(--nexus-glow)]/40 hover:text-[var(--nexus-text)]"
+                onClick={onResumeRunning}
+                className="rounded-md bg-[var(--nexus-glow)]/15 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-glow)] hover:bg-[var(--nexus-glow)]/25"
               >
-                Copy
+                Progress
               </button>
-            </div>
-          )}
+            ) : null}
+          </div>
+          <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-[var(--nexus-surface)]">
+            <div
+              className="h-full bg-[var(--nexus-glow)] transition-[width] duration-300"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          {!jobWarmup ? (
+            <p
+              className="mt-1 font-mono text-[9px] text-[var(--nexus-muted)]"
+              title="Equity is mark-to-market. Closed = finished round-trips; open positions can move equity with 0 closed."
+            >
+              Equity{" "}
+              {typeof jobEquity === "number"
+                ? `$${jobEquity.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+                : "…"}
+              {jobOpen > 0 ? ` · ${jobOpen} open` : ""}
+              {` · ${jobClosed} closed`}
+            </p>
+          ) : null}
         </div>
-      ) : null}
+      ) : reportReady && onOpenReport ? (
+        <div className="mt-2 mb-2 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-[var(--nexus-glow)]/8 px-2.5 py-2 ring-1 ring-[color:var(--nexus-glow)]/25">
+          <p className="font-mono text-[9px] uppercase tracking-wider text-[var(--nexus-glow)]">
+            Finished
+          </p>
+          <button
+            type="button"
+            onClick={onOpenReport}
+            className="rounded-md bg-[var(--nexus-glow)] px-2.5 py-1 font-mono text-[9px] font-semibold uppercase tracking-wider text-[var(--nexus-bg)] hover:brightness-110"
+          >
+            View report
+          </button>
+        </div>
+      ) : (
+        <div className="h-2" aria-hidden />
+      )}
     </div>
   );
 }

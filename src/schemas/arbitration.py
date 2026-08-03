@@ -78,14 +78,15 @@ AGENT_FACTOR_MAP: dict[str, dict[str, float]] = {
         "regime_fit": 0.25,
     },
     "2.3": {
-        "rsi": 0.15,
-        "macd": 0.20,
-        "obv": 0.10,
+        "rsi": 0.10,
+        "macd": 0.16,
+        "obv": 0.08,
         "atr": 0.05,
-        "adx": 0.15,
-        "ema_cross": 0.10,
-        "volume": 0.15,
-        "pattern_rec": 0.10,
+        "adx": 0.12,
+        "ema_cross": 0.14,
+        "price_momentum": 0.18,
+        "roc": 0.10,
+        "volume": 0.07,
     },
     "3.1": {
         "fomo_level": 0.35,
@@ -111,14 +112,14 @@ AGENT_FACTOR_MAP: dict[str, dict[str, float]] = {
 
 
 AGENT_WEIGHTS_DEFAULT: dict[str, float] = {
-    "1.1": 0.05,
+    "1.1": 0.25,
     "1.2": 0.05,
-    "2.1": 0.25,
+    "2.1": 0.15,
     "2.2": 0.10,
-    "2.3": 0.30,
+    "2.3": 0.55,
     "3.1": 0.05,
     "3.2": 0.05,
-    "4.1": 0.05,  # disabled in v4 config
+    "4.1": 0.05,
     "4.2": 0.15,
 }
 

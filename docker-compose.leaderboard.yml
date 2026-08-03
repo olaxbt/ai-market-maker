@@ -1,5 +1,5 @@
-# Leaderboard / portal stack: Flow API + web-v2 (Vite SPA).
-# Full Nexus console (Next) stays on docker-compose.prod.yml → service `web` (./web).
+# Leaderboard API stack (DB + Flow API). No separate UI tree — use the main Next `web/` via
+# `docker compose up` when you want a portal, or hit the API directly.
 services:
   db:
     image: postgres:16-alpine
@@ -26,6 +26,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
+    env_file:
+      - .env
     environment:
       DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://aimm:aimm@db:5432/aimm}
       AIMM_DB_AUTOCREATE: "1"
@@ -33,6 +35,9 @@ services:
       LEADPAGE_REQUIRE_KEYS: ${LEADPAGE_REQUIRE_KEYS:-1}
       LEADPAGE_REQUIRE_SIGNED: ${LEADPAGE_REQUIRE_SIGNED:-0}
       AIMM_CORS_ORIGINS: ${AIMM_CORS_ORIGINS:-*}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
     depends_on:
       db:
         condition: service_healthy
@@ -40,20 +45,6 @@ services:
       - "${LEADERBOARD_PORT:-8001}:8001"
     volumes:
       - ./.runs:/app/.runs
-    restart: unless-stopped
-
-  web:
-    build:
-      context: ./web-v2
-      dockerfile: Dockerfile
-    depends_on:
-      - api
-    ports:
-      # nginx serves the Vite build on container port 80
-      - "${LEADERBOARD_WEB_PORT:-3000}:80"
-    profiles:
-      - full
-      - web
     restart: unless-stopped
 
 volumes:

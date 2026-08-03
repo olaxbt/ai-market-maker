@@ -18,12 +18,42 @@ Config keys (all plain dict, no env vars):
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from config.runs_paths import runs_dir as _default_runs_dir
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class AccountSnapshot:
+    """Perp book state passed into ``signal_fn`` each bar.
+
+    ``cash`` — free USDT collateral available for new margin.
+    ``equity`` — mark-to-market NAV (free + locked margin + unrealized PnL).
+
+    Agents need both: cash for open-capacity, equity for risk/sizing as % of book.
+    """
+
+    cash: float
+    equity: float
+
+    @classmethod
+    def from_cash(cls, cash: float) -> AccountSnapshot:
+        c = float(cash)
+        return cls(cash=c, equity=c)
+
+
+def coerce_account(account: AccountSnapshot | float | int) -> AccountSnapshot:
+    """Accept ``AccountSnapshot`` or a legacy bare cash float."""
+    if isinstance(account, AccountSnapshot):
+        return account
+    return AccountSnapshot.from_cash(float(account))
+
 
 _TIER_TABLE = [
     (100_000, 0.004),
@@ -46,6 +76,7 @@ class Position:
     leverage: float
     initial_margin: float
     entry_bar_index: int
+    entry_ts_ms: int = 0
     entry_commission: float = 0.0
 
 
@@ -62,7 +93,10 @@ class Trade:
     exit_reason: str
     holding_bars: int
     commission: float
-    #: Bar open time (OHLCV ms or sec) when the trade was closed — for ledgers / UI.
+    entry_bar_index: int = 0
+    #: Bar open time (OHLCV ms or sec) when the trade was opened.
+    entry_ts_ms: int = 0
+    #: Bar open time (OHLCV ms or sec) when the trade was closed.
     exit_ts_ms: int = 0
     #: Bar index at exit (0-based) for UI step column.
     exit_bar_index: int = 0
@@ -102,13 +136,18 @@ class PerpEngine:
         self._funding_applied: set[tuple[str, int, int]] = set()
         self._bar_index: int = 0
         self._last_bar_ts: int = 0
+        self._eval_start_bar: int = 0
         self.interval_sec: int = max(60, int(cfg.get("interval_sec", 300)))
+        self.timeframe: str = str(cfg.get("timeframe", ""))
 
         # Take-profit / stop-loss levels (fractional, e.g. 5.0 = ±5% from entry)
         self.take_profit_pct: float = float(cfg.get("take_profit_pct", 0.0))
         self.stop_loss_pct: float = float(cfg.get("stop_loss_pct", 0.0))
         # Max hold bars — close position after N bars (timeout). 0 = disabled.
         self.max_hold_bars: int = int(cfg.get("max_hold_bars", 0))
+        self.trade_cooldown_bars: int = max(0, int(cfg.get("trade_cooldown_bars", 0)))
+        self._last_entry_bar: dict[str, int] = {}
+        self._eval_start_bar = max(0, int(cfg.get("eval_start_bar", 0) or 0))
 
     def can_execute(self, direction: int, bar) -> bool:
         return True
@@ -232,7 +271,18 @@ class PerpEngine:
         run_id: str | None = None,
         runs_dir: Path | None = None,
         progress_callback=None,
+        benchmark_symbol: str | None = None,
     ) -> dict[str, Any]:
+        """
+        ``signal_fn(symbol, window, positions, account) -> float``
+
+        ``account`` is always an ``AccountSnapshot`` (cash + mark equity).
+        Callers that still treat the 4th arg as a bare float should use
+        ``coerce_account`` (or ignore unused fields).
+
+        Returns target weight in [-1, 1] (sign = side, magnitude vs equity).
+        ``window`` is completed bars only (no look-ahead).
+        """
         symbols = sorted(bars_by_symbol.keys())
         aligned = self._align_bars(bars_by_symbol)
         total_bars = len(aligned.get(symbols[0], []))
@@ -242,29 +292,39 @@ class PerpEngine:
 
         for bar_idx in range(total_bars):
             self._bar_index = bar_idx
-            window = {s: aligned[s][: bar_idx + 1] for s in symbols}
+            # Completed bars only (no look-ahead). Signal at end of bar i-1 → fill at open of bar i.
+            completed = {s: aligned[s][:bar_idx] for s in symbols}
+            bar_open = {s: float(aligned[s][bar_idx][1]) for s in symbols}
             last_close = {s: float(aligned[s][bar_idx][4]) for s in symbols}
             last_ts = int(aligned[symbols[0]][bar_idx][0])
             self._last_bar_ts = last_ts
 
-            for sym in symbols:
-                self.on_bar(sym, float(last_close[sym]), last_ts)
+            if bar_idx > 0:
+                mark_closes = {s: float(aligned[s][bar_idx - 1][4]) for s in symbols}
+                account = AccountSnapshot(
+                    cash=float(self.capital),
+                    equity=float(self._equity(mark_closes)),
+                )
+                for sym in symbols:
+                    target = float(
+                        signal_fn(
+                            sym,
+                            completed[sym],
+                            {k: v for k, v in self.positions.items()},
+                            account,
+                        )
+                    )
+                    self._rebalance(
+                        sym,
+                        float(target),
+                        bar_open[sym],
+                        last_close[sym],
+                        last_ts,
+                        last_close,
+                    )
 
             for sym in symbols:
-                target = signal_fn(
-                    sym,
-                    window[sym],
-                    {k: v for k, v in self.positions.items()},
-                    self.capital,
-                )
-                self._rebalance(
-                    sym,
-                    float(target),
-                    float(aligned[sym][bar_idx][1]),
-                    float(last_close[sym]),
-                    last_ts,
-                    last_close,
-                )
+                self.on_bar(sym, last_close[sym], last_ts)
 
             eq = self._equity(last_close)
             snap = EquitySnapshot(
@@ -277,19 +337,26 @@ class PerpEngine:
             self.snapshots.append(snap)
             if progress_callback is not None:
                 try:
+                    # Report scored-window progress only (0…eval_total), not TA warmup bars.
+                    eval_start = max(0, int(self._eval_start_bar))
+                    eval_total = max(1, int(total_bars) - eval_start)
+                    if bar_idx < eval_start:
+                        eval_i = -1  # still preparing indicators
+                    else:
+                        eval_i = int(bar_idx) - eval_start
                     progress_callback(
-                        int(bar_idx),
-                        int(total_bars),
+                        eval_i,
+                        eval_total,
                         {
                             "ts": int(last_ts),
                             "equity": float(eq),
                             "capital": float(self.capital),
                             "positions": int(len(self.positions)),
                             "trade_count": int(len(self.trades)),
+                            "warmup": bool(bar_idx < eval_start),
                         },
                     )
                 except Exception:
-                    # Progress is best-effort; never break backtests for UI telemetry.
                     pass
 
         if total_bars > 0:
@@ -304,8 +371,22 @@ class PerpEngine:
                 )
 
         metrics = self._calc_metrics()
-        primary_bars = aligned[symbols[0]] if symbols and total_bars > 0 else []
-        return self._finalize(run_id, runs_dir, symbols, metrics, primary_bars)
+        bench_sym = str(benchmark_symbol or "").strip()
+        if bench_sym not in aligned:
+            bench_sym = symbols[0] if symbols else ""
+        primary_bars = aligned[bench_sym] if bench_sym and total_bars > 0 else []
+        eval_start = max(0, int(self._eval_start_bar))
+        if eval_start > 0 and len(primary_bars) > eval_start:
+            primary_bars = primary_bars[eval_start:]
+        return self._finalize(
+            run_id,
+            runs_dir,
+            symbols,
+            metrics,
+            primary_bars,
+            benchmark_symbol=bench_sym,
+            aligned_bars=aligned,
+        )
 
     def _rebalance(
         self,
@@ -331,6 +412,13 @@ class PerpEngine:
                 current = self.positions.get(symbol)
 
         if target_dir != 0 and symbol not in self.positions:
+            if self.trade_cooldown_bars > 0:
+                last_entry = self._last_entry_bar.get(symbol)
+                if (
+                    last_entry is not None
+                    and (self._bar_index - last_entry) < self.trade_cooldown_bars
+                ):
+                    return
             if not self.can_execute(target_dir, None):
                 return
             slipped = self.apply_slippage(bar_open, target_dir)
@@ -360,8 +448,10 @@ class PerpEngine:
                 leverage=self.leverage,
                 initial_margin=margin,
                 entry_bar_index=self._bar_index,
+                entry_ts_ms=int(self._last_bar_ts),
                 entry_commission=comm,
             )
+            self._last_entry_bar[symbol] = self._bar_index
 
     def _close(
         self,
@@ -397,6 +487,8 @@ class PerpEngine:
                 exit_reason=reason,
                 holding_bars=holding,
                 commission=pos.entry_commission + exit_comm,
+                entry_bar_index=int(pos.entry_bar_index),
+                entry_ts_ms=int(pos.entry_ts_ms),
                 exit_ts_ms=ts_exit,
                 exit_bar_index=int(self._bar_index),
             )
@@ -485,10 +577,13 @@ class PerpEngine:
         if not equity_vals:
             return {}
 
+        eval_start = max(0, int(self._eval_start_bar))
+        if eval_start > 0 and eval_start < len(equity_vals):
+            equity_vals = equity_vals[eval_start:]
+        start_equity = float(equity_vals[0]) if equity_vals else float(self.initial_cash)
+
         total_return = (
-            (equity_vals[-1] - self.initial_cash) / self.initial_cash * 100
-            if self.initial_cash > 0
-            else 0.0
+            (equity_vals[-1] - start_equity) / start_equity * 100 if start_equity > 0 else 0.0
         )
 
         peak = equity_vals[0]
@@ -505,10 +600,16 @@ class PerpEngine:
         ppy = periods_per_year_from_interval_sec(bar_sec)
         sharpe = sharpe_ratio(rets, periods_per_year=ppy)
 
-        wins = [t for t in self.trades if t.pnl > 0]
-        win_rate = len(wins) / len(self.trades) * 100 if self.trades else 0.0
-        pf = profit_factor([t.pnl for t in self.trades])
-        exit_dist = exit_reason_distribution([{"exit_reason": t.exit_reason} for t in self.trades])
+        eval_trades = [
+            t for t in self.trades if int(getattr(t, "entry_bar_index", 0)) >= eval_start
+        ]
+        win_rate = (
+            len([t for t in eval_trades if t.pnl > 0]) / len(eval_trades) * 100
+            if eval_trades
+            else 0.0
+        )
+        pf = profit_factor([t.pnl for t in eval_trades])
+        exit_dist = exit_reason_distribution([{"exit_reason": t.exit_reason} for t in eval_trades])
 
         return {
             "total_return_pct": round(total_return, 4),
@@ -519,9 +620,9 @@ class PerpEngine:
             "sharpe_bar_interval_sec_used": bar_sec,
             "win_rate_pct": round(win_rate, 2),
             "profit_factor": pf,
-            "total_trades": len(self.trades),
-            "total_pnl_usd": round(sum(t.pnl for t in self.trades), 2),
-            "total_commission": round(sum(t.commission for t in self.trades), 2),
+            "total_trades": len(eval_trades),
+            "total_pnl_usd": round(sum(t.pnl for t in eval_trades), 2),
+            "total_commission": round(sum(t.commission for t in eval_trades), 2),
             "exit_reasons": exit_dist,
         }
 
@@ -532,6 +633,9 @@ class PerpEngine:
         symbols: list[str],
         metrics: dict[str, Any],
         bars_primary: list[list[float]] | None = None,
+        *,
+        benchmark_symbol: str = "",
+        aligned_bars: dict[str, list[list[float]]] | None = None,
     ) -> dict[str, Any]:
         import pandas as pd
 
@@ -539,10 +643,16 @@ class PerpEngine:
         out_dir.mkdir(parents=True, exist_ok=True)
 
         benchmark: dict[str, Any] = {}
+        # Chart / report window = scored bars only (warmup is TA context, not plotted).
+        eval_start = max(0, int(self._eval_start_bar))
         rows = bars_primary or []
         tr_pct = metrics.get("total_return_pct")
+        bh_curve: list[dict[str, float]] = []
         if len(rows) >= 2 and self.initial_cash > 0:
-            from backtest.benchmark import compute_buy_hold_benchmark
+            from backtest.benchmark import (
+                compute_buy_hold_benchmark,
+                compute_buy_hold_equity_curve,
+            )
 
             fee_bps = float(self.taker_rate) * 10_000.0
             slip_bps = float(self.slippage_rate) * 10_000.0
@@ -554,14 +664,26 @@ class PerpEngine:
                     slippage_bps=slip_bps,
                 )
             )
+            benchmark["benchmark_symbol"] = benchmark_symbol or (symbols[0] if symbols else "")
+            bh_curve = compute_buy_hold_equity_curve(
+                initial_cash_usd=float(self.initial_cash),
+                bars=rows,
+                fee_bps=fee_bps,
+                slippage_bps=slip_bps,
+            )
             bh = benchmark.get("benchmark_buy_hold_equity_return_pct")
             if isinstance(bh, (int, float)) and isinstance(tr_pct, (int, float)):
                 benchmark["excess_return_vs_buy_hold_equity_pct"] = round(
                     float(tr_pct) - float(bh), 6
                 )
 
+        eval_snaps = (
+            self.snapshots[eval_start:]
+            if self.snapshots and eval_start < len(self.snapshots)
+            else self.snapshots
+        )
         eq_records = []
-        for s in self.snapshots:
+        for s in eval_snaps:
             eq_records.append(
                 {
                     "ts": s.timestamp,
@@ -573,7 +695,7 @@ class PerpEngine:
             )
         pd.DataFrame(eq_records).to_json(out_dir / "equity.jsonl", orient="records", lines=True)
 
-        # Persist OHLCV bars for the charts API (/bars endpoint).
+        # Persist OHLCV + buy&hold for the charts API (same scored window as equity).
         bar_rows = [
             {
                 "ts": int(row[0]),
@@ -585,21 +707,44 @@ class PerpEngine:
             }
             for row in (rows or [])
         ]
+        # Plain floats for /bars clients; keep ts-aligned objects under benchmark_equity_points.
+        bh_values = [float(p["equity"]) for p in bh_curve if "equity" in p]
         if bar_rows:
-            (out_dir / "bars.json").write_text(
-                json.dumps(
-                    {
-                        "ticker": symbols[0] if symbols else "",
-                        "interval_sec": self.interval_sec,
-                        "bars": bar_rows,
-                    },
-                    indent=1,
-                )
-            )
+            bars_payload: dict[str, Any] = {
+                "ticker": benchmark_symbol or (symbols[0] if symbols else ""),
+                "benchmark_symbol": benchmark_symbol or (symbols[0] if symbols else ""),
+                "interval_sec": self.interval_sec,
+                "bars": bar_rows,
+                "benchmark_equity": bh_values,
+                "benchmark_equity_points": bh_curve,
+                "fill_model": "signal_on_completed_bars_fill_at_next_open",
+            }
+            if aligned_bars:
+                ohlcv_by_symbol: dict[str, list[dict[str, float]]] = {}
+                for sym, sym_rows in aligned_bars.items():
+                    scored = (
+                        sym_rows[eval_start:]
+                        if eval_start > 0 and eval_start < len(sym_rows)
+                        else sym_rows
+                    )
+                    ohlcv_by_symbol[sym] = [
+                        {
+                            "ts": int(row[0]),
+                            "o": float(row[1]),
+                            "h": float(row[2]),
+                            "l": float(row[3]),
+                            "c": float(row[4]),
+                            "v": float(row[5]),
+                        }
+                        for row in scored
+                    ]
+                bars_payload["ohlcv_by_symbol"] = ohlcv_by_symbol
+            (out_dir / "bars.json").write_text(json.dumps(bars_payload, indent=1))
 
         trade_records = []
         for t in self.trades:
             rec: dict[str, Any] = {
+                "run_id": run_id,
                 "symbol": t.symbol,
                 "direction": t.direction,
                 "entry_price": t.entry_price,
@@ -613,6 +758,9 @@ class PerpEngine:
                 "commission": round(t.commission, 8),
                 "exit_bar_index": int(t.exit_bar_index),
             }
+            rec["entry_bar_index"] = int(t.entry_bar_index)
+            if int(t.entry_ts_ms) > 0:
+                rec["entry_ts_ms"] = int(t.entry_ts_ms)
             if int(t.exit_ts_ms) > 0:
                 # Binance ``myTrades``-style epoch ms — ``normalize_trade_row_for_api`` maps to ``ts_ms`` for web UI.
                 rec["time"] = int(t.exit_ts_ms)
@@ -620,8 +768,9 @@ class PerpEngine:
             trade_records.append(rec)
         pd.DataFrame(trade_records).to_json(out_dir / "trades.jsonl", orient="records", lines=True)
 
-        start_ts = int(self.snapshots[0].timestamp) if self.snapshots else None
-        end_ts = int(self.snapshots[-1].timestamp) if self.snapshots else None
+        # Dates follow the scored From→To window (same series as equity.jsonl / B&H).
+        start_ts = int(eval_snaps[0].timestamp) if eval_snaps else None
+        end_ts = int(eval_snaps[-1].timestamp) if eval_snaps else None
         start_iso = None
         end_iso = None
         if start_ts is not None and end_ts is not None:
@@ -642,21 +791,47 @@ class PerpEngine:
             "final_equity": round(self.snapshots[-1].equity, 2)
             if self.snapshots
             else self.initial_cash,
+            "timeframe": self.timeframe,
+            "interval_sec": self.interval_sec,
             "metrics": metrics,
             "benchmark": benchmark,
             "symbols": symbols,
-            "interval_sec": self.interval_sec,
             "bar_interval_sec_inferred": self._infer_bar_interval_sec_from_snapshots(),
             "equity_convention": (
                 "USDT-margined linear perpetual model: equity = free_collateral + Σ(locked_initial_margin "
                 "+ unrealized_pnl) per open position. Not spot wallet balances; exposure is via contract PnL."
             ),
             "total_bars": len(self.snapshots),
+            "eval_bars": max(0, len(self.snapshots) - eval_start),
+            "ta_warmup_bars": eval_start,
             "start_ts": start_ts,
             "end_ts": end_ts,
             "start_iso": start_iso,
             "end_iso": end_iso,
         }
+
+        try:
+            from backtest.export_bundle import write_analysis_bundle
+
+            events_path = (
+                runs_dir / f"{run_id}.events.jsonl"
+                if (runs_dir / f"{run_id}.events.jsonl").is_file()
+                else None
+            )
+            export_files = write_analysis_bundle(
+                out_dir,
+                run_id=run_id,
+                summary=summary,
+                trades=trade_records,
+                snapshots=eq_records,
+                events_path=events_path,
+                symbols=symbols,
+                total_bars=len(self.snapshots),
+            )
+            summary["export_files"] = export_files
+        except Exception as exc:
+            logger.warning("export_bundle failed for %s: %s", run_id, exc)
+
         (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
 
         return summary

@@ -26,7 +26,7 @@ Designed to feel like a small professional trading firm — not just another bot
 ### Key Features
 - Multi-agent workflow with clear desk responsibilities
 - Strict **Risk Guard** that can veto any trade
-- Quant-style backtesting with built-in benchmarks (excess return vs buy-and-hold)
+- Quant-style backtesting with built-in benchmarks; **agentic LLM required** (`OPENAI_API_KEY`)
 - Unified agent interface + governance layer
 - **OpenClaw-ready packaging** (`SKILL.md` + `manifest.json` + dedicated runners)
 - Paper trading on Binance Testnet + rich local backtester; Hyperliquid adapter (dry-run) via OMS layer
@@ -93,32 +93,25 @@ pip install uv
 uv sync --extra dev
 uv run pre-commit install
 
-# 3. Set up environment
+# 5. Set up environment
 cp .env.example .env
-# Edit .env with your API keys (Binance Testnet + OpenAI recommended)
+# Edit .env — set OPENAI_API_KEY for agentic backtests.
+
+# 6. Run the platform stack: DB + migrate + API + worker + web
+# Requires Docker Desktop. Futu OpenD optional (`--profile with-futu`).
 #
-# Required for the Docker stack:
-#   DATABASE_URL=postgresql+psycopg://aimm:aimm@db:5432/aimm
-#   AIMM_AUTH_SECRET=<long-random-secret>
+docker compose up --build -d
 
-# 4. Run the platform stack (recommended): DB + API + worker + web
-# Requires Docker Desktop / docker compose.
-#
-docker compose -f docker-compose.prod.yml up --build -d
-
-# 5. Run migrations (first time, and after schema changes)
-docker compose -f docker-compose.prod.yml run --rm api alembic upgrade head
-
-# 6. Open the dashboard
-# http://localhost:3000/leaderboard   (results + signals)
-# http://localhost:3000/console       (nexus console)
-# http://localhost:3000/get-started   (copy/paste setup guide)
-# http://localhost:3000/tools         (tool browser)
+# 7. Open the dashboard
+# http://localhost:3000/console?view=research
+# http://localhost:3000/leaderboard
+# http://localhost:3000/get-started
 ```
 
 Open http://localhost:3000 to view the dashboard.
 
-Note: first boot may show an empty Leaderboard/Signals until you run a backtest (Nexus → Research) or publish provider results/signals.
+Migrations run automatically on first `docker compose up` (service `migrate`).
+First boot may show an empty Leaderboard until you run a backtest (Nexus → **Research**) or publish results.
 
 For CLI-only trading mode:
 ```bash
@@ -127,36 +120,27 @@ uv run python src/main.py
 
 ---
 
-## Hosted Leaderboard (recommended public deployment)
+## Hosted Leaderboard (API-only public deployment)
 
-If you want a **public site** where people can:
-- view **Leaderboard** results + **Signals**
-- publish results from their own local runs (provider keys)
-
-Run the **leaderboard stack** (DB + API, optional Web UI):
+If you want a lightweight **public API** for published results/signals (no full Nexus UI):
 
 ```bash
-# API + DB (leaderboard endpoints)
 docker compose -f docker-compose.leaderboard.yml up -d --build
-
-# Optional: include the web-v2 portal UI (service `portal`; avoids clobbering Next `web` if you merge this file with prod compose)
-docker compose -f docker-compose.leaderboard.yml --profile web up -d --build
 ```
 
-This keeps the public deployment lightweight and focused on evaluation, while users run the full agentic system locally.
+For the full local portal (Research backtests + console), use plain `docker compose up --build -d` instead.
 
 ---
 
 ## How to evaluate this repo (developer checklist)
 
 - **Start with the product surface**
-  - Open `/leaderboard` to see how results/signals are presented.
+  - Open `/console?view=research` to run a backtest.
   - Open `/get-started` for local setup commands.
   - Open `/tools` to browse callable platform endpoints.
 - **Run a quick backtest**
   - Use Nexus → Research (or call `POST /backtests/quick`) and confirm:
     - equity + trades ledgers exist under `.runs/backtests/<run_id>/`
-    - results can be published to the leaderboard (see `/leadpage/external_result`)
 - **Inspect a run**
   - Fetch `GET /runs/latest/payload?soft=1` and inspect topology/traces/message log.
 
@@ -255,46 +239,128 @@ Every backtest automatically includes:
 
 ### Running Backtests
 
-Run these **from the repository root** (the directory that contains `pyproject.toml`), after `uv sync --extra dev` (or `uv sync`).
+Run these **from the repository root** (the directory that contains `pyproject.toml`), after `uv sync --extra dev` (or `uv sync`). Requires `OPENAI_API_KEY` / `LLM_API_KEY`. LLM path dependence means re-runs are not bit-identical.
 
 ```bash
-# Using the OpenClaw runner (same cwd requirement)
-uv run python openclaw/scripts/claw_runner.py --backtest
+# One-time: prefetch history for the locked eval window
+uv run python -m backtest.bootstrap_showcase --eval-steps 180 --until 2026-07-12
 
-# With custom parameters
-uv run python openclaw/scripts/claw_runner.py --backtest --symbols "BTC/USDT,ETH/USDT,SOL/USDT" --steps 100
+# Offline CSV backtest (loads config/deploy.active.json)
+AIMM_BACKTEST_OHLCV_NEXUS=0 AIMM_BACKTEST_LLM_MAX_STEPS=200 uv run python -m backtest.run_demo \
+  --symbols 'BTC/USDT,ETH/USDT,SOL/USDT' \
+  --steps 180 \
+  --until 2026-07-12 \
+  --csv-only \
+  --timeframe 1d \
+  --ticker BTC/USDT
+```
 
-# Direct multi-symbol demo (public OHLCV via CCXT; no API keys required)
-# Quote --symbols in zsh/fish. NEXUS_DISABLE + LLM off avoid slow/failing network and LLM calls.
-NEXUS_DISABLE=1 AI_MARKET_MAKER_USE_LLM=0 \
+OHLCV-derived macro context feeds agent **1.1** in backtest (no live Nexus, no look-ahead).
+See [`docs/backtest-data.md`](docs/backtest-data.md) for data layers and future Nexus agent wiring.
+
+Watch **stderr** for the per-bar transcript; stdout ends with JSON metrics;
+HTML report at `.runs/backtests/<run_id>/backtest_report.html`.
+
+**TA warmup (default, recommended):** `--steps 180` fetches **230** daily bars (50 warmup + 180 eval).
+Warmup bars feed RSI/MACD/ADX context only — **no LLM calls, no trades**. Metrics and benchmark use
+the **180 eval** bars only (`summary.json` → `eval_bars`, `ta_warmup_bars`). Override via
+`config/app.default.json` `backtest.min_warmup_bars` (default **50**).
+
+Use `--no-warmup` only for fast A/B compares (indicators cold-start on bar 1; not for production reporting).
+
+### Example results (macro_tilt, 50 warmup + 180d eval, `bt_1784467270`)
+
+Reference run: **50-bar TA warmup**, **180 eval bars**, `macro_tilt`, leverage 2.0,
+OHLCV-only desk (`AIMM_BACKTEST_OHLCV_NEXUS=0`). Eval window 2025-11-25 → 2026-07-12.
+Reference run_id: `bt_1784467270`.
+
+| Metric | Strategy | BTC buy-and-hold |
+|--------|----------|------------------|
+| Return (eval window) | **+18.8%** | −34.2% |
+| Excess vs B&H | **+53.0%** | — |
+| Sharpe | **0.91** | — |
+| Max drawdown | 18.3% | — |
+| Trades | 34 | — |
+| Profit factor | **1.39** | — |
+| Regimes | bull, bear | — |
+
+Research helpers (period sweep, preset compare) live under `out/scripts/` (gitignored scratch).
+
+**Tuning for paper / research (agentic framework aligned):**
+
+| Knob | Recommendation | Why |
+|------|----------------|-----|
+| **Desk combo** | `macro_tilt` (`config/deploy.active.json`): 2.3×0.55, 1.1×0.25, 2.1×0.15 | Golden gates; leverage 2.0 |
+| **Horizon** | `--steps 180` daily (50 warmup + 180 eval) | Best return/Sharpe balance in period sweep |
+| **Period lock** | `--until 2026-07-12` | Pin eval end date when CSV grows |
+| **Data** | `bootstrap_showcase --eval-steps 180 --until 2026-07-12` → `--csv-only` | Enough history for offline reruns |
+| **OHLCV context** | `AIMM_BACKTEST_OHLCV_NEXUS=0` | OHLCV-only desk; defers live Nexus |
+| **Nexus desks** | Defer 1.2/3.x/4.x to later PR | Need historical feeds — see `docs/backtest-data.md` |
+| **Symbols** | BTC + ETH + SOL | Multi-asset book; transcript defaults to `--ticker` only |
+| **Transcript** | `AIMM_BACKTEST_TERMINAL_ALL_SYMBOLS=1` optional | Show all three symbols per bar (verbose) |
+| **Stress test** | `--steps 365` separately | Full-year bear-market eval; report PF even if &lt; 1 |
+
+```bash
+# Optional: explicit desk list (same as macro_tilt default)
+AIMM_LLM_AGENTS=2.3,2.1,1.1 NEXUS_DISABLE=1 AIMM_BACKTEST_LLM_MAX_STEPS=200 \
   uv run python -m backtest.run_demo \
-    --symbols 'BTC/USDT,ETH/USDT,SOL/USDT' \
-    --steps 100 \
-    --online \
-    --exchange binance
+  --symbols 'BTC/USDT,ETH/USDT,SOL/USDT' --steps 180 --until 2026-07-12 --online --timeframe 1d --ticker BTC/USDT
 ```
 
 If you see `ModuleNotFoundError: No module named 'backtest'`, you are not in the repo root or dependencies are not installed (`uv sync`).
 If your `.env` sets `AIMM_STRATEGY_PRESET`, it overrides `config/app.default.json` strategy defaults; unset it to use shipped `app.default.json` presets.
 
+### How the default backtest works (agentic)
+
+Each bar invokes the full LangGraph workflow with **LLM-active** desks:
+
+| Piece | Behavior |
+|-------|----------|
+| **Arbitrator mode** | Default `agent_llm` — per-agent LLM inference (`infer_agent`) then **weighted convergence** fusion |
+| **Portfolio** | Always `llm_portfolio_proposal` / `llm_portfolio_execute` (no rule-based fallback) |
+| **OHLCV context** | Market scan + Tier-0 math feed LLM prompts; 1.1 gets OHLCV-derived macro (`AIMM_BACKTEST_OHLCV_NEXUS=1`) |
+| **No fallback layer** | Graph `trade_intent` only — no HOLD→BUY/SELL override |
+| **Fill model** | Signal on completed bars; fill at bar open; TP/SL at bar close |
+| **Terminal output** | Per-bar desk CoT on stderr (on by default in backtest; disable with `AIMM_BACKTEST_TERMINAL_LOG=0`) |
+| **Audit receipts** | `tier0_summary` in iterations (on by default in backtest; disable with `AIMM_BACKTEST_VERBOSE_RECEIPTS=0`) |
+
+Optional: `config/deploy.active.json` with `agents[id].llm_enabled` or `AIMM_LLM_AGENTS=2.1,2.3` to limit which desks call the LLM.
+
+### Comparison with [TradingAgents](https://github.com/TauricResearch/TradingAgents)
+
+Both are LangGraph multi-agent research scaffolds. Differences that matter for this repo:
+
+| | TradingAgents | AIMM (this repo) |
+|---|---------------|------------------|
+| Asset class | Equities (Yahoo) | Crypto perps (Binance OHLCV) |
+| Backtest model | Date-grid `propagate()` vs next-bar close | Bar-by-bar perp simulator (margin, funding, multi-symbol) |
+| Agent fusion | Bull/bear debate → trader → risk → PM | Weighted desk convergence + TA-led gates |
+| Artifacts | Decision log, checkpoints | `summary.json`, trades/equity JSONL, HTML report, quality gates |
+| Terminal UX | Per-date analyst reports in CLI | Per-bar desk CoT + BUY/SELL/HOLD summary on stderr |
+
+Like TradingAgents, results vary with model and window — report benchmark, sample size, and profit factor honestly.
+
 ### Example Backtest Results
 
-The default configuration (using multiple symbols and conservative risk parameters) typically produces results like:
+Re-run after setting your LLM key — results depend on provider, model, and the rolling `--online` window:
 
-```
-Trade count: 17
-Total return: 14.95%
-Excess return vs BTC buy & hold: +30.25%
-Sharpe ratio: 1.79
-Maximum drawdown: 11.84%
-Win rate: 62.5%
+```bash
+NEXUS_DISABLE=1 uv run python -m backtest.run_demo \
+  --symbols 'BTC/USDT,ETH/USDT,SOL/USDT' \
+  --steps 365 --online --timeframe 1d --ticker BTC/USDT
 ```
 
-These results reflect:
-- Multi-asset diversification (BTC, ETH, SOL)
-- Conservative position sizing and risk limits
-- Automated benchmark comparison
-- Full trade transparency and risk event logging
+Report: `.runs/backtests/<run_id>/backtest_report.html`
+
+**Local parameter sweep** (requires LLM key; compares presets via `deploy_config` in `src/backtest/run_agentic_sweep.py`):
+
+```bash
+NEXUS_DISABLE=1 uv run python -m backtest.run_agentic_sweep --showcase
+```
+
+Reports: `.runs/evaluations/sweep_<id>/sweep_report.md`
+
+See also: [`docs/weighted-arbitrator.md`](docs/weighted-arbitrator.md) for threshold and alignment-gating details.
 
 ---
 
@@ -409,7 +475,7 @@ claw skill install ./openclaw
 - Full compatibility with Claw skill system
 - Multi-language documentation support (English, Korean)
 - Complete examples for different usage scenarios
-- Optimized default settings for good backtest results
+- Optimized default arbitrator weights (offline-tuned); see [Backtesting](#backtesting--research-expectations)
 
 
 

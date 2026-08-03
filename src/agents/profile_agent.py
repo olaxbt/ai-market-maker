@@ -31,15 +31,15 @@ import os
 import time
 from typing import Any
 
-from config.llm_mode import llm_mode_enabled
+from config.llm_env import llm_key_available
 
 # Default base weights (mirrors _V4_AGENT_WEIGHTS in weighted_arbitrator.py)
 AGENT_WEIGHTS_DEFAULT: dict[str, float] = {
-    "1.1": 0.05,
+    "1.1": 0.15,
     "1.2": 0.05,
-    "2.1": 0.25,
+    "2.1": 0.20,
     "2.2": 0.10,
-    "2.3": 0.30,
+    "2.3": 0.55,
     "3.1": 0.05,
     "3.2": 0.05,
     "4.1": 0.05,  # disabled by default, but kept for config
@@ -202,7 +202,7 @@ class ProfileAgent:
     """
 
     def __init__(self) -> None:
-        self.llm_enabled = llm_mode_enabled() and (os.getenv("AIMM_LLM_PROFILE", "0") == "1")
+        self.llm_enabled = llm_key_available() and (os.getenv("AIMM_LLM_PROFILE", "0") == "1")
 
     # ------------------------------------------------------------------
     def _build_prompt(self, answers: dict[str, str]) -> str:

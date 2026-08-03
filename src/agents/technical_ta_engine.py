@@ -43,6 +43,43 @@ def _sanitize_ta_floats(d: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _enrich_ta_indicators(closes: list[float], ta: dict[str, Any]) -> dict[str, Any]:
+    """Add desk-native trend/momentum fields to the TA bundle (no backtest fallback)."""
+    out: dict[str, Any] = dict(ta)
+    if len(closes) < 2:
+        return out
+
+    lookback = int(os.getenv("AIMM_TA_MOMENTUM_LOOKBACK") or "6")
+    lookback = max(2, min(lookback, len(closes) - 1))
+    c0 = closes[-lookback - 1]
+    c1 = closes[-1]
+    if c0 > 0:
+        out["price_momentum"] = (c1 - c0) / c0
+
+    ema_fast_p = int(os.getenv("AIMM_TA_EMA_FAST") or "9")
+    ema_slow_p = int(os.getenv("AIMM_TA_EMA_SLOW") or "21")
+    if len(closes) >= ema_slow_p + 1:
+        try:
+            import numpy as np
+            import talib
+
+            arr = np.asarray(closes, dtype=np.float64)
+            ef = talib.EMA(arr, timeperiod=ema_fast_p)
+            es = talib.EMA(arr, timeperiod=ema_slow_p)
+            ef_v = float(ef[-1]) if ef is not None and len(ef) else None
+            es_v = float(es[-1]) if es is not None and len(es) else None
+            if ef_v is not None and es_v is not None and not (math.isnan(ef_v) or math.isnan(es_v)):
+                out["ema"] = {"fast": ef_v, "slow": es_v}
+        except Exception:
+            pass
+
+    sma = out.get("sma")
+    if isinstance(sma, (int, float)) and float(sma) > 0 and c1 > 0:
+        out["close_vs_sma"] = (c1 - float(sma)) / float(sma)
+
+    return out
+
+
 class TechnicalTaEngineAgent:
     """Computes the shared TA bundle; feeds Tier-0 agent ``2.3`` contract."""
 
@@ -90,12 +127,13 @@ class TechnicalTaEngineAgent:
                 volume=vols if v_ok else None,
             )
             clean = _sanitize_ta_floats(ta)
+            enriched = _enrich_ta_indicators(closes, clean)
             return {
                 "status": "success",
                 "ta_period": period,
                 "bars": len(closes),
-                "ta_indicators": clean,
-                "indicator_catalog_version": "ta_bundle/v1",
+                "ta_indicators": enriched,
+                "indicator_catalog_version": "ta_bundle/v2",
             }
         except Exception as e:
             return {

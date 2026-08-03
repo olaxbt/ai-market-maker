@@ -852,7 +852,7 @@ async def post_studio_chat(request: Request, req: StudioChatRequest) -> dict[str
             parameters={
                 "type": "object",
                 "properties": {
-                    "preset_id": {"type": "string", "default": "macd_risk_v1"},
+                    "preset_id": {"type": "string", "default": "momentum"},
                     "ticker": {"type": "string", "default": "BTC/USDT"},
                     "n_bars": {"type": ["integer", "null"], "minimum": 20, "maximum": 100000},
                     "interval_sec": {"type": ["integer", "null"], "minimum": 60, "maximum": 86400},
@@ -875,7 +875,7 @@ async def post_studio_chat(request: Request, req: StudioChatRequest) -> dict[str
             parameters={
                 "type": "object",
                 "properties": {
-                    "preset_id": {"type": "string", "default": "macd_risk_v1"},
+                    "preset_id": {"type": "string", "default": "momentum"},
                     "ticker": {"type": "string", "default": "BTC/USDT"},
                     "n_bars": {"type": ["integer", "null"], "minimum": 20, "maximum": 100000},
                     "interval_sec": {"type": ["integer", "null"], "minimum": 60, "maximum": 86400},

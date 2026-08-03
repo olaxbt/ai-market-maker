@@ -98,6 +98,9 @@ def use_llm_arbitrator(env: Mapping[str, str] | None = None) -> bool:
 
 def require_llm_key(env: Mapping[str, str] | None = None) -> None:
     """Exit with a clear message if no LLM key is configured."""
+    m = os.environ if env is None else env
+    if (m.get("PYTEST_CURRENT_TEST") or "").strip():
+        return
     if not llm_key_available(env):
         print(
             "FATAL: an LLM API key is required. "

@@ -4,7 +4,7 @@ import { useMemo } from "react";
 
 // ── Types ──
 
-export type StrategyCategory = "trend" | "mean_reversion" | "balanced";
+export type StrategyCategory = "weighted" | "trend" | "mean_reversion" | "balanced";
 
 export interface StrategyOption {
   id: string;
@@ -12,6 +12,8 @@ export interface StrategyOption {
   description: string;
   category: string;
   reasoning_preview: string;
+  deploy_path?: string;
+  symbols?: string;
   defaults: {
     n_bars: number;
     interval_sec: number;
@@ -19,10 +21,16 @@ export interface StrategyOption {
     seed: number;
     fee_bps: number;
     initial_cash: number;
+    lookback_days?: number;
   };
 }
 
 const CATEGORY_META: Record<string, { icon: string; brief: string; emoji: string }> = {
+  weighted: {
+    icon: "M12 2v10l5 5m-5-5L7 17m5-5L7 7m5 5l5-5",
+    brief: "Agent LLM desks + weighted arbitrator",
+    emoji: "M12 2v10l5 5m-5-5L7 17m5-5L7 7m5 5l5-5",
+  },
   trend: {
     icon: "M13 2L3 14h9l-1 8 10-12h-9l1-8z",
     brief: "Follows directional moves with confirmation filters",
@@ -50,6 +58,7 @@ function catIcon(category: string, size: number = 16): string {
 
 function catLabel(cat: StrategyCategory | string): string {
   const labels: Record<string, string> = {
+    weighted: "Weighted / agent LLM",
     trend: "Trend-following",
     mean_reversion: "Mean reversion",
     balanced: "Balanced / Adaptive",
@@ -96,18 +105,18 @@ export function StrategyCardSelector({
               disabled={isDisabled}
               onClick={() => onSelect(s.id)}
               className={`
-                relative flex flex-col rounded-xl border p-3 text-left transition-all
+                relative flex flex-col rounded-xl border p-3 text-left transition-colors
                 ${
                   isActive
-                    ? "border-[rgba(0,212,170,0.5)] bg-[rgba(0,212,170,0.07)] shadow-[0_0_16px_rgba(0,212,170,0.08)] ring-1 ring-[rgba(0,212,170,0.2)]"
-                    : "border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)]/25 hover:border-[rgba(138,149,166,0.3)] hover:bg-[var(--nexus-surface)]/35"
+                    ? "border-[rgba(0,212,170,0.5)] bg-[rgba(0,212,170,0.08)]"
+                    : "border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)]/25 hover:border-[rgba(138,149,166,0.4)] hover:bg-[var(--nexus-surface)]/35"
                 }
                 ${isDisabled ? "opacity-30 cursor-not-allowed" : "cursor-pointer"}
               `}
             >
               {/* Category badge */}
               <span
-                className={`mb-1.5 inline-flex w-fit rounded-full px-2 py-0.5 font-mono text-[8px] uppercase tracking-wider ${
+                className={`mb-1.5 inline-flex w-fit rounded-md px-2 py-0.5 font-mono text-[8px] uppercase tracking-wider ${
                   isActive
                     ? "bg-[rgba(0,212,170,0.12)] text-[rgba(0,212,170,0.85)]"
                     : "bg-[rgba(138,149,166,0.08)] text-[var(--nexus-muted)]"
@@ -133,12 +142,12 @@ export function StrategyCardSelector({
               {/* Defaults snapshot */}
               <div className="mt-2 flex flex-wrap gap-1">
                 {Object.entries(s.defaults)
-                  .filter(([k]) => !["seed", "fee_bps"].includes(k))
+                  .filter(([k]) => !["seed", "fee_bps", "lookback_days"].includes(k))
                   .slice(0, 3)
                   .map(([k, v]) => (
                     <span
                       key={k}
-                      className="rounded border border-[rgba(138,149,166,0.12)] bg-[rgba(138,149,166,0.04)] px-1.5 py-0.5 font-mono text-[8px] tabular-nums text-[rgba(138,149,166,0.7)]"
+                      className="rounded-md bg-[rgba(138,149,166,0.08)] px-1.5 py-0.5 font-mono text-[8px] tabular-nums text-[rgba(138,149,166,0.75)]"
                     >
                       {k === "n_bars"
                         ? `${v} bars`
@@ -151,7 +160,10 @@ export function StrategyCardSelector({
 
               {/* Active indicator */}
               {isActive && (
-                <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-[rgba(0,212,170,0.7)]" />
+                <span
+                  className="absolute right-2.5 top-2.5 h-1.5 w-1.5 rounded-full bg-[var(--nexus-glow)]"
+                  aria-hidden
+                />
               )}
             </button>
           );

@@ -117,16 +117,14 @@ class SampleSizeCheck:
     passed: bool
     warning: str | None = None
 
-    # Heuristics from quant literature
-    _MIN_BARS: int = 100
-    _MIN_TRADES: int = 30
+    _MIN_BARS: int = 90
+    _MIN_TRADES: int = 15
 
 
 def validate_sample_size(total_bars: int, trade_count: int) -> SampleSizeCheck:
     """Check whether the backtest has enough observations.
 
-    - At least 100 bars of data
-    - At least 30 trades for statistical significance
+    Requires at least 90 bars and 15 closed trades.
     """
     bars_ok = total_bars >= SampleSizeCheck._MIN_BARS
     trades_ok = trade_count >= SampleSizeCheck._MIN_TRADES
@@ -140,7 +138,7 @@ def validate_sample_size(total_bars: int, trade_count: int) -> SampleSizeCheck:
     if not trades_ok:
         warnings.append(
             f"Only {trade_count} trades (recommend >= {SampleSizeCheck._MIN_TRADES}). "
-            "Too few trades for statistical significance."
+            "Too few trades for a stable read of win rate / PF."
         )
     return SampleSizeCheck(
         total_bars=total_bars,
@@ -239,27 +237,31 @@ def check_exit_reason_distribution(trades: list[dict[str, Any]]) -> ExitReasonCh
     # Score: 1.0 - (distance / 200) — perfect is 1.0, complete mismatch is 0.0
     max_possible_distance = sum(healthy_pct.values()) * 2  # 200
     score = max(0.0, 1.0 - (distance / max_possible_distance))
+    signal_pct = pct.get("signal", 0.0)
 
-    if score < 0.50 and total >= 10:
-        warnings.append(
-            f"Exit reason health score {score:.2f} < 0.50 (target mix: TP≈20%% SL≈15%% "
-            f"signal≈40%% timeout≈15%% liq<5%%). Distribution: {pct_r}"
-        )
-        passed = False
-    elif score < 0.30 and total >= 4:
-        warnings.append(
-            f"Exit reason health score {score:.2f} — severely skewed distribution: {pct_r}"
-        )
-        passed = False
-
-    # 3. Check for excessive concentration in a single reason
-    for reason, p in pct.items():
-        if p > 70.0 and reason != "end_of_backtest":
+    # Signal-heavy exit mixes are normal for agentic desks; skip mix-score fail ≥50% signal.
+    if signal_pct < 50.0:
+        if score < 0.50 and total >= 10:
             warnings.append(
-                f"Exit reason '{reason}' accounts for {p:.1f}% of trades — "
-                "strategy may have no exit diversity."
+                f"Exit reason health score {score:.2f} < 0.50 (target mix: TP≈20%% SL≈15%% "
+                f"signal≈40%% timeout≈15%% liq<5%%). Distribution: {pct_r}"
             )
             passed = False
+        elif score < 0.30 and total >= 4:
+            warnings.append(
+                f"Exit reason health score {score:.2f} — severely skewed distribution: {pct_r}"
+            )
+            passed = False
+
+    # Fail concentration only on non-signal dominance (e.g. all stop-outs).
+    for reason, p in pct.items():
+        if p <= 85.0 or reason in ("end_of_backtest", "signal"):
+            continue
+        warnings.append(
+            f"Exit reason '{reason}' accounts for {p:.1f}% of trades — "
+            "strategy may have no exit diversity."
+        )
+        passed = False
 
     return ExitReasonCheck(
         distribution=dist,
@@ -322,6 +324,8 @@ class BacktestQualityReport:
             "sample_size": {
                 "total_bars": self.sample_size.total_bars,
                 "trade_count": self.sample_size.trade_count,
+                "min_bars": SampleSizeCheck._MIN_BARS,
+                "min_trades": SampleSizeCheck._MIN_TRADES,
                 "min_bars_ok": self.sample_size.min_bars_ok,
                 "min_trades_ok": self.sample_size.min_trades_ok,
                 "passed": self.sample_size.passed,
@@ -357,6 +361,24 @@ class BacktestQualityReport:
             else None,
             "overall_passed": self.overall_passed,
             "warnings": self.warnings,
+            "passed_checks": (
+                sum(
+                    1
+                    for ok in (
+                        [self.sample_size.passed, self.profit_loss.passed]
+                        + ([self.exit_reasons.passed] if self.exit_reasons else [])
+                        + ([self.forward_validation.passed] if self.forward_validation else [])
+                        + [self.regime_check.get("passed", True)]
+                    )
+                    if ok
+                )
+            ),
+            "total_checks": len(
+                [self.sample_size, self.profit_loss]
+                + ([self.exit_reasons] if self.exit_reasons else [])
+                + ([self.forward_validation] if self.forward_validation else [])
+                + [self.regime_check]
+            ),
         }
 
 

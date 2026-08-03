@@ -49,6 +49,45 @@ def compute_buy_hold_benchmark(
     return out
 
 
+def compute_buy_hold_equity_curve(
+    *,
+    initial_cash_usd: float,
+    bars: Sequence[Sequence[Any]],
+    fee_bps: float,
+    slippage_bps: float,
+) -> list[dict[str, float]]:
+    """Mark-to-market buy-and-hold equity at each bar close (same fee model as engine)."""
+    if not bars or initial_cash_usd <= 0:
+        return []
+    try:
+        p0 = float(bars[0][4])
+    except (IndexError, TypeError, ValueError):
+        return []
+    if p0 <= 0:
+        return []
+
+    slip = float(slippage_bps) / 10000.0
+    fee_r = float(fee_bps) / 10000.0
+    buy_fill = p0 * (1.0 + slip)
+    denom = buy_fill * (1.0 + fee_r)
+    if denom <= 0:
+        return []
+    qty = float(initial_cash_usd) / denom
+
+    curve: list[dict[str, float]] = []
+    for row in bars:
+        try:
+            ts = int(row[0])
+            close = float(row[4])
+        except (IndexError, TypeError, ValueError):
+            continue
+        if close <= 0:
+            continue
+        equity = close * qty
+        curve.append({"ts": ts, "equity": round(equity, 4)})
+    return curve
+
+
 def compute_equal_weight_buy_hold_benchmark(
     *,
     initial_cash_usd: float,
@@ -94,4 +133,8 @@ def compute_equal_weight_buy_hold_benchmark(
     return out
 
 
-__all__ = ["compute_buy_hold_benchmark", "compute_equal_weight_buy_hold_benchmark"]
+__all__ = [
+    "compute_buy_hold_benchmark",
+    "compute_buy_hold_equity_curve",
+    "compute_equal_weight_buy_hold_benchmark",
+]

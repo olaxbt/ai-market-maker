@@ -1,5 +1,5 @@
-import { PlatformLoginPage } from "@/features/platform/PlatformLoginPage";
+import { redirect } from "next/navigation";
 
-export default function Page() {
-  return <PlatformLoginPage />;
+export default function PlatformLoginRedirectPage() {
+  redirect("/console?view=research");
 }

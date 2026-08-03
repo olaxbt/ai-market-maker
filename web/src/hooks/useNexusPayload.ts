@@ -4,35 +4,47 @@ import { useEffect, useState } from "react";
 import { fetchNexusPayloadWithSource } from "@/lib/api/traces";
 import type { NexusPayload } from "@/types/nexus-payload";
 import mockTraces from "@/data/mock-traces.json";
+import { getFlowApiOrigin } from "@/lib/flowApiOrigin";
 
-function resolveFlowWsUrl(): string {
+function resolveFlowWsUrl(runId: string): string {
+  const rid = (runId || "latest").trim() || "latest";
   const explicit = process.env.NEXT_PUBLIC_FLOW_WS_URL?.trim();
   if (explicit) {
-    if (explicit.includes("/ws/")) return explicit;
-    return `${explicit.replace(/\/$/, "")}/ws/runs/latest`;
+    if (explicit.includes("/ws/runs/")) {
+      return explicit.replace(/\/ws\/runs\/[^/?#]+/, `/ws/runs/${encodeURIComponent(rid)}`);
+    }
+    if (explicit.includes("/ws/")) {
+      const base = explicit.replace(/\/$/, "");
+      return `${base.replace(/\/ws\/.*$/, "")}/ws/runs/${encodeURIComponent(rid)}`;
+    }
+    return `${explicit.replace(/\/$/, "")}/ws/runs/${encodeURIComponent(rid)}`;
   }
 
   const apiBase = process.env.NEXT_PUBLIC_FLOW_API_BASE_URL?.trim();
   if (apiBase) {
     const wsBase = apiBase.replace(/^http:\/\//, "ws://").replace(/^https:\/\//, "wss://");
-    return `${wsBase.replace(/\/$/, "")}/ws/runs/latest`;
+    return `${wsBase.replace(/\/$/, "")}/ws/runs/${encodeURIComponent(rid)}`;
   }
 
-  return "ws://127.0.0.1:8001/ws/runs/latest";
+  return `ws://127.0.0.1:8001/ws/runs/${encodeURIComponent(rid)}`;
 }
 
-export function useNexusPayload() {
+/**
+ * @param runId Flow run to follow. Live desk should use `latest-paper` or a concrete
+ * `run-…` id. Research panels fetch `/runs/{bt-…}` themselves — do not point Live
+ * at `bt-*` so paper and backtest can run in parallel without stream theft.
+ */
+export function useNexusPayload(runId: string = "latest") {
+  const followId = (runId || "latest").trim() || "latest";
   const [payload, setPayload] = useState<NexusPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
   const [wsConnected, setWsConnected] = useState(false);
-  /** `mock` | `mock-fallback` | `mock-offline` | `live` | null — from /api/traces, client mock, or WS */
   const [traceDataSource, setTraceDataSource] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    // Live Flow by default. Set NEXT_PUBLIC_USE_MOCK=1 for bundled demo topology (no Flow / no LLM required).
     const useMock = process.env.NEXT_PUBLIC_USE_MOCK?.trim() === "1";
     if (useMock) {
       setPayload(mockTraces as NexusPayload);
@@ -45,7 +57,13 @@ export function useNexusPayload() {
       };
     }
 
-    fetchNexusPayloadWithSource()
+    setLoading(true);
+    const httpUrl =
+      followId === "latest"
+        ? "/api/traces"
+        : `${getFlowApiOrigin()}/runs/${encodeURIComponent(followId)}/payload?soft=true`;
+
+    fetchNexusPayloadWithSource(httpUrl)
       .then(({ payload: data, dataSource }) => {
         if (!cancelled) {
           setPayload(data);
@@ -55,21 +73,19 @@ export function useNexusPayload() {
       })
       .catch((e) => {
         if (!cancelled) {
-          setPayload(mockTraces as NexusPayload);
-          setTraceDataSource("mock-offline");
-          setError(null);
+          setPayload(null);
+          setTraceDataSource("idle");
+          setError(e instanceof Error ? e : new Error(String(e)));
         }
       })
       .finally(() => {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       });
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [followId]);
 
   useEffect(() => {
     const useMock = process.env.NEXT_PUBLIC_USE_MOCK?.trim() === "1";
@@ -78,8 +94,7 @@ export function useNexusPayload() {
     let closed = false;
     let socket: WebSocket | null = null;
     let reconnectTimer: number | null = null;
-
-    const wsEndpoint = resolveFlowWsUrl();
+    const wsEndpoint = resolveFlowWsUrl(followId);
     let attempt = 0;
 
     const cleanup = () => {
@@ -138,7 +153,7 @@ export function useNexusPayload() {
       setWsConnected(false);
       cleanup();
     };
-  }, []);
+  }, [followId]);
 
-  return { payload, loading, error, wsConnected, traceDataSource };
+  return { payload, loading, error, wsConnected, traceDataSource, followRunId: followId };
 }

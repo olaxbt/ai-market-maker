@@ -84,14 +84,19 @@ export function saveStrategy(
 
   const summary = metrics
     ? {
-        total_return_pct: metrics.sharpe > 0
-          ? ((metrics.final_equity / metrics.initial_cash) - 1) * 100
-          : 0,
-        sharpe: metrics.sharpe,
-        max_drawdown: metrics.max_drawdown,
-        win_rate: metrics.win_rate,
+        total_return_pct:
+          typeof metrics.total_return_pct === "number"
+            ? metrics.total_return_pct
+            : typeof metrics.final_equity === "number" &&
+                typeof metrics.initial_cash === "number" &&
+                metrics.initial_cash > 0
+              ? (metrics.final_equity / metrics.initial_cash - 1) * 100
+              : 0,
+        sharpe: metrics.sharpe ?? 0,
+        max_drawdown: metrics.max_drawdown_pct ?? metrics.max_drawdown ?? 0,
+        win_rate: metrics.win_rate_pct ?? metrics.win_rate ?? 0,
         profit_factor: metrics.profit_factor ?? 0,
-        total_trades: metrics.steps,
+        total_trades: metrics.total_trades ?? metrics.steps ?? 0,
       }
     : null;
 

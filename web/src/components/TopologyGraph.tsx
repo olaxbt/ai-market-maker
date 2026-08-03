@@ -13,7 +13,9 @@ interface TopologyGraphProps {
 }
 
 const statusColors = {
-  COMPLETED: "border-[color:var(--nexus-topology-idle-border)] text-[var(--nexus-success)]",
+  // Completed stays visible (not only ACTIVE glow) so mid-pipeline stages don't look "off".
+  COMPLETED:
+    "border-[rgba(0,212,170,0.28)] text-[var(--nexus-success)] bg-[rgba(0,212,170,0.04)]",
   ACTIVE: "border-[var(--nexus-glow)]/65 text-[var(--nexus-glow)] flow-node-active",
   PENDING: "border-[color:var(--nexus-topology-idle-border)] text-[var(--nexus-muted)]",
 };
@@ -67,15 +69,28 @@ export function TopologyGraph({ nodes, edges, selectedNodeId, onSelectNode }: To
   return (
     <div className="flex flex-col">
       <div className="text-[10px] uppercase tracking-widest text-[var(--nexus-muted)] mb-3">
-        Topology · nodes & edges
+        Topology · agent stages
       </div>
       <div className="relative flex flex-col gap-1">
         {layers.map((row, layerIdx) => (
           <div key={`layer-${layerIdx}`} className="flex flex-col gap-1">
             <div className="flex items-center gap-2 px-0.5">
-              <span className="text-[9px] font-mono uppercase tracking-wider text-[var(--nexus-muted)]">
+              <span
+                className={`text-[9px] font-mono uppercase tracking-wider ${
+                  row.some((n) => n.status === "ACTIVE")
+                    ? "text-[var(--nexus-glow)]"
+                    : row.every((n) => n.status === "COMPLETED")
+                      ? "text-[var(--nexus-success)]/80"
+                      : "text-[var(--nexus-muted)]"
+                }`}
+              >
                 Stage {layerIdx + 1}
                 {row.length > 1 ? ` · ${row.length} parallel` : ""}
+                {row.some((n) => n.status === "ACTIVE")
+                  ? " · running"
+                  : row.every((n) => n.status === "COMPLETED")
+                    ? " · done"
+                    : ""}
               </span>
             </div>
             <div className="flex flex-wrap gap-2">

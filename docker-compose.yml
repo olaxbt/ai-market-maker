@@ -1,19 +1,139 @@
+# Postgres + API + worker + web. Copy `.env.example` → `.env` first.
+# Optional profiles: `with-futu` (OpenD), `engine` (live loop)
+
 services:
   db:
     image: postgres:16
     environment:
       POSTGRES_DB: aimm
       POSTGRES_USER: aimm
-      POSTGRES_PASSWORD: aimm
-    ports:
-      - "5432:5432"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aimm}
     volumes:
       - aimm_pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U aimm -d aimm"]
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 20
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://aimm:aimm@db:5432/aimm}
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://aimm:aimm@db:5432/aimm}
+      AIMM_DB_AUTOCREATE: "0"
+      AIMM_AUTH_SECRET: ${AIMM_AUTH_SECRET:-dev-secret-change-me}
+      AIMM_API_KEY: ${AIMM_API_KEY:-}
+      AIMM_CORS_ORIGINS: ${AIMM_CORS_ORIGINS:-*}
+      # LLM keys duplicated here for compose variable interpolation.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      AIMM_LLM_BASE_URL: ${AIMM_LLM_BASE_URL:-}
+      AIMM_LLM_MODEL: ${AIMM_LLM_MODEL:-}
+      # Futu optional — OpenD on host: host.docker.internal; in compose: futu-opend
+      FUTU_OPEND_HOST: ${FUTU_OPEND_HOST:-host.docker.internal}
+      FUTU_OPEND_QUOTE_PORT: ${FUTU_OPEND_QUOTE_PORT:-11111}
+      FUTU_OPEND_TRADE_PORT: ${FUTU_OPEND_TRADE_PORT:-11112}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./.runs:/app/.runs
+      - ./config:/app/config:ro
+      - ./scripts:/app/scripts:ro
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    env_file:
+      - .env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://aimm:aimm@db:5432/aimm}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      AIMM_LLM_BASE_URL: ${AIMM_LLM_BASE_URL:-}
+      AIMM_LLM_MODEL: ${AIMM_LLM_MODEL:-}
+      FUTU_OPEND_HOST: ${FUTU_OPEND_HOST:-host.docker.internal}
+      FUTU_OPEND_QUOTE_PORT: ${FUTU_OPEND_QUOTE_PORT:-11111}
+      FUTU_OPEND_TRADE_PORT: ${FUTU_OPEND_TRADE_PORT:-11112}
+      PLATFORM_WORKER_AUTO_EXECUTE: ${PLATFORM_WORKER_AUTO_EXECUTE:-0}
+      PLATFORM_WORKER_INTERVAL_SEC: ${PLATFORM_WORKER_INTERVAL_SEC:-2.0}
+      PLATFORM_WORKER_BATCH: ${PLATFORM_WORKER_BATCH:-200}
+      PLATFORM_WORKER_CURSOR: ${PLATFORM_WORKER_CURSOR:-default}
+      PLATFORM_SYNC_LOCAL_BACKTESTS: ${PLATFORM_SYNC_LOCAL_BACKTESTS:-0}
+      PLATFORM_SYNC_LOCAL_BACKTESTS_EVERY_SEC: ${PLATFORM_SYNC_LOCAL_BACKTESTS_EVERY_SEC:-10}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - ./.runs:/app/.runs
+      - ./config:/app/config:ro
+
+  engine:
+    profiles: ["engine"]
+    image: henry-ai-market-maker-api
+    env_file:
+      - .env
+    environment:
+      MODE: ${MODE:-paper}
+      TICKER: ${TICKER:-BTC/USDT}
+      STRATEGY_INTERVAL_SEC: ${STRATEGY_INTERVAL_SEC:-900}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+    depends_on:
+      - api
+    volumes:
+      - ./.runs:/app/.runs
+    command: >
+      sh -lc "while true; do python src/main.py --mode \"$$MODE\" --ticker \"$$TICKER\" || true; sleep \"$$STRATEGY_INTERVAL_SEC\"; done"
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    environment:
+      FLOW_API_BASE_URL: http://api:8001
+      AIMM_API_KEY: ${AIMM_API_KEY:-}
+      NODE_ENV: production
+      FLOW_ALLOW_MOCK_FALLBACK: "0"
+      NEXT_PUBLIC_FLOW_ALLOW_MOCK_FALLBACK: "0"
+    depends_on:
+      - api
+    ports:
+      - "3000:3000"
 
   futu-opend:
     profiles: ["with-futu"]
@@ -22,6 +142,7 @@ services:
     ports:
       - "${FUTU_OPEND_QUOTE_PORT:-11111}:11111"
       - "${FUTU_OPEND_TRADE_PORT:-11112}:11112"
+    # When this profile is up, set FUTU_OPEND_HOST=futu-opend in .env.
 
 volumes:
   aimm_pgdata:

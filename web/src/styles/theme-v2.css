@@ -1,11 +1,9 @@
 /**
- * UI v2 theme (parity with `web-v2/src/styles/theme.css`).
- *
- * Enable with `html.theme-v2` (see ThemeProvider). Maps semantic tokens → legacy `--nexus-*`
- * so existing components pick up the new palette without a full rewrite.
+ * UI theme tokens. Enable with `html.theme-v2` (see ThemeProvider).
+ * Maps semantic tokens → `--nexus-*` so existing components pick up the palette.
  */
 
-/* Dark palette (matches web-v2 `.dark`) */
+/* Dark palette */
 html.theme-v2:not(.light) {
   --v2-background: oklch(0.145 0 0);
   --v2-foreground: oklch(0.985 0 0);
@@ -67,7 +65,7 @@ html.theme-v2:not(.light) {
   --nexus-hub-frame: var(--v2-border);
 }
 
-/* Light palette (matches web-v2 `:root`) */
+/* Light palette */
 html.theme-v2.light {
   --v2-background: #ffffff;
   --v2-foreground: oklch(0.145 0 0);

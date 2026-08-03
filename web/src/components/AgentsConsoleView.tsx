@@ -219,9 +219,9 @@ export function AgentsConsoleView({
               <p className="text-[10px] text-[var(--nexus-muted)]">Select an agent.</p>
             </div>
             <div className="hidden min-h-[200px] flex-1 flex-col items-center justify-center gap-2 bg-[var(--nexus-panel)]/35 p-6 text-center lg:flex">
-              <p className="text-xs font-medium text-[var(--nexus-text)]">No agent selected</p>
-              <p className="max-w-[200px] text-[10px] font-mono text-[var(--nexus-muted)]">
-                Detail panel · empty
+              <p className="text-xs font-medium text-[var(--nexus-text)]">Pick an agent</p>
+              <p className="max-w-[220px] text-[10px] font-mono text-[var(--nexus-muted)]">
+                Browse the roster and prompts — this is the desk setup.
               </p>
             </div>
           </>

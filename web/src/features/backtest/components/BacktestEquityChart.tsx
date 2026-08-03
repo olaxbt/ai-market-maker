@@ -22,7 +22,7 @@ function formatTime(tsMs: number): string {
   }
 }
 
-type Row = EquityPoint & { label: string };
+type Row = EquityPoint & { label: string; benchmark?: number | null };
 
 type FillMarkerShapeProps = {
   cx?: number;
@@ -36,12 +36,43 @@ export function BacktestEquityChart({
   points,
   initialCash,
   trades = [],
+  benchmark,
+  benchmarkLabel = "Buy & hold",
+  height = 320,
 }: {
   points: EquityPoint[];
   initialCash: number;
   trades?: TradeRow[];
+  benchmark?: number[] | null;
+  benchmarkLabel?: string;
+  height?: number;
 }) {
-  if (!points.length) {
+  const benchLen = Array.isArray(benchmark) ? benchmark.length : 0;
+  const pointLen = points.length;
+  const normalized = points.map((p, idx) => {
+    const anyP = p as EquityPoint & { ts?: number };
+    const tsMs =
+      typeof anyP.ts_ms === "number"
+        ? anyP.ts_ms
+        : typeof anyP.ts === "number"
+          ? anyP.ts
+          : 0;
+    const step = typeof anyP.step === "number" && Number.isFinite(anyP.step) ? anyP.step : idx;
+    let bench: number | null = null;
+    if (Array.isArray(benchmark) && benchLen > 0) {
+      let bi = idx;
+      if (benchLen !== pointLen && pointLen > 1 && benchLen > 1) {
+        const offset = Math.max(0, pointLen - benchLen);
+        bi = idx - offset;
+      }
+      if (bi >= 0 && bi < benchLen && typeof benchmark[bi] === "number" && Number.isFinite(benchmark[bi])) {
+        bench = Number(benchmark[bi]);
+      }
+    }
+    return { ...anyP, step, ts_ms: tsMs, equity: Number(anyP.equity), benchmark: bench };
+  });
+
+  if (!normalized.length) {
     return (
       <div className="flex h-[280px] items-center justify-center rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-bg)] font-mono text-[11px] text-[var(--nexus-muted)]">
         No equity points (run may have failed or data unavailable).
@@ -49,13 +80,14 @@ export function BacktestEquityChart({
     );
   }
 
-  const data: Row[] = points.map((p) => ({
+  const data: Row[] = normalized.map((p) => ({
     ...p,
     label: `Bar ${p.step + 1}`,
   }));
+  const hasBenchmark = data.some((d) => typeof d.benchmark === "number");
 
   const equityByStep = new Map<number, number>();
-  for (const p of points) equityByStep.set(p.step, p.equity);
+  for (const p of normalized) equityByStep.set(p.step, p.equity);
 
   const markers = (trades ?? [])
     .filter((t) => t && (t.side === "buy" || t.side === "sell") && typeof t.step === "number")
@@ -74,7 +106,7 @@ export function BacktestEquityChart({
     .filter((m): m is NonNullable<typeof m> => Boolean(m));
 
   return (
-    <div className="h-[320px] w-full min-w-0">
+    <div className="w-full min-w-0" style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 4 }}>
           <CartesianGrid stroke="rgba(138,149,166,0.12)" strokeDasharray="3 3" />
@@ -92,7 +124,7 @@ export function BacktestEquityChart({
                 ? `${(v / 1e6).toFixed(2)}M`
                 : v >= 1e3
                   ? `${(v / 1e3).toFixed(1)}k`
-                  : String(v)
+                  : String(Math.round(v))
             }
             width={56}
           />
@@ -113,7 +145,13 @@ export function BacktestEquityChart({
               if (name === "equity") {
                 return [
                   Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 }),
-                  "Equity (sim)",
+                  "Strategy",
+                ];
+              }
+              if (name === "benchmark") {
+                return [
+                  Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 }),
+                  benchmarkLabel,
                 ];
               }
               return [value, name];
@@ -137,6 +175,18 @@ export function BacktestEquityChart({
             strokeWidth={2}
             name="equity"
           />
+          {hasBenchmark ? (
+            <Line
+              type="monotone"
+              dataKey="benchmark"
+              stroke="rgba(245,158,11,0.9)"
+              dot={false}
+              strokeWidth={1.5}
+              strokeDasharray="4 3"
+              name="benchmark"
+              connectNulls
+            />
+          ) : null}
           {markers.length ? (
             <Scatter
               data={markers}

@@ -26,11 +26,11 @@ router = APIRouter(tags=["deploy"])
 
 _DEFAULT_DEPLOY_PATH = "config/deploy.active.json"
 _AGENT_WEIGHTS_DEFAULT: dict[str, float] = {
-    "1.1": 0.05,  # monetary_sentinel
+    "1.1": 0.15,  # monetary_sentinel
     "1.2": 0.05,  # news_narrative_miner
-    "2.1": 0.25,  # pattern_recognition_bot
+    "2.1": 0.20,  # pattern_recognition_bot
     "2.2": 0.10,  # statistical_alpha_engine
-    "2.3": 0.30,  # technical_ta_engine
+    "2.3": 0.55,  # technical_ta_engine
     "3.1": 0.05,  # retail_hype_tracker
     "3.2": 0.05,  # pro_bias_analyst
     "4.1": 0.05,  # whale_behavior_analyst

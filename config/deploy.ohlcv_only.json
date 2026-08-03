@@ -1,0 +1,14 @@
+{
+  "profile": {
+    "profile_id": "ohlcv_only"
+  },
+  "effective_weights": {
+    "2.3": 0.75,
+    "2.1": 0.25
+  },
+  "execution": {
+    "arbitrator_mode": "agent_llm",
+    "allows_short": true,
+    "leverage": 1.5
+  }
+}

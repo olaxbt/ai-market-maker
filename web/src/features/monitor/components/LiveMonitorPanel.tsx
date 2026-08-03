@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { NexusPayload } from "@/types/nexus-payload";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type {
   BarsResponse,
   EquitySeriesResponse,
   SummaryPayload,
-  TradesResponse,
 } from "@/types/backtest";
+import { EmptySessionPanel } from "@/components/EmptySessionPanel";
 import { getFlowApiOrigin } from "@/lib/flowApiOrigin";
 import {
   Area,
@@ -29,6 +28,9 @@ type PortfolioHealth = {
   balances?: Record<string, number>;
   positions?: unknown[];
   risk_caps?: Record<string, unknown>;
+  free_cash_usdt?: number;
+  margin_locked_usdt?: number;
+  equity_usdt?: number;
   error?: string;
   hint?: string;
 };
@@ -125,11 +127,6 @@ function fmtDrawdownPct(x: number | null | undefined, digits = 2): string {
   return `${x.toFixed(digits)}%`;
 }
 
-function fmtMetric(x: number | null | undefined, digits = 3): string {
-  if (x == null || !Number.isFinite(x)) return "—";
-  return x.toFixed(digits);
-}
-
 type BalancePoint = { ts: number; totalUsd: number; usdt: number };
 
 function totalFromBalances(balances: Record<string, number>): number {
@@ -142,14 +139,6 @@ function totalFromBalances(balances: Record<string, number>): number {
   return total;
 }
 
-type DemoPoint = {
-  ts: number;
-  totalUsd: number;
-  usdt: number;
-  btc: number;
-  eth: number;
-};
-
 type TapeEntry = {
   seq: number;
   kind: string;
@@ -157,27 +146,6 @@ type TapeEntry = {
   ts: string;
   message: string;
 };
-
-function demoSeries(nowTs: number, points = 96): DemoPoint[] {
-  const out: DemoPoint[] = [];
-  const stepMs = 5 * 60 * 1000;
-  let total = 10000;
-  let usdt = 7200;
-  let btc = 0.035;
-  let eth = 0.55;
-  for (let i = points - 1; i >= 0; i--) {
-    const ts = nowTs - i * stepMs;
-    const t = (points - i) / points;
-    const drift = 0.00035 * Math.sin(t * Math.PI * 2.4) + 0.00015 * Math.cos(t * Math.PI * 5.2);
-    const shock = 0.0012 * Math.sin(t * Math.PI * 0.9) * Math.cos(t * Math.PI * 3.1);
-    total = total * (1 + drift + shock);
-    usdt = Math.max(0, usdt * (1 + 0.00005 * Math.cos(t * Math.PI * 3)));
-    btc = Math.max(0, btc * (1 + 0.0009 * Math.sin(t * Math.PI * 2)));
-    eth = Math.max(0, eth * (1 + 0.0011 * Math.cos(t * Math.PI * 1.6)));
-    out.push({ ts, totalUsd: total, usdt, btc, eth });
-  }
-  return out;
-}
 
 function pickString(obj: unknown, keys: string[]): string | null {
   if (!obj || typeof obj !== "object") return null;
@@ -204,61 +172,67 @@ function pickNumber(obj: unknown, keys: string[]): number | null {
 }
 
 const MONITOR_KPI_SHELL = [
-  "border-[color:var(--nexus-card-stroke)] ring-1 ring-cyan-500/25 bg-[linear-gradient(135deg,rgba(34,211,238,0.14),rgba(6,8,11,0.55))] shadow-[0_0_20px_rgba(34,211,238,0.06)]",
-  "border-[color:var(--nexus-card-stroke)] ring-1 ring-blue-500/25 bg-[linear-gradient(135deg,rgba(59,130,246,0.14),rgba(6,8,11,0.55))] shadow-[0_0_20px_rgba(59,130,246,0.06)]",
-  "border-[color:var(--nexus-card-stroke)] ring-1 ring-violet-500/25 bg-[linear-gradient(135deg,rgba(139,92,246,0.14),rgba(6,8,11,0.55))] shadow-[0_0_20px_rgba(139,92,246,0.06)]",
-  "border-[color:var(--nexus-card-stroke)] ring-1 ring-emerald-500/25 bg-[linear-gradient(135deg,rgba(52,211,153,0.12),rgba(6,8,11,0.55))] shadow-[0_0_20px_rgba(52,211,153,0.06)]",
-  "border-[color:var(--nexus-card-stroke)] ring-1 ring-amber-500/25 bg-[linear-gradient(135deg,rgba(245,158,11,0.12),rgba(6,8,11,0.55))] shadow-[0_0_20px_rgba(245,158,11,0.06)]",
-  "border-[color:var(--nexus-card-stroke)] ring-1 ring-fuchsia-500/25 bg-[linear-gradient(135deg,rgba(217,70,239,0.12),rgba(6,8,11,0.55))] shadow-[0_0_20px_rgba(217,70,239,0.06)]",
-  "border-[color:var(--nexus-card-stroke)] ring-1 ring-sky-500/20 bg-[linear-gradient(135deg,rgba(14,165,233,0.12),rgba(6,8,11,0.55))] shadow-[0_0_20px_rgba(14,165,233,0.05)]",
+  "ring-1 ring-cyan-500/30 bg-[linear-gradient(135deg,rgba(34,211,238,0.14),rgba(6,8,11,0.55))]",
+  "ring-1 ring-blue-500/30 bg-[linear-gradient(135deg,rgba(59,130,246,0.14),rgba(6,8,11,0.55))]",
+  "ring-1 ring-violet-500/30 bg-[linear-gradient(135deg,rgba(139,92,246,0.14),rgba(6,8,11,0.55))]",
+  "ring-1 ring-emerald-500/30 bg-[linear-gradient(135deg,rgba(52,211,153,0.12),rgba(6,8,11,0.55))]",
+  "ring-1 ring-amber-500/30 bg-[linear-gradient(135deg,rgba(245,158,11,0.12),rgba(6,8,11,0.55))]",
+  "ring-1 ring-fuchsia-500/30 bg-[linear-gradient(135deg,rgba(217,70,239,0.12),rgba(6,8,11,0.55))]",
+  "ring-1 ring-sky-500/25 bg-[linear-gradient(135deg,rgba(14,165,233,0.12),rgba(6,8,11,0.55))]",
 ] as const;
 
 export function LiveMonitorPanel({
-  payload,
-  fallbackRunId,
+  sessionActive = false,
 }: {
-  payload: NexusPayload | null;
-  fallbackRunId?: string | null;
+  sessionActive?: boolean;
 }) {
   const [health, setHealth] = useState<PortfolioHealth | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [history, setHistory] = useState<BalancePoint[]>([]);
-  const [replaySummary, setReplaySummary] = useState<SummaryPayload | null>(null);
-  const [replayEquity, setReplayEquity] = useState<EquitySeriesResponse | null>(null);
-  const [replayTrades, setReplayTrades] = useState<TradesResponse | null>(null);
-  const [replayBars, setReplayBars] = useState<BarsResponse | null>(null);
-  const [replayErr, setReplayErr] = useState<string | null>(null);
-  const [mode, setMode] = useState<"live" | "replay">("live");
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetMsg, setResetMsg] = useState<string | null>(null);
+
+  const refreshHealth = useCallback(async () => {
+    const res = await fetch("/api/pm/portfolio-health", { cache: "no-store" });
+    const data = (await res.json().catch(() => ({}))) as PortfolioHealth;
+    if (!res.ok) {
+      setErr(typeof data.error === "string" ? data.error : "Failed to load portfolio health");
+      return;
+    }
+    setErr(null);
+    setHealth(data);
+    const equity =
+      typeof data.equity_usdt === "number"
+        ? data.equity_usdt
+        : typeof data.balances?.USDT === "number"
+          ? data.balances.USDT
+          : 0;
+    const free =
+      typeof data.free_cash_usdt === "number"
+        ? data.free_cash_usdt
+        : typeof data.balances?.USDT === "number"
+          ? data.balances.USDT
+          : 0;
+    const nowTs = typeof data.ts === "number" ? data.ts : Math.floor(Date.now() / 1000);
+    setHistory((prev) => {
+      const next = [...prev, { ts: nowTs, totalUsd: equity, usdt: free }];
+      const trimmed = next.slice(-140);
+      const out: BalancePoint[] = [];
+      const seen = new Set<number>();
+      for (const p of trimmed) {
+        if (seen.has(p.ts)) continue;
+        out.push(p);
+        seen.add(p.ts);
+      }
+      return out;
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     const tick = async () => {
       try {
-        const res = await fetch("/api/pm/portfolio-health", { cache: "no-store" });
-        const data = (await res.json().catch(() => ({}))) as PortfolioHealth;
-        if (cancelled) return;
-        if (!res.ok) {
-          setErr(typeof data.error === "string" ? data.error : "Failed to load portfolio health");
-          return;
-        }
-        setErr(null);
-        setHealth(data);
-        const b = data?.balances ?? {};
-        const usdt = typeof b.USDT === "number" ? b.USDT : 0;
-        const totalUsd = totalFromBalances(b);
-        const nowTs = typeof data.ts === "number" ? data.ts : Date.now();
-        setHistory((prev) => {
-          const next = [...prev, { ts: nowTs, totalUsd, usdt }];
-          const trimmed = next.slice(-140);
-          const out: BalancePoint[] = [];
-          const seen = new Set<number>();
-          for (const p of trimmed) {
-            if (seen.has(p.ts)) continue;
-            out.push(p);
-            seen.add(p.ts);
-          }
-          return out;
-        });
+        await refreshHealth();
       } catch {
         if (!cancelled) setErr("Failed to load portfolio health");
       }
@@ -269,129 +243,99 @@ export function LiveMonitorPanel({
       cancelled = true;
       window.clearInterval(id);
     };
-  }, []);
+  }, [refreshHealth]);
 
-  useEffect(() => {
-    const rid = (fallbackRunId || "").trim();
-    if (!rid) return;
-    let cancelled = false;
-    const load = async () => {
-      try {
-        setReplayErr(null);
-        const base = getFlowApiOrigin();
-        const [sRes, eRes, tRes, bRes] = await Promise.all([
-          fetch(`${base}/backtests/${encodeURIComponent(rid)}/summary`, { cache: "no-store" }),
-          fetch(`${base}/backtests/${encodeURIComponent(rid)}/equity?max_points=2500`, {
-            cache: "no-store",
-          }),
-          fetch(`${base}/backtests/${encodeURIComponent(rid)}/trades?limit=2000`, {
-            cache: "no-store",
-          }),
-          fetch(`${base}/backtests/${encodeURIComponent(rid)}/bars?max_points=2500`, {
-            cache: "no-store",
-          }),
-        ]);
-        const s = (await sRes.json().catch(() => ({}))) as SummaryPayload;
-        const e = (await eRes.json().catch(() => ({}))) as EquitySeriesResponse;
-        const t = (await tRes.json().catch(() => ({}))) as TradesResponse;
-        const b = (await bRes.json().catch(() => ({}))) as BarsResponse;
-        if (cancelled) return;
-        if (!sRes.ok)
-          throw new Error(
-            (s as unknown as { detail?: string }).detail || "Failed to load backtest summary",
-          );
-        setReplaySummary(s);
-        if (eRes.ok) setReplayEquity(e);
-        if (tRes.ok) setReplayTrades(t);
-        if (bRes.ok) setReplayBars(b);
-      } catch (ex) {
-        if (!cancelled) setReplayErr(ex instanceof Error ? ex.message : String(ex));
+  const resetBook = useCallback(async () => {
+    if (sessionActive) {
+      setResetMsg("Stop the live session before resetting the book.");
+      return;
+    }
+    setResetBusy(true);
+    setResetMsg(null);
+    try {
+      const res = await fetch(`${getFlowApiOrigin()}/engine/paper/book/reset`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = (await res.json().catch(() => ({}))) as { detail?: string };
+      if (!res.ok) {
+        setResetMsg(typeof data.detail === "string" ? data.detail : "Reset failed");
+        return;
       }
-    };
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [fallbackRunId]);
-
-  useEffect(() => {
-    const rid = (fallbackRunId || "").trim();
-    if (!rid) return;
-    setMode("replay");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fallbackRunId]);
+      setHistory([]);
+      setResetMsg("Book restored to starting capital.");
+      await refreshHealth();
+    } catch (e) {
+      setResetMsg(e instanceof Error ? e.message : "Reset failed");
+    } finally {
+      setResetBusy(false);
+    }
+  }, [refreshHealth, sessionActive]);
 
   const balances = useMemo(() => health?.balances ?? {}, [health?.balances]);
-  const usdt = typeof balances.USDT === "number" ? balances.USDT : null;
-  const totalStable = useMemo(() => totalFromBalances(balances), [balances]);
-  const lastMsg = payload?.message_log?.[0]?.message ?? "—";
-  const runId = payload?.metadata?.run_id ?? "—";
-  const ticker = payload?.metadata?.ticker ?? "—";
-  const universeCount =
-    payload?.metadata?.universe_size ??
-    (Array.isArray(payload?.metadata?.universe_symbols)
-      ? payload?.metadata?.universe_symbols.length
-      : null);
-  const status = payload?.metadata?.status ?? "—";
-
-  const replayEnabled = Boolean(replaySummary && replayEquity?.points?.length);
-  const useReplay = mode === "replay" && replayEnabled;
-
-  const replayCards = useMemo(() => {
-    if (!replayEnabled) return null;
-    const rid = replaySummary?.run_id ?? (fallbackRunId || "—");
-    const pts = replayEquity?.points?.length ?? 0;
-    const last = replayEquity?.points?.[replayEquity.points.length - 1];
-    const eq = typeof last?.equity === "number" ? last.equity : null;
-    const cash =
-      typeof (last as unknown as { cash?: unknown })?.cash === "number"
-        ? ((last as unknown as { cash: number }).cash as number)
+  const equityUsd =
+    typeof health?.equity_usdt === "number"
+      ? health.equity_usdt
+      : typeof balances.USDT === "number"
+        ? balances.USDT
         : null;
-    const sharpe = replaySummary?.metrics?.sharpe;
-    return [
-      { label: "Replay run", value: rid, tone: "text-[#22d3ee]" },
-      {
-        label: "Sharpe (ann.)",
-        value: fmtMetric(typeof sharpe === "number" ? sharpe : null, 3),
-        tone: "text-[#fbbf24]",
-      },
-      { label: "Desk", value: "Primary", tone: "text-[#a78bfa]" },
-      { label: "Points", value: String(pts), tone: "text-[var(--nexus-muted)]" },
-      { label: "Equity", value: fmtUsd(eq), tone: "text-[#3b82f6]" },
-      { label: "Cash", value: fmtUsd(cash), tone: "text-[#00d4aa]" },
-    ];
-  }, [
-    fallbackRunId,
-    replayEnabled,
-    replayEquity?.points,
-    replaySummary?.metrics?.sharpe,
-    replaySummary?.run_id,
-  ]);
+  const freeCash =
+    typeof health?.free_cash_usdt === "number" ? health.free_cash_usdt : null;
+  const marginLocked =
+    typeof health?.margin_locked_usdt === "number" ? health.margin_locked_usdt : null;
+  const usdt = equityUsd;
+  const totalStable = equityUsd;
+  const status = sessionActive ? "active" : "idle";
+
+  const useReplay = false;
+  const replayEnabled = false;
+  const replaySummary = null as SummaryPayload | null;
+  const replayEquity = null as EquitySeriesResponse | null;
+  const replayBars = null as BarsResponse | null;
 
   const cards = useMemo(
     () => [
-      { label: "Run", value: runId, tone: "text-[#22d3ee]" },
       {
-        label: "Sharpe (ann.)",
-        value: fmtMetric(
-          typeof payload?.metadata?.kpis?.sharpe === "number" &&
-            Number.isFinite(payload.metadata.kpis.sharpe)
-            ? payload.metadata.kpis.sharpe
-            : null,
-          3,
-        ),
+        label: "Book equity",
+        value: fmtUsd(equityUsd),
+        tone: "text-[#00d4aa]",
+      },
+      {
+        label: "Free cash",
+        value: fmtUsd(freeCash),
+        tone: "text-[#22d3ee]",
+      },
+      {
+        label: "Margin locked",
+        value: fmtUsd(marginLocked),
         tone: "text-[#fbbf24]",
       },
       {
-        label: "Universe",
-        value: universeCount == null ? "—" : String(universeCount),
+        label: "Mode",
+        value: health?.mode ? String(health.mode) : "—",
         tone: "text-[#a78bfa]",
       },
-      { label: "Status", value: status, tone: "text-[var(--nexus-muted)]" },
-      { label: "USDT balance", value: fmtUsd(usdt), tone: "text-[#00d4aa]" },
-      { label: "Stable total", value: fmtUsd(totalStable), tone: "text-[#3b82f6]" },
+      {
+        label: "Open positions",
+        value: String(Array.isArray(health?.positions) ? health.positions.length : 0),
+        tone: "text-[var(--nexus-text)]",
+      },
+      {
+        label: "Session",
+        value: sessionActive ? status || "active" : "idle",
+        tone: "text-[var(--nexus-muted)]",
+      },
     ],
-    [payload?.metadata?.kpis?.sharpe, runId, universeCount, status, usdt, totalStable],
+    [
+      equityUsd,
+      freeCash,
+      marginLocked,
+      health?.mode,
+      health?.positions,
+      sessionActive,
+      status,
+    ],
   );
 
   const chartData = useMemo(
@@ -442,32 +386,7 @@ export function LiveMonitorPanel({
   }, [replayBars?.bars, replayBars?.interval_sec, useReplay]);
 
   const effectiveChart = useReplay ? replayChartData : chartData;
-  const liveSpan = useMemo(() => {
-    if (!effectiveChart.length) return 0;
-    let lo = Number.POSITIVE_INFINITY;
-    let hi = Number.NEGATIVE_INFINITY;
-    for (const p of effectiveChart) {
-      const v = typeof p.totalUsd === "number" ? p.totalUsd : NaN;
-      if (!Number.isFinite(v)) continue;
-      lo = Math.min(lo, v);
-      hi = Math.max(hi, v);
-    }
-    if (!Number.isFinite(lo) || !Number.isFinite(hi)) return 0;
-    return Math.max(0, hi - lo);
-  }, [effectiveChart]);
-
-  const showDemo = !err && !useReplay && ((chartData.length < 3 && !health?.ts) || liveSpan < 1);
-  const demoData = useMemo(() => (showDemo ? demoSeries(Date.now(), 96) : []), [showDemo]);
-  const chartRows = showDemo
-    ? demoData.map((p) => ({
-        ts: p.ts,
-        t: formatTimeShort(p.ts),
-        totalUsd: p.totalUsd,
-        usdt: p.usdt,
-        btc: p.btc,
-        eth: p.eth,
-      }))
-    : effectiveChart;
+  const chartRows = effectiveChart;
 
   const chartTimeRangeMs = useMemo(() => {
     if (chartRows.length < 2) return 0;
@@ -547,69 +466,15 @@ export function LiveMonitorPanel({
   ];
 
   const positions = Array.isArray(health?.positions) ? health?.positions : [];
-  const eventTape = useMemo<TapeEntry[]>(() => {
-    if (useReplay && replayTrades?.trades?.length) {
-      return replayTrades.trades
-        .slice()
-        .sort((a, b) => (b.step ?? 0) - (a.step ?? 0))
-        .slice(0, 60)
-        .map((t, i) => ({
-          seq: i,
-          kind: "trade",
-          node_id: "backtest",
-          ts: typeof t.ts_ms === "number" ? new Date(t.ts_ms).toISOString() : "—",
-          message: `${t.side?.toUpperCase?.() ?? t.side} qty=${t.qty} @ ${t.price}`,
-        }));
-    }
-    const entries = payload?.message_log ?? [];
-    const sorted = [...entries].sort((a, b) => (b.seq ?? 0) - (a.seq ?? 0));
-    return sorted.slice(0, 60).map((e, i) => ({
-      seq: typeof e.seq === "number" ? e.seq : i,
-      kind: String(e.kind ?? "event"),
-      node_id: String(e.node_id ?? "—"),
-      ts: String(e.ts ?? "—"),
-      message: String(e.message ?? ""),
-    }));
-  }, [payload?.message_log, useReplay, replayTrades?.trades]);
 
-  const tradeStats = useMemo(() => {
-    if (!useReplay || !replayTrades?.trades?.length) return null;
-    let buys = 0;
-    let sells = 0;
-    for (const t of replayTrades.trades) {
-      const s = String(t.side ?? "").toLowerCase();
-      if (s === "buy") buys++;
-      else if (s === "sell") sells++;
-    }
-    return { total: replayTrades.trades.length, buys, sells };
-  }, [replayTrades?.trades, useReplay]);
-
-  /** Sharpe/Sortino: replay comes from `summary.json` metrics; live only if the Flow payload exposes KPIs. */
-  const displaySharpe = useMemo(() => {
-    if (useReplay && replaySummary?.metrics && Number.isFinite(replaySummary.metrics.sharpe)) {
-      return replaySummary.metrics.sharpe;
-    }
-    const k = payload?.metadata?.kpis?.sharpe;
-    return typeof k === "number" && Number.isFinite(k) ? k : null;
-  }, [payload?.metadata?.kpis?.sharpe, replaySummary?.metrics, useReplay]);
-
-  const displaySortino = useMemo(() => {
-    if (!useReplay || !replaySummary?.metrics) return null;
-    const s = replaySummary.metrics.sortino;
-    return typeof s === "number" && Number.isFinite(s) ? s : null;
-  }, [replaySummary?.metrics, useReplay]);
-
-  const displayWinRate = useMemo(() => {
-    if (!useReplay || !replaySummary?.metrics) return null;
-    const w = replaySummary.metrics.win_rate;
-    return typeof w === "number" && Number.isFinite(w) ? w : null;
-  }, [replaySummary?.metrics, useReplay]);
-
-  const displayProfitFactor = useMemo(() => {
-    if (!useReplay || !replaySummary?.metrics) return null;
-    const pf = replaySummary.metrics.profit_factor;
-    return typeof pf === "number" && Number.isFinite(pf) ? pf : null;
-  }, [replaySummary?.metrics, useReplay]);
+  if (!health && !err) {
+    return (
+      <EmptySessionPanel
+        title="Loading portfolio…"
+        body="Fetching the live trading book (paper or live account)."
+      />
+    );
+  }
 
   return (
     <div className="nexus-bg min-h-0 flex-1 overflow-auto">
@@ -618,63 +483,39 @@ export function LiveMonitorPanel({
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-glow)]">
-                Operations
+                Live book
               </p>
               <h2 className="mt-1 text-lg font-semibold tracking-tight text-[var(--nexus-text)]">
-                Monitor
+                Portfolio
               </h2>
               <p className="mt-2 max-w-2xl text-[12px] leading-relaxed text-[var(--nexus-muted)]">
-                Portfolio analytics.
+                Live account equity, free cash, positions, and risk. Historical backtest PnL and
+                candle charts stay in{" "}
+                <a
+                  href="/console?view=research"
+                  className="text-[var(--nexus-glow)] underline-offset-2 hover:underline"
+                >
+                  Research → Saved run
+                </a>
+                .
               </p>
+              {resetMsg ? (
+                <p className="mt-2 font-mono text-[10px] text-[var(--nexus-muted)]">{resetMsg}</p>
+              ) : null}
             </div>
-
-            {fallbackRunId ? (
-              <div className="flex items-center gap-2">
-                <div className="nexus-segmented-toggle flex items-center gap-1 rounded-xl p-1">
-                  {(
-                    [
-                      ["live", "Live"],
-                      ["replay", "Replay"],
-                    ] as const
-                  ).map(([id, label]) => {
-                    const active = mode === id;
-                    const disabled = id === "replay" && !replayEnabled;
-                    return (
-                      <button
-                        key={id}
-                        type="button"
-                        onClick={() => setMode(id)}
-                        disabled={disabled}
-                        className={`nexus-segment-btn rounded-lg px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest transition-all ${
-                          active ? "is-active" : ""
-                        } ${disabled ? "opacity-40" : ""}`}
-                        title={disabled ? "Replay data not loaded yet" : undefined}
-                      >
-                        {label}
-                      </button>
-                    );
-                  })}
-                </div>
-                <span className="font-mono text-[10px] text-[var(--nexus-muted)]">
-                  run=<span className="text-[var(--nexus-text)]">{fallbackRunId}</span>
-                </span>
-              </div>
-            ) : null}
-
-            <div className="mt-1 flex flex-wrap items-center justify-end gap-2">
-              <span className="inline-flex items-center rounded-full bg-[rgba(34,211,238,0.10)] px-2.5 py-1 font-mono text-[10px] text-[#22d3ee] ring-1 ring-[rgba(34,211,238,0.35)]">
-                Equity
-              </span>
-              <span className="inline-flex items-center rounded-full bg-[rgba(59,130,246,0.10)] px-2.5 py-1 font-mono text-[10px] text-[#60a5fa] ring-1 ring-[rgba(59,130,246,0.35)]">
-                Risk
-              </span>
-              <span className="inline-flex items-center rounded-full bg-[rgba(167,139,250,0.10)] px-2.5 py-1 font-mono text-[10px] text-[#c4b5fd] ring-1 ring-[rgba(167,139,250,0.35)]">
-                Allocation
-              </span>
-              <span className="inline-flex items-center rounded-full bg-[rgba(245,158,11,0.10)] px-2.5 py-1 font-mono text-[10px] text-[#fbbf24] ring-1 ring-[rgba(245,158,11,0.35)]">
-                Tape
-              </span>
-            </div>
+            <button
+              type="button"
+              disabled={resetBusy || sessionActive}
+              onClick={() => void resetBook()}
+              title={
+                sessionActive
+                  ? "Stop the live session before resetting the book"
+                  : "Reset paper book to starting capital and clear positions"
+              }
+              className="shrink-0 rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-[var(--nexus-muted)] hover:border-[rgba(248,113,113,0.35)] hover:text-[rgba(248,113,113,0.95)] disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {resetBusy ? "Resetting…" : "Reset book"}
+            </button>
           </div>
         </div>
 
@@ -684,15 +525,9 @@ export function LiveMonitorPanel({
           </div>
         ) : null}
 
-        {replayErr ? (
-          <div className="rounded-lg border border-red-900/45 bg-red-950/35 px-4 py-3 font-mono text-xs text-red-100">
-            Backtest replay failed: {replayErr}
-          </div>
-        ) : null}
-
-        {/* KPI strip (professional: no odd “Updated” row; freshness lives in Highlights) */}
+        {/* KPI strip */}
         <section className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {(replayCards ?? cards).map((c, idx) => (
+          {cards.map((c, idx) => (
             <div
               key={c.label}
               className={`min-h-[4.25rem] rounded-xl px-3 py-2.5 sm:px-4 sm:py-3 ${MONITOR_KPI_SHELL[idx % MONITOR_KPI_SHELL.length]}`}
@@ -738,19 +573,21 @@ export function LiveMonitorPanel({
                   </div>
                 </div>
                 <div className="mt-1 font-mono text-[10px] text-[var(--nexus-muted)]">
-                  {useReplay ? (
-                    <>
-                      Replay · {replaySummary?.ticker ?? "—"} · run{" "}
-                      <span className="text-[var(--nexus-text)]">
-                        {replaySummary?.run_id ?? fallbackRunId}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      Live · run <span className="text-[var(--nexus-text)]">{runId}</span> · ticker{" "}
-                      <span className="text-[var(--nexus-text)]">{ticker}</span>
-                    </>
-                  )}
+                  <>
+                    Live book · equity {fmtUsd(equityUsd)}
+                    {freeCash != null ? (
+                      <>
+                        {" "}
+                        · free <span className="text-[var(--nexus-text)]">{fmtUsd(freeCash)}</span>
+                      </>
+                    ) : null}
+                    {sessionActive ? (
+                      <>
+                        {" "}
+                        · session <span className="text-[var(--nexus-text)]">live</span>
+                      </>
+                    ) : null}
+                  </>
                 </div>
               </div>
 
@@ -844,9 +681,7 @@ export function LiveMonitorPanel({
               <div className="overflow-hidden rounded-xl border border-[color:var(--nexus-card-stroke)] bg-black/10 p-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
-                    {useReplay
-                      ? `${replaySummary?.ticker ?? "Asset"} price (close)`
-                      : "Asset price (waiting for live OHLC)"}
+                    Asset price (waiting for live OHLC)
                   </p>
                   <p className="font-mono text-[10px] text-[var(--nexus-muted)]">
                     {assetPriceRows.length ? `${assetPriceRows.length} pts` : "—"}
@@ -913,9 +748,7 @@ export function LiveMonitorPanel({
                   ) : (
                     <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-[color:var(--nexus-card-stroke)] bg-white/[0.02]">
                       <p className="font-mono text-[11px] text-[var(--nexus-muted)]">
-                        {useReplay
-                          ? "No bars data for this run."
-                          : "Live OHLC not available yet (replay shows price)."}
+                        Live OHLC not available yet.
                       </p>
                     </div>
                   )}
@@ -967,63 +800,6 @@ export function LiveMonitorPanel({
                   </div>
                 </div>
 
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <div className="rounded-lg border border-[color:var(--nexus-card-stroke)] bg-white/[0.02] px-3 py-2">
-                    <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
-                      Sharpe (ann.)
-                    </p>
-                    <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">
-                      {fmtMetric(displaySharpe, 3)}
-                    </p>
-                    {!useReplay ? (
-                      <p className="mt-0.5 font-mono text-[9px] text-[var(--nexus-muted)]">
-                        From backtest summary in Replay
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="rounded-lg border border-[color:var(--nexus-card-stroke)] bg-white/[0.02] px-3 py-2">
-                    <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
-                      Sortino
-                    </p>
-                    <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">
-                      {fmtMetric(displaySortino, 3)}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-[color:var(--nexus-card-stroke)] bg-white/[0.02] px-3 py-2">
-                    <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
-                      Win rate
-                    </p>
-                    <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">
-                      {displayWinRate != null ? pct(displayWinRate * 100, 1) : "—"}
-                    </p>
-                  </div>
-                  <div className="rounded-lg border border-[color:var(--nexus-card-stroke)] bg-white/[0.02] px-3 py-2">
-                    <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
-                      Profit factor
-                    </p>
-                    <p className="mt-1 font-mono text-[12px] text-[var(--nexus-text)]">
-                      {fmtMetric(displayProfitFactor, 2)}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[color:var(--nexus-card-stroke)] bg-white/[0.02] px-3 py-2">
-                  <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
-                    Trades
-                  </p>
-                  <p className="font-mono text-[11px] text-[var(--nexus-text)]">
-                    {tradeStats ? (
-                      <>
-                        {tradeStats.total} <span className="text-[var(--nexus-muted)]">·</span>{" "}
-                        <span className="text-[#34d399]">buy {tradeStats.buys}</span>{" "}
-                        <span className="text-[var(--nexus-muted)]">·</span>{" "}
-                        <span className="text-[#fb7185]">sell {tradeStats.sells}</span>
-                      </>
-                    ) : (
-                      "—"
-                    )}
-                  </p>
-                </div>
               </div>
             </div>
           </div>
@@ -1062,7 +838,7 @@ export function LiveMonitorPanel({
                   )}
                 </p>
                 <p className="mt-0.5 font-mono text-[10px] text-[var(--nexus-muted)]">
-                  {showDemo ? "Demo overlay active (flat series)" : "Data-driven"}
+                  Data-driven
                 </p>
               </div>
             </div>
@@ -1130,47 +906,26 @@ export function LiveMonitorPanel({
           </div>
 
           <div className="rounded-xl border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-panel)]/70 p-4">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
-                Event tape
-              </p>
-              <p className="font-mono text-[10px] text-[var(--nexus-muted)]">
-                latest {eventTape.length}
-              </p>
-            </div>
-
-            <div className="mt-3 max-h-[360px] overflow-auto rounded-lg border border-[var(--nexus-rule-soft)] bg-[var(--nexus-bg)]/25">
-              {eventTape.length ? (
-                <div className="divide-y divide-[var(--nexus-rule-soft)]">
-                  {eventTape.map((e) => (
-                    <div key={e.seq} className="px-3 py-2">
-                      <div className="flex flex-wrap items-baseline justify-between gap-2 font-mono text-[10px]">
-                        <span className="text-[var(--nexus-muted)]">
-                          #{e.seq} · {e.kind} · {e.node_id}
-                        </span>
-                        <span className="text-[var(--nexus-muted)]">{e.ts}</span>
-                      </div>
-                      <p className="mt-1 font-mono text-[11px] leading-relaxed text-[var(--nexus-text)]">
-                        {e.message}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="px-3 py-3 font-mono text-[11px] text-[var(--nexus-muted)]">
-                  No events in `message_log` yet.
-                </div>
-              )}
-            </div>
-
-            <div className="mt-3 rounded-lg border border-[color:var(--nexus-card-stroke)] bg-[var(--nexus-surface)]/25 px-3 py-2">
-              <p className="font-mono text-[9px] uppercase tracking-widest text-[var(--nexus-muted)]">
-                Last event
-              </p>
-              <p className="mt-1 font-mono text-[11px] leading-relaxed text-[var(--nexus-text)]">
-                {lastMsg}
-              </p>
-            </div>
+            <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
+              Agent events
+            </p>
+            <p className="mt-2 text-[12px] leading-relaxed text-[var(--nexus-muted)]">
+              Event tape and agent thoughts live on{" "}
+              <a
+                href="/console?view=flow"
+                className="text-[var(--nexus-glow)] underline-offset-2 hover:underline"
+              >
+                Live desk
+              </a>
+              . Backtest timelines stay in{" "}
+              <a
+                href="/console?view=research"
+                className="text-[var(--nexus-glow)] underline-offset-2 hover:underline"
+              >
+                Research
+              </a>
+              .
+            </p>
           </div>
         </section>
 
@@ -1248,46 +1003,13 @@ export function LiveMonitorPanel({
                     dot={false}
                     isAnimationActive={false}
                   />
-                  {showDemo ? (
-                    <>
-                      <Area
-                        type="monotone"
-                        dataKey="btc"
-                        stroke="#F59E0B"
-                        strokeWidth={1.25}
-                        fillOpacity={0}
-                        dot={false}
-                        isAnimationActive={false}
-                      />
-                      <Area
-                        type="monotone"
-                        dataKey="eth"
-                        stroke="#A78BFA"
-                        strokeWidth={1.15}
-                        fillOpacity={0}
-                        dot={false}
-                        isAnimationActive={false}
-                      />
-                    </>
-                  ) : null}
                 </AreaChart>
               </ResponsiveContainer>
             </div>
             <p className="mt-2 font-mono text-[10px] text-[var(--nexus-muted)]">
-              {showDemo ? (
-                <>
-                  Demo overlay · <span className="text-[#3B82F6]">Total</span> ·{" "}
-                  <span className="text-[#00D4AA]">USDT</span> ·{" "}
-                  <span className="text-[#F59E0B]">BTC</span> ·{" "}
-                  <span className="text-[#A78BFA]">ETH</span>
-                </>
-              ) : (
-                <>
-                  Latest: <span className="text-[var(--nexus-text)]">{fmtUsd(totalStable)}</span>{" "}
-                  <span className="text-[var(--nexus-muted)]">· USDT</span>{" "}
-                  <span className="text-[var(--nexus-text)]">{fmtUsd(usdt)}</span>
-                </>
-              )}
+              Latest: <span className="text-[var(--nexus-text)]">{fmtUsd(totalStable)}</span>{" "}
+              <span className="text-[var(--nexus-muted)]">· USDT</span>{" "}
+              <span className="text-[var(--nexus-text)]">{fmtUsd(usdt)}</span>
             </p>
           </div>
 

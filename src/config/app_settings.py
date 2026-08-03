@@ -85,10 +85,8 @@ class StrategyEnvDefaults:
 class BacktestSettings:
     """Backtest-only behavior (does not affect live paper trading)."""
 
-    #: How to interpret graph ``HOLD`` before returning a flat signal to the perp simulator.
-    #: ``off`` = strict graph output only; ``momentum`` = small OHLCV drift nudge only;
-    #: ``legacy`` = momentum plus a deterministic bar-parity probe (old UX; not a real strategy).
-    hold_signal_fallback: str
+    #: Skip agent/VCP signals until at least this many completed bars (TA warmup).
+    min_warmup_bars: int = 0
 
 
 @dataclass(frozen=True)
@@ -103,20 +101,6 @@ class AppSettings:
     harness_memory: HarnessMemorySettings
     strategy: StrategyEnvDefaults
     backtest: BacktestSettings
-
-
-def normalize_hold_signal_fallback(raw: str | None, *, default: str = "momentum") -> str:
-    """Normalize ``hold_signal_fallback`` tokens from config or env."""
-    s = str(raw or "").strip().lower()
-    if s in ("none", "0", "false", "strict", "off"):
-        return "off"
-    if s in ("legacy", "full", "debug", "ux", "1", "true"):
-        return "legacy"
-    if s in ("momentum", "partial", "drift"):
-        return "momentum"
-    if not s:
-        return default
-    return default
 
 
 def load_app_settings(path: Path | None = None) -> AppSettings:
@@ -305,8 +289,7 @@ def load_app_settings(path: Path | None = None) -> AppSettings:
     if desk_s in ("none", "off", "0", "false", ""):
         desk_s = None
 
-    hold_fb = str(backtest_raw.get("hold_signal_fallback") or "momentum").strip().lower()
-    hold_fb_norm = normalize_hold_signal_fallback(hold_fb)
+    min_warmup_bars = int(backtest_raw.get("min_warmup_bars") or 0)
 
     return AppSettings(
         paper=PaperSettings(
@@ -350,7 +333,7 @@ def load_app_settings(path: Path | None = None) -> AppSettings:
             recent_tool_events_max=recent_tool_events_max,
         ),
         strategy=StrategyEnvDefaults(tier1_preset=tier1_s, desk_strategy_preset=desk_s),
-        backtest=BacktestSettings(hold_signal_fallback=hold_fb_norm),
+        backtest=BacktestSettings(min_warmup_bars=min_warmup_bars),
     )
 
 
@@ -376,5 +359,4 @@ __all__ = [
     "UISettings",
     "apply_strategy_env_defaults_from_settings",
     "load_app_settings",
-    "normalize_hold_signal_fallback",
 ]

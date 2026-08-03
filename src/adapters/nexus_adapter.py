@@ -64,13 +64,34 @@ class NexusAdapter:
                 "cash_usdt": start_usdt,
                 "realized_pnl_usdt": 0.0,
                 "positions": [],
+                "perp_positions": [],
+                "spot_positions": [],
                 "updated_ts": int(time.time()),
             }
+        free_cash = float(snap.get("cash_usdt") or start_usdt)
+        margin_locked = 0.0
+        for p in snap.get("perp_positions") or []:
+            try:
+                margin_locked += float(p.get("margin_locked_usdt") or 0.0)
+            except (TypeError, ValueError):
+                continue
+        spot_mark = 0.0
+        for p in snap.get("spot_positions") or []:
+            try:
+                spot_mark += abs(float(p.get("qty") or 0.0) * float(p.get("avg_entry") or 0.0))
+            except (TypeError, ValueError):
+                continue
+        # Without live marks, book equity ≈ free cash + locked margin (+ spot at entry).
+        equity = free_cash + margin_locked + spot_mark
         return {
             "account_id": account_id or "default",
             "ts": int(time.time()),
             "mode": self.config.mode,
-            "balances": {"USDT": float(snap.get("cash_usdt") or start_usdt)},
+            # Primary balance is book equity (not free cash alone — perps lock margin).
+            "balances": {"USDT": round(equity, 8)},
+            "free_cash_usdt": round(free_cash, 8),
+            "margin_locked_usdt": round(margin_locked, 8),
+            "equity_usdt": round(equity, 8),
             "positions": list(snap.get("positions") or []),
             "risk_caps": {
                 # Simple policy-based cap: gross notional <= equity * leverage.

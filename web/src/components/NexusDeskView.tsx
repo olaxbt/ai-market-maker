@@ -50,7 +50,7 @@ export function NexusDeskView({
         <section className="nexus-panel rounded-none lg:rounded-r-lg border-r-0 lg:border-r border-[var(--nexus-border)] flex flex-col min-h-0 overflow-hidden">
           <div className="shrink-0 px-3 py-2 border-b border-[var(--nexus-border)]">
             <h2 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
-              Event stream · chain-of-thought & provenance · node_id / parent_id
+              Agent thoughts
             </h2>
           </div>
           <div className="flex-1 min-h-0 p-3"></div>
@@ -71,7 +71,7 @@ export function NexusDeskView({
         <section className="nexus-panel rounded-none lg:rounded-l-lg border-l border-[var(--nexus-border)] flex flex-col min-h-0 overflow-hidden">
           <div className="shrink-0 px-3 py-2 border-b border-[var(--nexus-border)]">
             <h2 className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--nexus-muted)]">
-              Topology · nodes & edges
+              Live desk map
             </h2>
           </div>
           <div className="flex-1 min-h-0 p-3"></div>

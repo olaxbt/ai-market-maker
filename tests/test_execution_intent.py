@@ -40,7 +40,7 @@ def test_bullish_above_threshold_buy(monkeypatch: pytest.MonkeyPatch):
 def test_neutral_or_low_confidence_hold():
     """When not flat, confidence below policy threshold → HOLD."""
     pol = load_fund_policy()
-    actual_min_c = pol.min_confidence_directional
+    actual_min_c = max(0.20, pol.min_confidence_directional - 0.05)
 
     # State has a position (not flat), so the book threshold (min_c) applies.
     state = {
@@ -59,22 +59,20 @@ def test_neutral_or_low_confidence_hold():
 
 
 def test_flat_book_low_confidence_entry():
-    """Flat book with directional-but-low confidence → BUY via flat-book policy."""
-    # The flat-book threshold is 0.03 (TA-alone signal on trending data).
-    # Test that conf=0.04 passes but conf=0.02 holds.
-    ps_pass = {"params": {"stance": "bullish", "confidence": 0.04}}
-    r_pass = derive_trade_intent(_state_backtest(), ps_pass)
-    assert r_pass["action"] == "BUY", (
-        f"Expected BUY with conf=0.04: got {r_pass['action']} "
-        f"(min={r_pass['meta'].get('effective_min_confidence')})"
-    )
+    """Flat backtest book uses policy min_confidence (no 3% bypass)."""
+    pol = load_fund_policy()
+    min_c = max(0.20, pol.min_confidence_directional - 0.05)
 
-    ps_hold = {"params": {"stance": "bullish", "confidence": 0.02}}
+    ps_pass = {"params": {"stance": "bullish", "confidence": min_c + 0.05}}
+    r_pass = derive_trade_intent(_state_backtest(), ps_pass)
+    assert r_pass["action"] == "BUY"
+
+    ps_hold = {"params": {"stance": "bullish", "confidence": min_c - 0.05}}
     r_hold = derive_trade_intent(_state_backtest(), ps_hold)
-    assert r_hold["action"] == "HOLD", f"Expected HOLD with conf=0.02: got {r_hold['action']}"
+    assert r_hold["action"] == "HOLD"
 
     assert r_pass["meta"].get("is_flat") is True
-    assert r_pass["meta"].get("effective_min_confidence") == 0.03
+    assert r_pass["meta"].get("effective_min_confidence") == min_c
 
 
 def test_bearish_sell(monkeypatch: pytest.MonkeyPatch):
@@ -119,3 +117,49 @@ def test_bearish_long_only_flat_multi_backtest_book(monkeypatch):
     intent = derive_trade_intent(state, ps)
     assert intent["action"] == "HOLD"
     assert any("multi-asset" in r or "AIMM_ALLOW_SHORT" in r for r in intent["reasons"])
+
+
+def test_arbitrator_gated_buy_respects_low_confidence():
+    """Arbitrator-gated BUY is not re-held by the policy confidence floor."""
+    ps = {
+        "params": {
+            "stance": "bullish",
+            "confidence": 0.17,  # below policy 0.21, above arb buy gate 0.16
+            "weighted_arbitrator": True,
+            "reasons": ["BUY signal: confidence=0.17 >= 0.16"],
+        }
+    }
+    intent = derive_trade_intent(_state_backtest(), ps)
+    assert intent["action"] == "BUY"
+    assert intent["meta"]["arbitrator_gated"] is True
+    assert intent["meta"]["effective_min_confidence"] == 0.0
+
+
+def test_signed_position_dict_sets_qty():
+    state = {
+        "ticker": "BTC/USDT",
+        "run_mode": "backtest",
+        "shared_memory": {
+            "backtest": {
+                "cash": 8_000.0,
+                "equity": 10_500.0,
+                "positions": {
+                    "BTC/USDT": {"size": 0.1, "entry": 60_000.0, "direction": -1},
+                },
+            }
+        },
+        "market_data": {
+            "BTC/USDT": {"ohlcv": [[0, 1, 1, 1, 50_000.0, 1.0]]},
+        },
+    }
+    ps = {
+        "params": {
+            "stance": "bearish",
+            "confidence": 0.5,
+            "weighted_arbitrator": True,
+        }
+    }
+    intent = derive_trade_intent(state, ps)
+    assert intent["action"] == "SELL"
+    assert intent["context"]["qty_base"] == pytest.approx(-0.1)
+    assert intent["context"]["equity_usd"] == pytest.approx(10_500.0)

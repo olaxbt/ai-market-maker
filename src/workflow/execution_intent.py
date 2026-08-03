@@ -21,6 +21,21 @@ MIN_CONFIDENCE_DIRECTIONAL = 0.45
 META_SOURCE = "execution_intent_v1"
 
 
+def _signed_qty_from_leg(leg: Any) -> float | None:
+    if isinstance(leg, dict):
+        try:
+            if isinstance(leg.get("qty_signed"), (int, float)):
+                return float(leg["qty_signed"])
+            size = float(leg.get("size") or leg.get("qty") or 0.0)
+            direction = int(leg.get("direction") or 1)
+            return size * (1.0 if direction >= 0 else -1.0)
+        except (TypeError, ValueError):
+            return None
+    if isinstance(leg, (int, float)):
+        return float(leg)
+    return None
+
+
 def derive_trade_intent(
     state: Mapping[str, Any],
     proposed_signal: Mapping[str, Any],
@@ -30,11 +45,20 @@ def derive_trade_intent(
     run_mode = str(state.get("run_mode") or "paper").lower()
     sm = state.get("shared_memory") or {}
     bt = sm.get("backtest") if isinstance(sm, dict) and isinstance(sm.get("backtest"), dict) else {}
+    equity: float | None = None
     if run_mode == RunMode.BACKTEST.value:
         cash_raw = bt.get("cash", 0.0)
         cash = float(cash_raw) if isinstance(cash_raw, (int, float)) else 0.0
+        equity_raw = bt.get("equity")
+        equity = float(equity_raw) if isinstance(equity_raw, (int, float)) else None
         qty_raw = bt.get("qty", 0.0)
         qty = float(qty_raw) if isinstance(qty_raw, (int, float)) else 0.0
+        if abs(qty) < 1e-18:
+            pos_dict = bt.get("positions")
+            if isinstance(pos_dict, dict):
+                derived = _signed_qty_from_leg(pos_dict.get(ticker))
+                if derived is not None:
+                    qty = derived
     else:
         # Paper/live: use the local paper account snapshot when available.
         paper = (
@@ -78,20 +102,41 @@ def derive_trade_intent(
     fp = load_fund_policy()
     min_c = fp.min_confidence_directional
 
-    # Flat book: lower confidence bar for new entries.
+    bt_allows_short = bt.get("allows_short")
+    allows_short = bool(bt_allows_short) if bt_allows_short is not None else fp.allows_short
+
     is_flat = qty is not None and abs(qty) < 1e-12
-    effective_min_c = 0.03 if is_flat else min_c
+    # Arbitrator already gated BUY/SELL into stance — do not re-apply a higher policy floor.
+    arbitrator_gated = bool(params.get("weighted_arbitrator"))
+    if (
+        run_mode == RunMode.BACKTEST.value
+        and arbitrator_gated
+        and stance_s
+        in (
+            "bullish",
+            "bearish",
+        )
+    ):
+        effective_min_c = 0.0
+    elif run_mode == RunMode.BACKTEST.value:
+        effective_min_c = max(0.20, min_c - 0.05)
+    else:
+        effective_min_c = 0.03 if is_flat else min_c
 
     action = "HOLD"
     if stance_s == "bullish" and conf_f >= effective_min_c:
         action = "BUY"
     elif stance_s == "bearish" and conf_f >= effective_min_c:
         action = "SELL"
-        if not fp.allows_short and run_mode == RunMode.BACKTEST.value:
+        if not allows_short and run_mode == RunMode.BACKTEST.value:
             pos_dict = bt.get("positions")
+            total_base = 0.0
             if isinstance(pos_dict, dict):
-                total_base = sum(float(v) for v in pos_dict.values() if isinstance(v, (int, float)))
-                if total_base <= 1e-12:
+                for v in pos_dict.values():
+                    signed = _signed_qty_from_leg(v)
+                    if signed is not None:
+                        total_base += signed
+                if abs(total_base) <= 1e-12:
                     action = "HOLD"
                     reasons_out.insert(
                         0,
@@ -105,8 +150,11 @@ def derive_trade_intent(
                 )
 
     max_notional_usd = None
-    if cash is not None:
-        base = max(0.0, float(cash)) * fp.intent_notional_fraction
+    sizing_base = cash
+    if run_mode == RunMode.BACKTEST.value and equity is not None:
+        sizing_base = equity
+    if sizing_base is not None:
+        base = max(0.0, float(sizing_base)) * fp.intent_notional_fraction
         if run_mode == RunMode.BACKTEST.value:
             max_notional_usd = base * float(fp.max_leverage)
         elif run_mode == "paper":
@@ -129,6 +177,7 @@ def derive_trade_intent(
         "context": {
             "run_mode": run_mode,
             "cash_usd": cash,
+            "equity_usd": equity,
             "qty_base": qty,
             "price": price,
         },
@@ -138,6 +187,7 @@ def derive_trade_intent(
             "min_confidence_directional": min_c,
             "is_flat": is_flat,
             "effective_min_confidence": effective_min_c,
+            "arbitrator_gated": arbitrator_gated,
         },
     }
 

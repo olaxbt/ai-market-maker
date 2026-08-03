@@ -13,7 +13,7 @@
     "desk_strategy_preset": "all_weather"
   },
   "backtest": {
-    "hold_signal_fallback": "off"
+    "min_warmup_bars": 50
   },
   "ui": {
     "tail_events": 1200,
@@ -39,15 +39,11 @@
   },
   "market": {
     "default_ticker": "BTC/USDT",
-    "universe_size": 7,
+    "universe_size": 3,
     "universe_symbols": [
       "BTC/USDT",
       "ETH/USDT",
-      "SOL/USDT",
-      "AIO/USDT",
-      "BNB/USDT",
-      "XRP/USDT",
-      "ADA/USDT"
+      "SOL/USDT"
     ],
     "ohlcv_cache_dir": "data/ohlcv"
   },

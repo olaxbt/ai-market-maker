@@ -17,10 +17,11 @@ export async function GET() {
     });
   }
 
+  // Default off so a fresh start does not look like a live session.
   const allowMockFallback =
     (process.env.FLOW_ALLOW_MOCK_FALLBACK ??
       process.env.NEXT_PUBLIC_FLOW_ALLOW_MOCK_FALLBACK ??
-      "1") === "1";
+      "0") === "1";
   const flowOrigin = flowApiBase();
 
   try {
