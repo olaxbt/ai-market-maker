@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from openai import OpenAI
 
+from config.llm_env import resolve_llm_config
 from llm.tool_registry import call_tool, openai_tools_payload
 
 logger = logging.getLogger(__name__)
@@ -38,11 +39,14 @@ def run_tool_calling_chat(
 
     conversation_history: prior user/assistant turns (excluding the latest user message in ``user``).
     """
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise ValueError("OPENAI_API_KEY is required when AI_MARKET_MAKER_USE_LLM=1")
+    llm_config = resolve_llm_config()
+    if not llm_config.api_key:
+        raise ValueError(
+            "OPENAI_API_KEY or ATLASCLOUD_API_KEY is required when AI_MARKET_MAKER_USE_LLM=1"
+        )
 
-    base_url = (os.getenv("OPENAI_BASE_URL") or "").strip() or None
+    api_key = llm_config.api_key
+    base_url = llm_config.base_url
     timeout_s_raw = (os.getenv("AIMM_LLM_TIMEOUT_S") or "").strip()
     try:
         timeout_s = float(timeout_s_raw) if timeout_s_raw else 60.0
@@ -58,8 +62,8 @@ def run_tool_calling_chat(
             client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout_s)
         except TypeError:
             client = OpenAI(api_key=api_key, base_url=base_url)
-    env_model = os.getenv("OPENAI_MODEL")
-    model_name = model or env_model or "gpt-4o-mini"
+    env_model = (os.getenv("OPENAI_MODEL") or "").strip() or None
+    model_name = model or llm_config.model
     if base_url and "deepseek" in base_url and env_model and model and model != env_model:
         # This is the classic "provider supports X but we forced Y" mismatch.
         logger.warning(
@@ -203,11 +207,14 @@ def stream_chat_completion(
 
     This intentionally does **not** support tool calls. It's used for UI chat streaming.
     """
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise ValueError("OPENAI_API_KEY is required when AI_MARKET_MAKER_USE_LLM=1")
+    llm_config = resolve_llm_config()
+    if not llm_config.api_key:
+        raise ValueError(
+            "OPENAI_API_KEY or ATLASCLOUD_API_KEY is required when AI_MARKET_MAKER_USE_LLM=1"
+        )
 
-    base_url = (os.getenv("OPENAI_BASE_URL") or "").strip() or None
+    api_key = llm_config.api_key
+    base_url = llm_config.base_url
     timeout_s_raw = (os.getenv("AIMM_LLM_TIMEOUT_S") or "").strip()
     try:
         timeout_s = float(timeout_s_raw) if timeout_s_raw else 60.0
@@ -223,7 +230,7 @@ def stream_chat_completion(
         except TypeError:
             client = OpenAI(api_key=api_key, base_url=base_url)
 
-    model_name = model or os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
+    model_name = model or llm_config.model
     messages: List[Dict[str, Any]] = [
         {"role": "system", "content": system},
         {"role": "user", "content": user},

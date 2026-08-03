@@ -15,6 +15,8 @@ from typing import Any
 
 from openai import OpenAI
 
+from config.llm_env import resolve_llm_config
+
 # Lazy-loaded decision cache
 _DECISION_CACHE: Any = None
 
@@ -38,6 +40,23 @@ def _get_decision_cache() -> Any:
     except ImportError:
         _DECISION_CACHE = {}
     return _DECISION_CACHE
+
+
+def _cache_key_for_agent(
+    agent_id: str,
+    ticker: str | None,
+    prompt_text: str,
+) -> str | None:
+    """Generate a deterministic cache key for this agent call.
+
+    Returns None if caching is disabled.
+    """
+    cache = _get_decision_cache()
+    enabled_fn = cache.get("enabled")
+    if enabled_fn and not enabled_fn():
+        return None
+    raw = f"{agent_id}|{ticker or ''}|{prompt_text}"
+    return hashlib.sha256(raw.encode()).hexdigest()
 
 
 logger = logging.getLogger(__name__)
@@ -120,26 +139,25 @@ def _init_llm() -> None:
     if _LLM_CLIENT is not None:
         return
 
-    api_key = _env("DEEPSEEK_API_KEY") or _env("OPENAI_API_KEY") or _env("LLM_API_KEY")
-    if not api_key:
+    llm_config = resolve_llm_config(
+        key_names=("DEEPSEEK_API_KEY", "OPENAI_API_KEY", "LLM_API_KEY"),
+        base_url_names=("AIMM_LLM_BASE_URL",),
+        model_names=("AIMM_LLM_MODEL",),
+        default_base_url="https://api.deepseek.com/v1",
+        default_model="deepseek-chat",
+    )
+    if not llm_config.api_key:
         raise ValueError(
             "agent_llm mode requires an LLM API key. "
-            "Set OPENAI_API_KEY (or DEEPSEEK_API_KEY) in your .env — Docker Compose passes it at runtime."
+            "Set DEEPSEEK_API_KEY, OPENAI_API_KEY, or ATLASCLOUD_API_KEY."
         )
-    # Prefer AIMM_* overrides; otherwise honor the same OPENAI_* vars users put in `.env`.
-    base_url = (
-        _env("AIMM_LLM_BASE_URL")
-        or _env("OPENAI_BASE_URL")
-        or (
-            "https://api.deepseek.com/v1"
-            if _env("DEEPSEEK_API_KEY")
-            else "https://api.openai.com/v1"
-        )
+    _LLM_CLIENT = OpenAI(api_key=llm_config.api_key, base_url=llm_config.base_url)
+    _LLM_MODEL = llm_config.model
+    logger.info(
+        "agent_llm client initialised (model=%s, base=%s)",
+        _LLM_MODEL,
+        llm_config.base_url,
     )
-    _LLM_CLIENT = OpenAI(api_key=api_key, base_url=base_url)
-    default_model = "deepseek-chat" if "deepseek" in base_url.lower() else "gpt-4o-mini"
-    _LLM_MODEL = _env("AIMM_LLM_MODEL") or _env("OPENAI_MODEL") or default_model
-    logger.info("agent_llm client initialised (model=%s, base=%s)", _LLM_MODEL, base_url)
 
 
 def _get_client() -> OpenAI:
@@ -312,90 +330,6 @@ def _build_deterministic_context(contract: dict[str, Any] | None, agent_id: str)
     return "\n".join(parts)
 
 
-def _build_simulation_context(state: dict[str, Any], ticker: str | None) -> str:
-    """Build the ## Simulation Context block for backtest agents.
-
-    Provides as-of bar timestamp, interval, window bounds, and run_id
-    so agents know they are reasoning on historical data — not live.
-    """
-    if state.get("run_mode") != "backtest":
-        return ""
-
-    sm = state.get("shared_memory", {}) or {}
-    bt = sm.get("backtest", {}) or {}
-
-    window_ts = bt.get("window_last_ts_ms")
-    window_len = bt.get("window_len")
-    interval_sec = bt.get("interval_sec", 300)
-    timeframe = bt.get("timeframe", "")
-
-    # Resolve ticker
-    sym = ticker or state.get("ticker", "BTC/USDT")
-    universe = state.get("universe", [sym])
-
-    # Compute window date bounds from OHLCV
-    ohlcv = _ohlcv_for_ticker(state, sym)
-    first_bar_ts = None
-    last_bar_ts = None
-    if ohlcv and isinstance(ohlcv, list) and len(ohlcv) > 0:
-        try:
-            first_bar_ts = ohlcv[0][0]
-            last_bar_ts = ohlcv[-1][0]
-        except (IndexError, TypeError):
-            pass
-
-    from datetime import datetime, timezone
-
-    fmt = lambda ms: datetime.fromtimestamp(ms / 1000, tz=timezone.utc).isoformat() if ms else "N/A"  # noqa: E731
-    tf_str = f"{interval_sec}s"
-    if timeframe:
-        tf_str = f"{interval_sec}s ({timeframe})"
-
-    lines = [
-        "## Simulation Context",
-        "- Mode: backtest",
-        f"- Primary ticker: {sym}",
-        f"- Bar interval: {tf_str}",
-        f"- As-of bar (UTC): {fmt(window_ts)}",
-        f"- Window: {window_len or '?'} bars | first bar: {fmt(first_bar_ts)} | last bar: {fmt(last_bar_ts)}",
-    ]
-    run_id = str(bt.get("run_id") or "").strip()
-    if run_id:
-        lines.append(f"- Run ID: {run_id}")
-    # Book state: free collateral vs mark NAV (agents size vs equity, not cash).
-    cash_raw = bt.get("cash")
-    eq_raw = bt.get("equity")
-    try:
-        if isinstance(cash_raw, (int, float)):
-            lines.append(f"- Free collateral (USDT): {float(cash_raw):.2f}")
-        if isinstance(eq_raw, (int, float)):
-            lines.append(f"- Mark equity / NAV (USDT): {float(eq_raw):.2f}")
-        elif isinstance(cash_raw, (int, float)):
-            lines.append(f"- Mark equity / NAV (USDT): {float(cash_raw):.2f}")
-    except (TypeError, ValueError):
-        pass
-    positions = bt.get("positions")
-    if isinstance(positions, dict) and positions:
-        legs: list[str] = []
-        for psym, leg in list(positions.items())[:8]:
-            if isinstance(leg, dict):
-                try:
-                    size = float(leg.get("size") or 0.0)
-                    direction = int(leg.get("direction") or 1)
-                    side = "long" if direction >= 0 else "short"
-                    legs.append(f"{psym} {side} {size:.6g}")
-                except (TypeError, ValueError):
-                    continue
-            elif isinstance(leg, (int, float)):
-                legs.append(f"{psym} qty={float(leg):.6g}")
-        if legs:
-            lines.append(f"- Open positions: {'; '.join(legs)}")
-    if len(universe) > 1:
-        lines.append(f"- Universe: {', '.join(universe)}")
-
-    return "\n".join(lines)
-
-
 def _build_market_context(
     state: dict[str, Any],
     ticker: str | None = None,
@@ -410,7 +344,6 @@ def _build_market_context(
     - Order book depth
     - Nexus news / funding / OI / on-chain
     - Deterministic Tier-0 findings (context only, not fallback)
-    - Simulation context block (backtest mode only)
     """
     if not ticker:
         ticker = state.get("ticker", "BTC/USDT")
@@ -436,11 +369,6 @@ def _build_market_context(
         det = _build_deterministic_context(deterministic_contract, agent_id)
         if det:
             lines.append(f"\n## Deterministic Baseline\n{det}")
-
-    # Simulation context block (only for backtest mode)
-    sim = _build_simulation_context(state, ticker)
-    if sim:
-        lines.append(f"\n{sim}")
 
     return "\n".join(lines)
 
@@ -482,11 +410,6 @@ def _build_agent_prompt(
         "```\n"
         "- Every field is required. If you have no strong opinion, use the neutral default shown above.\n"
         '- Add a "reasoning" field (string) explaining your key signal adjustments.\n'
-        "\n"
-        "### Backtest Mode Notice\n"
-        "- You are evaluating **historical simulation data**, not live markets.\n"
-        "- Base your reasoning only on the OHLCV window and as-of timestamp above.\n"
-        "\n"
         "Output ONLY the JSON on a single line or pretty-printed. No preamble, no markdown fences.\n"
     )
 
@@ -626,33 +549,21 @@ def infer_agent(
     system, user = _build_agent_prompt(agent_id, persona, skill, market_context)
 
     # Decision cache: check before LLM call
-    full_prompt = system + "\n" + user
-    prompt_hash = hashlib.sha256(full_prompt.encode()).hexdigest()[:32]
-    resolved_ticker = ticker or state.get("ticker", "")
-    # date_tag: bar timestamp from backtest shared_memory, or fallback
-    sm = state.get("shared_memory", {}) or {}
-    bt = sm.get("backtest", {}) or {}
-    bar_ts_ms = bt.get("window_last_ts_ms")
-    date_tag = str(int(bar_ts_ms)) if bar_ts_ms else "no_date"
-
     cache = _get_decision_cache()
-    read_fn = cache.get("read")
-    write_fn = cache.get("write")
-    if read_fn:
-        hit = read_fn(agent_id, resolved_ticker, date_tag, prompt_hash)
-        if hit is not None:
-            logger.info(
-                "agent_llm: cache HIT for %s (ticker=%s, date=%s)",
-                agent_id,
-                resolved_ticker,
-                date_tag,
-            )
-            hit["agent"] = agent_id
-            hit["agent_id"] = agent_id
-            hit["source"] = "agent_llm"
-            hit["llm_enabled"] = True
-            hit["cached"] = True
-            return _fill_missing_fields(hit, agent_id)
+    full_prompt = system + "\n" + user
+    ck = _cache_key_for_agent(agent_id, ticker or state.get("ticker", ""), full_prompt)
+    if ck:
+        cached = cache.get("read")
+        if cached:
+            hit = cached(agent_id, ck)
+            if hit is not None:
+                logger.info("agent_llm: cache HIT for %s (key=%s...)", agent_id, ck[:12])
+                hit["agent"] = agent_id
+                hit["agent_id"] = agent_id
+                hit["source"] = "agent_llm"
+                hit["llm_enabled"] = True
+                hit["cached"] = True
+                return _fill_missing_fields(hit, agent_id)
 
     try:
         resp = client.chat.completions.create(
@@ -667,14 +578,6 @@ def infer_agent(
         )
     except Exception as e:
         logger.warning("agent_llm: LLM call failed for %s: %s", agent_id, e)
-        err_s = str(e)
-        if "402" in err_s or "Insufficient Balance" in err_s:
-            try:
-                from backtest.terminal_log import note_llm_api_error
-
-                note_llm_api_error(err_s)
-            except ImportError:
-                pass
         return _error_contract(agent_id, f"API error: {e}")
 
     text = resp.choices[0].message.content or ""
@@ -691,9 +594,10 @@ def infer_agent(
     result["llm_enabled"] = True
 
     # Write to cache for reproducibility
-    if write_fn:
+    write_fn = cache.get("write")
+    if ck and write_fn:
         try:
-            write_fn(agent_id, resolved_ticker, date_tag, prompt_hash, result)
+            write_fn(agent_id, ck, result)
         except Exception as e:
             logger.debug("agent_llm: cache write failed: %s", e)
 
