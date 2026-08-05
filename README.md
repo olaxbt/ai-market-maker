@@ -26,12 +26,27 @@ Designed to feel like a small professional trading firm — not just another bot
 ### Key Features
 - Multi-agent workflow with clear desk responsibilities
 - Strict **Risk Guard** that can veto any trade
-- Quant-style backtesting with built-in benchmarks; **agentic LLM required** (`OPENAI_API_KEY`)
+- Quant-style backtesting with built-in benchmarks; **agentic LLM required** (`OPENAI_API_KEY` or `ATLASCLOUD_API_KEY`)
 - Unified agent interface + governance layer
 - **OpenClaw-ready packaging** (`SKILL.md` + `manifest.json` + dedicated runners)
 - Paper trading on Binance Testnet + rich local backtester; Hyperliquid adapter (dry-run) via OMS layer
 - Modern web dashboard for telemetry and traces
 - Clean configuration (JSON policy + env for secrets only)
+
+### Sponsorship — Atlas Cloud
+
+<p align="center">
+  <a href="https://www.atlascloud.ai/?utm_source=ai-market-maker&utm_medium=github&utm_campaign=ai-market-maker">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="./assets/atlas-cloud-logo-white.svg" />
+      <source media="(prefers-color-scheme: light)" srcset="./assets/atlas-cloud-logo-black.svg" />
+      <img src="./assets/atlas-cloud-logo-black.svg" alt="Atlas Cloud" width="280" />
+    </picture>
+  </a>
+</p>
+
+**[Atlas Cloud](https://www.atlascloud.ai/?utm_source=ai-market-maker&utm_medium=github&utm_campaign=ai-market-maker)** is a full-modal AI inference platform that gives developers a single AI API to access video generation, image generation, and LLM APIs. Instead of managing multiple vendor integrations, you connect once and get unified access to 300+ curated models across all modalities.
+Check out Atlas Cloud's new coding plan promotion for more budget-friendly API access: https://www.atlascloud.ai/console/coding-plan
 
 ---
 
@@ -58,17 +73,16 @@ Deeper agentic capabilities, better OpenClaw integration, and support for additi
 
 ## System Architecture
 
-The workflow mimics a small hedge fund:
+Rough flow (LangGraph):
 
-1. **Research Desks** — Market Scan, Technical Analysis, Statistical Alpha, Sentiment
-2. **Alpha Generation** — Signal synthesis and thesis building
-3. **Portfolio Management** — Risk-weighted allocation and trade sizing
-4. **Risk Guard** — Final safety layer (can veto everything)
-5. **Execution** — Only proceeds if Risk Guard approves  
+1. **Market scan + Tier-0 desks** — macro, TA, pattern, stats, narrative, flow, …
+2. **Risk + desk debate** — risk context, then bull/bear evidence
+3. **Signal arbitrator** — optional per-desk LLM (`agent_llm`), then **weight assigner** fuses scores into BUY/SELL/HOLD
+4. **Portfolio** — proposal → Risk Guard veto → execute
 
 <img width="784" height="1138" alt="workflow_diagram" src="https://github.com/user-attachments/assets/fcf5d491-7562-4acc-8499-3d93d24d395b" />
 
-See **[docs/langgraph-workflow.md](docs/langgraph-workflow.md)** for the complete graph state, nodes, edges and routing logic.
+Weights/thresholds: [`docs/weighted-arbitrator.md`](docs/weighted-arbitrator.md). Graph notes: [`docs/langgraph-workflow.md`](docs/langgraph-workflow.md).
 
 ---
 
@@ -95,7 +109,7 @@ uv run pre-commit install
 
 # 5. Set up environment
 cp .env.example .env
-# Edit .env — set OPENAI_API_KEY for agentic backtests.
+# Edit .env — set OPENAI_API_KEY or ATLASCLOUD_API_KEY (agentic runs need a key)
 
 # 6. Run the platform stack: DB + migrate + API + worker + web
 # Requires Docker Desktop. Futu OpenD optional (`--profile with-futu`).
@@ -118,6 +132,25 @@ For CLI-only trading mode:
 uv run python src/main.py
 ```
 
+### Agentic LLM setup
+
+Agentic path needs a key (no silent fallback). Either:
+
+```bash
+OPENAI_API_KEY=...
+# optional: OPENAI_BASE_URL / OPENAI_MODEL
+```
+
+or, if `OPENAI_API_KEY` is unset:
+
+```bash
+ATLASCLOUD_API_KEY=...
+ATLASCLOUD_BASE_URL=https://api.atlascloud.ai/v1
+ATLASCLOUD_MODEL=deepseek-ai/deepseek-v4-pro
+```
+
+Coding plan: https://www.atlascloud.ai/console/coding-plan — more env notes in [`docs/configuration.md`](docs/configuration.md).
+
 ---
 
 ## Hosted Leaderboard (API-only public deployment)
@@ -135,7 +168,7 @@ For the full local portal (Research backtests + console), use plain `docker comp
 ## How to evaluate this repo (developer checklist)
 
 - **Start with the product surface**
-  - Open `/console?view=research` to run a backtest.
+  - Put `OPENAI_API_KEY` or `ATLASCLOUD_API_KEY` in `.env`, then open `/console?view=research`.
   - Open `/get-started` for local setup commands.
   - Open `/tools` to browse callable platform endpoints.
 - **Run a quick backtest**
@@ -151,7 +184,7 @@ For the full local portal (Research backtests + console), use plain `docker comp
 - [uv](https://github.com/astral-sh/uv)
 - **TA-Lib (C library + Python wrapper)** - see installation options below
 - Binance Testnet API keys (for paper trading)
-- OpenAI API key (optional, enables LLM nodes)
+- LLM API key for agentic mode (`OPENAI_API_KEY` or `ATLASCLOUD_API_KEY`)
 - (Optional) Nexus Skills API access
 
 #### TA-Lib Installation Options
@@ -214,15 +247,13 @@ uv run pytest -q tests/test_agentic_trading_e2e.py tests/test_tier0_consensus.py
 
 ## Agents (Desks)
 
-- **Market Scan** — New listings, momentum, universe coverage
-- **Technical TA Engine** — Pattern recognition, MACD, indicators
-- **Statistical Alpha Engine** — Factor and cross-sectional signals
-- **Sentiment & Narrative** — News, retail hype, whale behavior
-- **Risk Management** — Position sizing, volatility-based limits
-- **Portfolio Management** — Multi-asset allocation and proposal generation
-- **Risk Guard** — Hard veto layer before execution
+- **Tier-0** — macro (1.1), news (1.2), pattern (2.1), stats (2.2), TA (2.3), retail hype / pro bias / whale / liquidity (3.x–4.x)
+- **Market scan, risk, desk debate** — universe + risk context before arbitration
+- **Signal arbitrator** — desk LLMs (when `agent_llm`) then weight assigner → `trade_intent`
+- **Portfolio** — proposal / execute
+- **Risk Guard** — hard veto before execution
 
-All agents follow a standardized interface defined in `src/agents/base_agent.py`.
+Default research weights (`macro_tilt`): 2.3×0.55, 1.1×0.25, 2.1×0.15. Personas in `docs/personas/`; interface in `src/agents/base_agent.py`.
 
 ---
 
@@ -239,7 +270,7 @@ Every backtest automatically includes:
 
 ### Running Backtests
 
-Run these **from the repository root** (the directory that contains `pyproject.toml`), after `uv sync --extra dev` (or `uv sync`). Requires `OPENAI_API_KEY` / `LLM_API_KEY`. LLM path dependence means re-runs are not bit-identical.
+Run these **from the repository root** (the directory that contains `pyproject.toml`), after `uv sync --extra dev` (or `uv sync`). Requires an LLM key (`OPENAI_API_KEY` / `LLM_API_KEY` or `ATLASCLOUD_API_KEY`). LLM path dependence means re-runs are not bit-identical.
 
 ```bash
 # One-time: prefetch history for the locked eval window
@@ -435,10 +466,12 @@ ai-market-maker/
 │   ├── agents/             # Individual trading desks
 │   ├── tools/              # Exchange, TA, sentiment tools
 │   ├── backtest/           # Backtesting engine
+│   ├── llm/                # LLM clients (OpenAI-compatible / Atlas)
 │   └── api/                # FastAPI endpoints
 ├── web/                    # Next.js dashboard
 ├── openclaw/               # OpenClaw skill definitions
 ├── config/                 # Default policy and app config
+├── assets/                 # Branding
 ├── docs/                   # Detailed documentation
 ├── tests/                  # Test suite
 └── .env.example
