@@ -37,7 +37,11 @@ Designed to feel like a small professional trading firm — not just another bot
 
 <p align="center">
   <a href="https://www.atlascloud.ai/?utm_source=ai-market-maker&utm_medium=github&utm_campaign=ai-market-maker">
-    <img src="./assets/atlas-cloud-logo-black.svg" alt="Atlas Cloud" width="280" />
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="./assets/atlas-cloud-logo-white.svg" />
+      <source media="(prefers-color-scheme: light)" srcset="./assets/atlas-cloud-logo-black.svg" />
+      <img src="./assets/atlas-cloud-logo-black.svg" alt="Atlas Cloud" width="280" />
+    </picture>
   </a>
 </p>
 
