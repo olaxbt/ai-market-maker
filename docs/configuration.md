@@ -38,6 +38,8 @@ spellings are accepted as aliases. `ATLASCLOUD_API_BASE` and
 `ATLAS_CLOUD_API_BASE` are also accepted for the endpoint. Existing `OPENAI_*`
 settings keep priority.
 
+Budget-friendly API access: https://www.atlascloud.ai/console/coding-plan
+
 > **No LLM key → the process exits with a clear error.** No fallback, no silent
 > degradation. This is intentional — the system is an LLM-native architecture.
 

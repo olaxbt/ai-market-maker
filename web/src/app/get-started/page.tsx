@@ -22,8 +22,9 @@ export default function GetStartedPage() {
             Run agentic backtests on your machine
           </h1>
           <p className="mt-2 text-[12px] leading-relaxed text-[rgba(138,149,166,0.75)]">
-            No sign-in required for Research. Put an LLM key in <code>.env</code>, start Docker, then open Research
-            and run a preset against Binance (crypto) or Yahoo Finance (equities). Futu OpenD is optional.
+            No sign-in required for Research. Put an LLM key in <code>.env</code>, start Docker,
+            then open Research and run a preset against Binance (crypto) or Yahoo Finance
+            (equities). Futu OpenD is optional.
           </p>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
@@ -47,16 +48,20 @@ export default function GetStartedPage() {
         <div className="mt-6 space-y-3">
           <Section title="1) Clone">
             <pre className="mt-2 overflow-auto rounded-xl border border-[rgba(138,149,166,0.12)] bg-[rgba(6,8,11,0.35)] p-4 text-[11px] text-[rgba(226,232,240,0.9)]">
-{`git clone ${REPO_URL}
+              {`git clone ${REPO_URL}
 cd ai-market-maker`}
             </pre>
           </Section>
 
           <Section title="2) Configure environment">
             <pre className="mt-2 overflow-auto rounded-xl border border-[rgba(138,149,166,0.12)] bg-[rgba(6,8,11,0.35)] p-4 text-[11px] text-[rgba(226,232,240,0.9)]">
-{`cp .env.example .env
-# Required for agentic backtests:
+              {`cp .env.example .env
+# Required for agentic backtests (pick one):
 #   OPENAI_API_KEY=...
+#   # or Atlas Cloud (when OPENAI_API_KEY is unset):
+#   ATLASCLOUD_API_KEY=...
+#   ATLASCLOUD_BASE_URL=https://api.atlascloud.ai/v1
+#   ATLASCLOUD_MODEL=deepseek-ai/deepseek-v4-pro
 # Optional: OPENAI_BASE_URL / OPENAI_MODEL (DeepSeek-compatible works)
 # DATABASE_URL + AIMM_AUTH_SECRET already default for local Docker`}
             </pre>
@@ -64,18 +69,21 @@ cd ai-market-maker`}
 
           <Section title="3) Run the stack">
             <pre className="mt-2 overflow-auto rounded-xl border border-[rgba(138,149,166,0.12)] bg-[rgba(6,8,11,0.35)] p-4 text-[11px] text-[rgba(226,232,240,0.9)]">
-{`docker compose up --build -d
+              {`docker compose up --build -d
 # Migrations run automatically (service: migrate).
 # Futu OpenD (only if you use the Futu tab):
 #   docker compose --profile with-futu up --build -d`}
             </pre>
             <div className="mt-2 text-[11px] text-[rgba(138,149,166,0.75)]">
               Then open{" "}
-              <Link className="text-[rgba(0,212,170,0.92)] hover:underline" href="/console?view=research">
+              <Link
+                className="text-[rgba(0,212,170,0.92)] hover:underline"
+                href="/console?view=research"
+              >
                 Research
               </Link>
-              → pick a strategy → <b>Run backtest</b> (sticky at the top of the form). LLM keys come from{" "}
-              <code>.env</code> at container runtime.
+              → pick a strategy → <b>Run backtest</b> (sticky at the top of the form). LLM keys come
+              from <code>.env</code> at container runtime.
             </div>
           </Section>
         </div>
