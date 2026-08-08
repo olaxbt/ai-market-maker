@@ -1,7 +1,7 @@
 # AI Market Maker: Agentic Trading System for Crypto Hedge Funds
 
 <p align="center">
-  <img src="./assets/aimm.jpg" alt="AI Market Maker banner" width="920" />
+  <img src="./assets/agentic_trading.jpg" alt="AI Market Maker banner" width="920" />
 </p>
 
 [![GitHub Stars](https://img.shields.io/github/stars/olaxbt/ai-market-maker?style=flat-square)](https://github.com/olaxbt/ai-market-maker/stargazers)
