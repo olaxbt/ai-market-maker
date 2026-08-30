@@ -162,7 +162,7 @@ def _init_llm() -> None:
     if not llm_config.api_key:
         raise ValueError(
             "agent_llm mode requires an LLM API key. "
-            "Set DEEPSEEK_API_KEY, OPENAI_API_KEY, or ATLASCLOUD_API_KEY."
+            "Set DEEPSEEK_API_KEY, OPENAI_API_KEY, ATLASCLOUD_API_KEY, or ORCAROUTER_API_KEY."
         )
     _LLM_CLIENT = OpenAI(api_key=llm_config.api_key, base_url=llm_config.base_url)
     _LLM_MODEL = llm_config.model
@@ -710,7 +710,7 @@ def infer_agent(
     except ValueError as e:
         raise ValueError(
             f"agent_llm mode requires an LLM API key for agent {agent_id}. "
-            "Set DEEPSEEK_API_KEY or OPENAI_API_KEY."
+            "Set DEEPSEEK_API_KEY, OPENAI_API_KEY, or ATLASCLOUD_API_KEY."
         ) from e
 
     persona = _load_persona(agent_id)

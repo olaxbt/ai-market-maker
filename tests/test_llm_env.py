@@ -8,6 +8,8 @@ that can force off but cannot conjure a key out of thin air.
 from config.llm_env import (
     ATLAS_CLOUD_BASE_URL,
     ATLAS_CLOUD_MODEL,
+    ORCA_ROUTER_BASE_URL,
+    ORCA_ROUTER_MODEL,
     resolve_llm_config,
     use_llm_arbitrator,
 )
@@ -83,6 +85,56 @@ def test_existing_openai_configuration_keeps_priority_over_atlas_cloud():
             "OPENAI_BASE_URL": "https://openai.example/v1",
             "OPENAI_MODEL": "existing-model",
             "ATLASCLOUD_API_KEY": "atlas-test-key",
+        }
+    )
+
+    assert config.api_key == "openai-test-key"
+    assert config.base_url == "https://openai.example/v1"
+    assert config.model == "existing-model"
+
+
+def test_orcarouter_key_enables_llm_with_provider_defaults():
+    config = resolve_llm_config({"ORCAROUTER_API_KEY": "orca-test-key"})
+
+    assert use_llm_arbitrator(env={"ORCAROUTER_API_KEY": "orca-test-key"}) is True
+    assert config.api_key == "orca-test-key"
+    assert config.base_url == ORCA_ROUTER_BASE_URL
+    assert config.model == ORCA_ROUTER_MODEL
+
+
+def test_orcarouter_aliases_support_endpoint_and_model_overrides():
+    config = resolve_llm_config(
+        {
+            "ORCAROUTER_API_KEY": "orca-test-key",
+            "ORCAROUTER_BASE_URL": "https://orcarouter.example/v1",
+            "ORCAROUTER_MODEL": "orcarouter/fusion-mini",
+        }
+    )
+
+    assert config.base_url == "https://orcarouter.example/v1"
+    assert config.model == "orcarouter/fusion-mini"
+
+
+def test_atlas_cloud_keeps_priority_over_orcarouter():
+    config = resolve_llm_config(
+        {
+            "ATLASCLOUD_API_KEY": "atlas-test-key",
+            "ORCAROUTER_API_KEY": "orca-test-key",
+        }
+    )
+
+    assert config.api_key == "atlas-test-key"
+    assert config.base_url == ATLAS_CLOUD_BASE_URL
+    assert config.model == ATLAS_CLOUD_MODEL
+
+
+def test_existing_openai_configuration_keeps_priority_over_orcarouter():
+    config = resolve_llm_config(
+        {
+            "OPENAI_API_KEY": "openai-test-key",
+            "OPENAI_BASE_URL": "https://openai.example/v1",
+            "OPENAI_MODEL": "existing-model",
+            "ORCAROUTER_API_KEY": "orca-test-key",
         }
     )
 

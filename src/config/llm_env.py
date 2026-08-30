@@ -17,6 +17,12 @@ _ATLAS_BASE_URL_NAMES = (
 )
 _ATLAS_MODEL_NAMES = ("ATLASCLOUD_MODEL", "ATLAS_CLOUD_MODEL")
 
+ORCA_ROUTER_BASE_URL = "https://api.orcarouter.ai/v1"
+ORCA_ROUTER_MODEL = "deepseek/deepseek-chat"
+_ORCA_ROUTER_KEY_NAMES = ("ORCAROUTER_API_KEY",)
+_ORCA_ROUTER_BASE_URL_NAMES = ("ORCAROUTER_BASE_URL",)
+_ORCA_ROUTER_MODEL_NAMES = ("ORCAROUTER_MODEL",)
+
 
 @dataclass(frozen=True)
 class LLMConfig:
@@ -42,10 +48,11 @@ def resolve_llm_config(
     default_base_url: str | None = None,
     default_model: str = "gpt-4o-mini",
 ) -> LLMConfig:
-    """Resolve existing provider settings, then Atlas Cloud aliases.
+    """Resolve existing provider settings, then Atlas Cloud and OrcaRouter aliases.
 
     Existing provider variables keep priority. Atlas Cloud defaults are only
-    selected when none of the caller's existing key variables are configured.
+    selected when none of the caller's existing key variables are configured,
+    and OrcaRouter defaults are only selected when no Atlas Cloud key is set.
     """
     env_map = os.environ if env is None else env
     api_key = _first(env_map, key_names)
@@ -62,6 +69,14 @@ def resolve_llm_config(
             api_key=atlas_key,
             base_url=_first(env_map, _ATLAS_BASE_URL_NAMES) or ATLAS_CLOUD_BASE_URL,
             model=_first(env_map, _ATLAS_MODEL_NAMES) or ATLAS_CLOUD_MODEL,
+        )
+
+    orca_key = _first(env_map, _ORCA_ROUTER_KEY_NAMES)
+    if orca_key:
+        return LLMConfig(
+            api_key=orca_key,
+            base_url=_first(env_map, _ORCA_ROUTER_BASE_URL_NAMES) or ORCA_ROUTER_BASE_URL,
+            model=_first(env_map, _ORCA_ROUTER_MODEL_NAMES) or ORCA_ROUTER_MODEL,
         )
 
     return LLMConfig(
@@ -94,7 +109,8 @@ def require_llm_key(env: Mapping[str, str] | None = None) -> None:
     if not llm_key_available(env):
         print(
             "FATAL: an LLM API key is required. "
-            "Set OPENAI_API_KEY or ATLASCLOUD_API_KEY in your environment or .env file.",
+            "Set OPENAI_API_KEY, ATLASCLOUD_API_KEY, or ORCAROUTER_API_KEY "
+            "in your environment or .env file.",
             file=__import__("sys").stderr,
         )
         __import__("sys").exit(1)
@@ -104,6 +120,8 @@ __all__ = [
     "ATLAS_CLOUD_BASE_URL",
     "ATLAS_CLOUD_MODEL",
     "LLMConfig",
+    "ORCA_ROUTER_BASE_URL",
+    "ORCA_ROUTER_MODEL",
     "llm_key_available",
     "require_llm_key",
     "resolve_llm_config",
