@@ -49,6 +49,20 @@ settings keep priority.
 
 Budget-friendly API access: https://www.atlascloud.ai/console/coding-plan
 
+[OrcaRouter](https://www.orcarouter.ai) can be selected the same way, without
+replacing the existing OpenAI or Atlas Cloud variables:
+
+```bash
+ORCAROUTER_API_KEY=your-key
+ORCAROUTER_BASE_URL=https://api.orcarouter.ai/v1
+ORCAROUTER_MODEL=deepseek/deepseek-chat
+```
+
+OrcaRouter is an OpenAI-compatible AI gateway that exposes a provider/model
+namespace across many models, with adaptive routing, automatic failover, and
+gateway-level security. Existing `OPENAI_*` and `ATLASCLOUD_*` settings keep
+priority when both are configured.
+
 > **No LLM key → desk CoT and arbitrator overlay cannot run.** Weighted math still
 > produces a decision. An LLM call without a key raises a clear error.
 

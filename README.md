@@ -155,6 +155,22 @@ ATLASCLOUD_BASE_URL=https://api.atlascloud.ai/v1
 ATLASCLOUD_MODEL=deepseek-ai/deepseek-v4-pro
 ```
 
+or, if both are unset:
+
+```bash
+ORCAROUTER_API_KEY=...
+ORCAROUTER_BASE_URL=https://api.orcarouter.ai/v1
+ORCAROUTER_MODEL=deepseek/deepseek-chat
+```
+
+[OrcaRouter](https://www.orcarouter.ai) is an OpenAI-compatible AI gateway that
+exposes a provider/model namespace across many models — with adaptive routing,
+automatic failover, zero-markup inference, observability, guardrails, and
+agent-tool governance behind the same endpoint. It also runs gateway-level,
+zero-trust security for AI agents on the same endpoint — screening every
+prompt/response and governing every tool call on a default-deny basis, with no
+application code changes.
+
 Coding plan: https://www.atlascloud.ai/console/coding-plan — more env notes in [`docs/configuration.md`](docs/configuration.md).
 
 ---

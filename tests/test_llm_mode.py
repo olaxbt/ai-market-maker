@@ -11,6 +11,7 @@ def test_llm_key_available_false_without_key(monkeypatch: pytest.MonkeyPatch) ->
         "LLM_API_KEY",
         "ATLASCLOUD_API_KEY",
         "ATLAS_CLOUD_API_KEY",
+        "ORCAROUTER_API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
     assert llm_key_available() is False
@@ -27,6 +28,7 @@ def test_require_llm_key_skips_under_pytest(monkeypatch: pytest.MonkeyPatch) -> 
         "LLM_API_KEY",
         "ATLASCLOUD_API_KEY",
         "ATLAS_CLOUD_API_KEY",
+        "ORCAROUTER_API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("PYTEST_CURRENT_TEST", "tests/test_llm_mode.py::test")

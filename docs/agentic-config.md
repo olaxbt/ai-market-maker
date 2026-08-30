@@ -52,7 +52,7 @@ Desk CoT and the final arbitrator overlay are independent. Weighted math always 
 | `execution.arbitrator_llm` | LLM overlay on the final BUY/SELL/HOLD **after** weighted math |
 | `execution.desk_debate_llm` | LLM turns in desk debate (kept off in shipped presets) |
 
-`use_llm_synthesis` does not turn on the arbitrator overlay. `arbitrator_llm` does not turn on desk CoT. Both need an API key (`OPENAI_API_KEY` or `ATLASCLOUD_API_KEY`).
+`use_llm_synthesis` does not turn on the arbitrator overlay. `arbitrator_llm` does not turn on desk CoT. Both need an API key (`OPENAI_API_KEY`, `ATLASCLOUD_API_KEY`, or `ORCAROUTER_API_KEY`).
 
 | Preset | Role |
 |--------|------|
